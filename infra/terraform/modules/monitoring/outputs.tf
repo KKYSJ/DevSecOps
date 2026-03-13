@@ -1,0 +1,1 @@
+// monitoring/outputs.tf

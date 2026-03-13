@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "tool": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "tool",
+    "findings"
+  ]
+}
