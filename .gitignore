@@ -15,6 +15,10 @@ dist/
 coverage/
 postgres_data/
 redis_data/
+app/api-server-fastapi/data/*.db
+app/api-server-fastapi/data/*.db-*
+app/api-server-fastapi/uploads/*
+!app/api-server-fastapi/uploads/.gitkeep
 
 # Terraform
 .terraform/
