@@ -1,9 +1,9 @@
-project_name = "secureflow"
-environment = "prod"
-aws_region = "ap-northeast-2"
-single_nat_gateway = false
-create_rds = true
-db_multi_az = true
+project_name           = "secureflow"
+environment            = "prod"
+aws_region             = "ap-northeast-2"
+single_nat_gateway     = false
+create_rds             = true
+db_multi_az            = true
 db_deletion_protection = true
 db_skip_final_snapshot = false
 

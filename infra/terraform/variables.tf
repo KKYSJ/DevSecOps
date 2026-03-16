@@ -263,7 +263,7 @@ variable "fastapi_assign_public_ip" {
 variable "fastapi_path_patterns" {
   description = "Listener path patterns routed to the FastAPI service."
   type        = list(string)
-  default     = [
+  default = [
     "/api/products/*/reviews*",
     "/api/upload*",
     "/uploads*",
@@ -331,7 +331,7 @@ variable "node_assign_public_ip" {
 variable "node_path_patterns" {
   description = "Listener path patterns routed to the Node service."
   type        = list(string)
-  default     = [
+  default = [
     "/api/auth*",
     "/api/cart*",
     "/api/orders*",
@@ -390,7 +390,7 @@ variable "spring_assign_public_ip" {
 variable "spring_path_patterns" {
   description = "Listener path patterns routed to the Spring service."
   type        = list(string)
-  default     = [
+  default = [
     "/api/products*",
   ]
 }

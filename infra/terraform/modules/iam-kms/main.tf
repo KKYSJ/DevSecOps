@@ -75,8 +75,8 @@ data "aws_iam_policy_document" "ecs_task_permissions" {
     for_each = var.uploads_bucket_arn == null ? [] : [1]
 
     content {
-      sid = "UploadsBucketList"
-      actions = ["s3:ListBucket"]
+      sid       = "UploadsBucketList"
+      actions   = ["s3:ListBucket"]
       resources = [var.uploads_bucket_arn]
     }
   }
@@ -129,8 +129,8 @@ data "aws_iam_policy_document" "ecs_task_permissions" {
     for_each = var.sns_topic_arn == null ? [] : [1]
 
     content {
-      sid = "OrdersTopicPublish"
-      actions = ["sns:Publish"]
+      sid       = "OrdersTopicPublish"
+      actions   = ["sns:Publish"]
       resources = [var.sns_topic_arn]
     }
   }
@@ -271,7 +271,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
   }
 
   statement {
-    sid = "PassEcsRoles"
+    sid     = "PassEcsRoles"
     actions = ["iam:PassRole"]
     resources = [
       aws_iam_role.ecs_execution.arn,

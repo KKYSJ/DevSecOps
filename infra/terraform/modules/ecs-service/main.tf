@@ -55,14 +55,14 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_service" "this" {
-  name                               = var.service_name
-  cluster                            = var.cluster_arn
-  task_definition                    = aws_ecs_task_definition.this.arn
-  desired_count                      = var.desired_count
-  launch_type                        = "FARGATE"
-  health_check_grace_period_seconds  = var.health_check_grace_period_seconds
-  enable_execute_command             = true
-  wait_for_steady_state              = false
+  name                              = var.service_name
+  cluster                           = var.cluster_arn
+  task_definition                   = aws_ecs_task_definition.this.arn
+  desired_count                     = var.desired_count
+  launch_type                       = "FARGATE"
+  health_check_grace_period_seconds = var.health_check_grace_period_seconds
+  enable_execute_command            = true
+  wait_for_steady_state             = false
 
   deployment_circuit_breaker {
     enable   = true

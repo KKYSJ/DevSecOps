@@ -39,7 +39,7 @@ locals {
     }
   }
 
-  alb_services = merge(local.api_services, local.frontend_service)
+  alb_services   = merge(local.api_services, local.frontend_service)
   workload_names = keys(local.alb_services)
 
   ecr_repositories = {
@@ -50,9 +50,9 @@ locals {
     }
   }
 
-  node_image_uri = "${module.ecr.repository_urls["api-server-node"]}:${var.node_image_tag}"
-  fastapi_image_uri = "${module.ecr.repository_urls["api-server-fastapi"]}:${var.fastapi_image_tag}"
-  spring_image_uri = "${module.ecr.repository_urls["api-server-spring"]}:${var.spring_image_tag}"
+  node_image_uri     = "${module.ecr.repository_urls["api-server-node"]}:${var.node_image_tag}"
+  fastapi_image_uri  = "${module.ecr.repository_urls["api-server-fastapi"]}:${var.fastapi_image_tag}"
+  spring_image_uri   = "${module.ecr.repository_urls["api-server-spring"]}:${var.spring_image_tag}"
   frontend_image_uri = "${module.ecr.repository_urls["frontend"]}:${var.frontend_image_tag}"
 
   node_environment = merge(
@@ -95,19 +95,19 @@ locals {
 
   spring_environment = merge(
     {
-      SPRING_PROFILES_ACTIVE        = "local"
-      SERVER_PORT                   = "8080"
-      APP_API_BASE_PATH             = "/api"
-      APP_PUBLIC_UPLOADS_BASE_PATH  = "/uploads"
-      APP_STORAGE_TYPE              = "s3"
-      APP_STORAGE_S3_BUCKET         = module.s3.uploads_bucket_name
-      APP_STORAGE_S3_REGION         = var.aws_region
-      APP_REVIEW_STORE              = "local"
-      APP_CACHE_TYPE                = "memory"
-      APP_QUEUE_TYPE                = "sqs"
-      APP_QUEUE_SQS_QUEUE_URL       = aws_sqs_queue.orders.url
-      APP_QUEUE_SNS_TOPIC_ARN       = aws_sns_topic.orders.arn
-      APP_AWS_REGION                = var.aws_region
+      SPRING_PROFILES_ACTIVE       = "local"
+      SERVER_PORT                  = "8080"
+      APP_API_BASE_PATH            = "/api"
+      APP_PUBLIC_UPLOADS_BASE_PATH = "/uploads"
+      APP_STORAGE_TYPE             = "s3"
+      APP_STORAGE_S3_BUCKET        = module.s3.uploads_bucket_name
+      APP_STORAGE_S3_REGION        = var.aws_region
+      APP_REVIEW_STORE             = "local"
+      APP_CACHE_TYPE               = "memory"
+      APP_QUEUE_TYPE               = "sqs"
+      APP_QUEUE_SQS_QUEUE_URL      = aws_sqs_queue.orders.url
+      APP_QUEUE_SNS_TOPIC_ARN      = aws_sns_topic.orders.arn
+      APP_AWS_REGION               = var.aws_region
     },
     var.spring_environment_overrides
   )
@@ -116,16 +116,16 @@ locals {
 module "vpc" {
   source = "./modules/vpc"
 
-  name                     = local.name_prefix
-  vpc_cidr                 = var.vpc_cidr
-  availability_zones       = local.availability_zones
-  public_subnet_cidrs      = var.public_subnet_cidrs
-  private_app_subnet_cidrs = var.private_app_subnet_cidrs
+  name                      = local.name_prefix
+  vpc_cidr                  = var.vpc_cidr
+  availability_zones        = local.availability_zones
+  public_subnet_cidrs       = var.public_subnet_cidrs
+  private_app_subnet_cidrs  = var.private_app_subnet_cidrs
   private_data_subnet_cidrs = var.private_data_subnet_cidrs
-  single_nat_gateway       = var.single_nat_gateway
-  allowed_ingress_cidrs    = var.allowed_ingress_cidrs
-  app_ingress_ports        = distinct(concat([for service in values(local.api_services) : service.port], [80]))
-  tags                     = local.common_tags
+  single_nat_gateway        = var.single_nat_gateway
+  allowed_ingress_cidrs     = var.allowed_ingress_cidrs
+  app_ingress_ports         = distinct(concat([for service in values(local.api_services) : service.port], [80]))
+  tags                      = local.common_tags
 }
 
 module "ecr" {
@@ -138,12 +138,12 @@ module "ecr" {
 module "s3" {
   source = "./modules/s3"
 
-  bucket_prefix             = var.project_name
-  environment               = var.environment
-  frontend_bucket_name      = var.frontend_bucket_name
-  uploads_bucket_name       = var.uploads_bucket_name
+  bucket_prefix                 = var.project_name
+  environment                   = var.environment
+  frontend_bucket_name          = var.frontend_bucket_name
+  uploads_bucket_name           = var.uploads_bucket_name
   frontend_cors_allowed_origins = var.frontend_allowed_origins
-  tags                      = local.common_tags
+  tags                          = local.common_tags
 }
 
 resource "aws_dynamodb_table" "reviews" {
@@ -174,10 +174,10 @@ resource "aws_dynamodb_table" "reviews" {
 }
 
 resource "aws_sqs_queue" "orders" {
-  name                      = coalesce(var.orders_queue_name, "${local.name_prefix}-orders")
-  message_retention_seconds = 345600
+  name                       = coalesce(var.orders_queue_name, "${local.name_prefix}-orders")
+  message_retention_seconds  = 345600
   visibility_timeout_seconds = 60
-  sqs_managed_sse_enabled   = true
+  sqs_managed_sse_enabled    = true
 
   tags = merge(local.common_tags, { Name = "${local.name_prefix}-orders" })
 }
@@ -191,22 +191,22 @@ resource "aws_sns_topic" "orders" {
 module "ecs" {
   source = "./modules/ecs"
 
-  name                           = "${local.name_prefix}-cluster"
-  vpc_id                         = module.vpc.vpc_id
+  name                             = "${local.name_prefix}-cluster"
+  vpc_id                           = module.vpc.vpc_id
   service_discovery_namespace_name = "${var.environment}.${var.project_name}.local"
-  tags                           = local.common_tags
+  tags                             = local.common_tags
 }
 
 module "alb" {
   source = "./modules/alb"
 
-  name                 = "${local.name_prefix}-alb"
-  vpc_id               = module.vpc.vpc_id
-  public_subnet_ids    = module.vpc.public_subnet_ids
-  security_group_ids   = [module.vpc.alb_security_group_id]
+  name                  = "${local.name_prefix}-alb"
+  vpc_id                = module.vpc.vpc_id
+  public_subnet_ids     = module.vpc.public_subnet_ids
+  security_group_ids    = [module.vpc.alb_security_group_id]
   service_target_groups = local.alb_services
-  certificate_arn      = var.acm_certificate_arn
-  tags                 = local.common_tags
+  certificate_arn       = var.acm_certificate_arn
+  tags                  = local.common_tags
 }
 
 module "monitoring" {
@@ -223,19 +223,19 @@ module "rds" {
   count  = var.create_rds ? 1 : 0
   source = "./modules/rds"
 
-  identifier               = "${local.name_prefix}-mysql"
-  db_name                  = var.db_name
-  username                 = var.db_username
-  instance_class           = var.db_instance_class
-  allocated_storage        = var.db_allocated_storage
-  engine_version           = var.db_engine_version
-  subnet_ids               = module.vpc.private_data_subnet_ids
-  vpc_security_group_ids   = [module.vpc.rds_security_group_id]
-  multi_az                 = var.db_multi_az
-  backup_retention_period  = var.db_backup_retention_period
-  deletion_protection      = var.db_deletion_protection
-  skip_final_snapshot      = var.db_skip_final_snapshot
-  tags                     = local.common_tags
+  identifier              = "${local.name_prefix}-mysql"
+  db_name                 = var.db_name
+  username                = var.db_username
+  instance_class          = var.db_instance_class
+  allocated_storage       = var.db_allocated_storage
+  engine_version          = var.db_engine_version
+  subnet_ids              = module.vpc.private_data_subnet_ids
+  vpc_security_group_ids  = [module.vpc.rds_security_group_id]
+  multi_az                = var.db_multi_az
+  backup_retention_period = var.db_backup_retention_period
+  deletion_protection     = var.db_deletion_protection
+  skip_final_snapshot     = var.db_skip_final_snapshot
+  tags                    = local.common_tags
 }
 
 module "iam_kms" {
@@ -284,100 +284,100 @@ module "node_service" {
   count  = var.enable_node_service ? 1 : 0
   source = "./modules/ecs-service"
 
-  service_name                  = "${local.name_prefix}-api-server-node"
-  cluster_arn                   = module.ecs.cluster_arn
-  subnet_ids                    = module.vpc.private_app_subnet_ids
-  security_group_ids            = [module.vpc.ecs_security_group_id]
-  target_group_arn              = module.alb.target_group_arns["api-server-node"]
-  container_name                = "api-server-node"
-  container_image               = local.node_image_uri
-  container_port                = 5000
-  cpu                           = var.node_cpu
-  memory                        = var.node_memory
-  desired_count                 = var.node_desired_count
-  assign_public_ip              = var.node_assign_public_ip
-  execution_role_arn            = module.iam_kms.ecs_execution_role_arn
-  task_role_arn                 = module.iam_kms.ecs_task_role_arn
-  log_group_name                = module.monitoring.log_group_names["api-server-node"]
-  aws_region                    = var.aws_region
-  environment_variables         = local.node_environment
-  secret_environment_variables  = { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
-  tags                          = local.common_tags
+  service_name                 = "${local.name_prefix}-api-server-node"
+  cluster_arn                  = module.ecs.cluster_arn
+  subnet_ids                   = module.vpc.private_app_subnet_ids
+  security_group_ids           = [module.vpc.ecs_security_group_id]
+  target_group_arn             = module.alb.target_group_arns["api-server-node"]
+  container_name               = "api-server-node"
+  container_image              = local.node_image_uri
+  container_port               = 5000
+  cpu                          = var.node_cpu
+  memory                       = var.node_memory
+  desired_count                = var.node_desired_count
+  assign_public_ip             = var.node_assign_public_ip
+  execution_role_arn           = module.iam_kms.ecs_execution_role_arn
+  task_role_arn                = module.iam_kms.ecs_task_role_arn
+  log_group_name               = module.monitoring.log_group_names["api-server-node"]
+  aws_region                   = var.aws_region
+  environment_variables        = local.node_environment
+  secret_environment_variables = { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
+  tags                         = local.common_tags
 }
 
 module "spring_service" {
   count  = var.enable_spring_service ? 1 : 0
   source = "./modules/ecs-service"
 
-  service_name                  = "${local.name_prefix}-api-server-spring"
-  cluster_arn                   = module.ecs.cluster_arn
-  subnet_ids                    = module.vpc.private_app_subnet_ids
-  security_group_ids            = [module.vpc.ecs_security_group_id]
-  target_group_arn              = module.alb.target_group_arns["api-server-spring"]
-  container_name                = "api-server-spring"
-  container_image               = local.spring_image_uri
-  container_port                = 8080
-  cpu                           = var.spring_cpu
-  memory                        = var.spring_memory
-  desired_count                 = var.spring_desired_count
-  assign_public_ip              = var.spring_assign_public_ip
-  execution_role_arn            = module.iam_kms.ecs_execution_role_arn
-  task_role_arn                 = module.iam_kms.ecs_task_role_arn
-  log_group_name                = module.monitoring.log_group_names["api-server-spring"]
-  aws_region                    = var.aws_region
-  environment_variables         = local.spring_environment
-  secret_environment_variables  = { APP_JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
-  tags                          = local.common_tags
+  service_name                 = "${local.name_prefix}-api-server-spring"
+  cluster_arn                  = module.ecs.cluster_arn
+  subnet_ids                   = module.vpc.private_app_subnet_ids
+  security_group_ids           = [module.vpc.ecs_security_group_id]
+  target_group_arn             = module.alb.target_group_arns["api-server-spring"]
+  container_name               = "api-server-spring"
+  container_image              = local.spring_image_uri
+  container_port               = 8080
+  cpu                          = var.spring_cpu
+  memory                       = var.spring_memory
+  desired_count                = var.spring_desired_count
+  assign_public_ip             = var.spring_assign_public_ip
+  execution_role_arn           = module.iam_kms.ecs_execution_role_arn
+  task_role_arn                = module.iam_kms.ecs_task_role_arn
+  log_group_name               = module.monitoring.log_group_names["api-server-spring"]
+  aws_region                   = var.aws_region
+  environment_variables        = local.spring_environment
+  secret_environment_variables = { APP_JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
+  tags                         = local.common_tags
 }
 
 module "frontend_service" {
   count  = var.enable_frontend_service ? 1 : 0
   source = "./modules/ecs-service"
 
-  service_name                  = "${local.name_prefix}-frontend"
-  cluster_arn                   = module.ecs.cluster_arn
-  subnet_ids                    = module.vpc.private_app_subnet_ids
-  security_group_ids            = [module.vpc.ecs_security_group_id]
-  target_group_arn              = module.alb.target_group_arns["frontend"]
-  container_name                = "frontend"
-  container_image               = local.frontend_image_uri
-  container_port                = 80
-  cpu                           = var.frontend_cpu
-  memory                        = var.frontend_memory
-  desired_count                 = var.frontend_desired_count
-  assign_public_ip              = var.frontend_assign_public_ip
-  execution_role_arn            = module.iam_kms.ecs_execution_role_arn
-  task_role_arn                 = module.iam_kms.ecs_task_role_arn
-  log_group_name                = module.monitoring.log_group_names["frontend"]
-  aws_region                    = var.aws_region
-  environment_variables         = {}
-  secret_environment_variables  = {}
-  tags                          = local.common_tags
+  service_name                 = "${local.name_prefix}-frontend"
+  cluster_arn                  = module.ecs.cluster_arn
+  subnet_ids                   = module.vpc.private_app_subnet_ids
+  security_group_ids           = [module.vpc.ecs_security_group_id]
+  target_group_arn             = module.alb.target_group_arns["frontend"]
+  container_name               = "frontend"
+  container_image              = local.frontend_image_uri
+  container_port               = 80
+  cpu                          = var.frontend_cpu
+  memory                       = var.frontend_memory
+  desired_count                = var.frontend_desired_count
+  assign_public_ip             = var.frontend_assign_public_ip
+  execution_role_arn           = module.iam_kms.ecs_execution_role_arn
+  task_role_arn                = module.iam_kms.ecs_task_role_arn
+  log_group_name               = module.monitoring.log_group_names["frontend"]
+  aws_region                   = var.aws_region
+  environment_variables        = {}
+  secret_environment_variables = {}
+  tags                         = local.common_tags
 }
 
 module "fastapi_service" {
   count  = var.enable_fastapi_service ? 1 : 0
   source = "./modules/ecs-service"
 
-  service_name                  = "${local.name_prefix}-api-server-fastapi"
-  cluster_arn                   = module.ecs.cluster_arn
-  subnet_ids                    = module.vpc.private_app_subnet_ids
-  security_group_ids            = [module.vpc.ecs_security_group_id]
-  target_group_arn              = module.alb.target_group_arns["api-server-fastapi"]
-  container_name                = "api-server-fastapi"
-  container_image               = local.fastapi_image_uri
-  container_port                = 8000
-  cpu                           = var.fastapi_cpu
-  memory                        = var.fastapi_memory
-  desired_count                 = var.fastapi_desired_count
-  assign_public_ip              = var.fastapi_assign_public_ip
-  execution_role_arn            = module.iam_kms.ecs_execution_role_arn
-  task_role_arn                 = module.iam_kms.ecs_task_role_arn
-  log_group_name                = module.monitoring.log_group_names["api-server-fastapi"]
-  aws_region                    = var.aws_region
-  environment_variables         = local.fastapi_environment
-  secret_environment_variables  = { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
-  tags                          = local.common_tags
+  service_name                 = "${local.name_prefix}-api-server-fastapi"
+  cluster_arn                  = module.ecs.cluster_arn
+  subnet_ids                   = module.vpc.private_app_subnet_ids
+  security_group_ids           = [module.vpc.ecs_security_group_id]
+  target_group_arn             = module.alb.target_group_arns["api-server-fastapi"]
+  container_name               = "api-server-fastapi"
+  container_image              = local.fastapi_image_uri
+  container_port               = 8000
+  cpu                          = var.fastapi_cpu
+  memory                       = var.fastapi_memory
+  desired_count                = var.fastapi_desired_count
+  assign_public_ip             = var.fastapi_assign_public_ip
+  execution_role_arn           = module.iam_kms.ecs_execution_role_arn
+  task_role_arn                = module.iam_kms.ecs_task_role_arn
+  log_group_name               = module.monitoring.log_group_names["api-server-fastapi"]
+  aws_region                   = var.aws_region
+  environment_variables        = local.fastapi_environment
+  secret_environment_variables = { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
+  tags                         = local.common_tags
 }
 
 resource "aws_lb_listener_rule" "node_http" {
