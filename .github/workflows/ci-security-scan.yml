@@ -5,18 +5,61 @@ on:
     paths:
       - ".github/workflows/ci-security-scan.yml"
       - "app/api-server-fastapi/**"
+      - "app/api-server-node/**"
+      - "app/api-server-spring/**"
+      - "app/frontend/**"
       - "infra/terraform/**"
   pull_request:
     paths:
       - ".github/workflows/ci-security-scan.yml"
       - "app/api-server-fastapi/**"
+      - "app/api-server-node/**"
+      - "app/api-server-spring/**"
+      - "app/frontend/**"
       - "infra/terraform/**"
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      fastapi: ${{ steps.filter.outputs.fastapi }}
+      node: ${{ steps.filter.outputs.node }}
+      spring: ${{ steps.filter.outputs.spring }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Detect changed services
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            fastapi:
+              - ".github/workflows/ci-security-scan.yml"
+              - "app/api-server-fastapi/**"
+            node:
+              - ".github/workflows/ci-security-scan.yml"
+              - "app/api-server-node/**"
+            spring:
+              - ".github/workflows/ci-security-scan.yml"
+              - "app/api-server-spring/**"
+            frontend:
+              - ".github/workflows/ci-security-scan.yml"
+              - "app/frontend/**"
+            terraform:
+              - ".github/workflows/ci-security-scan.yml"
+              - "infra/terraform/**"
+
   fastapi-security-ci:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.fastapi == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -49,6 +92,101 @@ jobs:
 
       - name: Build FastAPI container
         run: docker build -t secureflow-fastapi-ci app/api-server-fastapi
+
+  node-security-ci:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.node == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/api-server-node/package-lock.json
+
+      - name: Install Node API dependencies
+        working-directory: app/api-server-node
+        run: npm ci
+
+      - name: Check Node API syntax
+        run: node --check app/api-server-node/src/app.js
+
+      - name: Audit Node API dependencies
+        working-directory: app/api-server-node
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Build Node API container
+        run: docker build -t secureflow-node-ci app/api-server-node
+
+  spring-security-ci:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.spring == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "maven"
+
+      - name: Build Spring API package
+        working-directory: app/api-server-spring
+        run: |
+          chmod +x mvnw
+          ./mvnw -q -DskipTests package
+
+      - name: Build Spring API container
+        run: docker build -t secureflow-spring-ci app/api-server-spring
+
+  frontend-security-ci:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: app/frontend
+        run: npm ci
+
+      - name: Audit frontend dependencies
+        working-directory: app/frontend
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Build frontend bundle
+        working-directory: app/frontend
+        run: npm run build
+
+      - name: Build frontend container
+        run: docker build -t secureflow-frontend-ci app/frontend
+
+  terraform-security-ci:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3

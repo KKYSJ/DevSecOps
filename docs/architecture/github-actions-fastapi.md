@@ -8,12 +8,17 @@ This repository now includes:
 
 ## CI coverage
 
-The CI workflow runs on FastAPI and Terraform changes and performs:
+The CI workflow now runs path-aware jobs for FastAPI, Node, Spring, frontend, and Terraform.
+
+Current checks:
 
 - FastAPI smoke test against `/api/health`
 - Python SAST with `bandit`
 - Python dependency audit with `pip-audit`
 - Docker image build for the FastAPI service
+- Node API dependency install, syntax check, critical dependency audit, and Docker build
+- Spring API Maven package build and Docker build
+- Frontend dependency install, critical dependency audit, production build, and Docker build
 - Terraform formatting and validation
 - IaC scan with `checkov` in advisory mode
 

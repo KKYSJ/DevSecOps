@@ -14,7 +14,6 @@ function App() {
     <AuthProvider>
       <CartProvider>
         <div className="app">
-          {/* CD smoke-test marker */}
           <Navbar />
           <main className="main-content">
             <Routes>
