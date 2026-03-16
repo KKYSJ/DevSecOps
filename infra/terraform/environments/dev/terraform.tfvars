@@ -1,8 +1,8 @@
-project_name       = "secureflow"
-environment        = "dev"
-aws_region         = "ap-northeast-2"
-single_nat_gateway = true
-create_rds         = true
+project_name               = "secureflow"
+environment                = "dev"
+aws_region                 = "ap-northeast-2"
+single_nat_gateway         = true
+create_rds                 = true
 db_backup_retention_period = 1
 
 # Node/FastAPI는 "S", Spring 코드를 그대로 쓰면 "N"이 필요합니다.
