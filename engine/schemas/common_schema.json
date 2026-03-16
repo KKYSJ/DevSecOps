@@ -1,18 +1,143 @@
 {
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DevSecOps Common Finding Schema",
+  "description": "모든 보안 스캔 도구의 결과를 정규화하는 공통 스키마",
   "type": "object",
+  "required": ["tool", "category", "scanned_at", "findings", "summary"],
   "properties": {
+    "scan_id": {
+      "type": "string",
+      "description": "스캔 고유 ID (UUID)"
+    },
     "tool": {
-      "type": "string"
+      "type": "string",
+      "enum": ["semgrep", "sonarqube", "depcheck", "zap", "trivy", "checkov", "tfsec", "gitleaks", "trufflehog"],
+      "description": "스캔 도구 이름"
     },
     "category": {
-      "type": "string"
+      "type": "string",
+      "enum": ["SAST", "SCA", "DAST", "IaC", "Secrets"],
+      "description": "도구 카테고리"
+    },
+    "scanned_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "스캔 실행 시각 (ISO8601)"
+    },
+    "target": {
+      "type": "string",
+      "description": "스캔 대상 (저장소 경로, URL 등)"
     },
     "findings": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Finding"
+      }
+    },
+    "summary": {
+      "$ref": "#/definitions/Summary"
     }
   },
-  "required": [
-    "tool",
-    "findings"
-  ]
+  "definitions": {
+    "Finding": {
+      "type": "object",
+      "required": ["id", "tool", "category", "severity", "title"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "finding 고유 ID (tool:rule_id:file:line 형태)"
+        },
+        "tool": {
+          "type": "string",
+          "description": "탐지한 도구"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["SAST", "SCA", "DAST", "IaC", "Secrets"]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
+          "description": "정규화된 심각도"
+        },
+        "title": {
+          "type": "string",
+          "description": "취약점 제목 (짧게)"
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "취약점 상세 설명"
+        },
+        "rule_id": {
+          "type": ["string", "null"],
+          "description": "도구 원래 룰/체크 ID"
+        },
+        "cwe_id": {
+          "type": ["string", "null"],
+          "description": "CWE ID (예: CWE-79)"
+        },
+        "cve_id": {
+          "type": ["string", "null"],
+          "description": "CVE ID (예: CVE-2021-44228), SCA용"
+        },
+        "file_path": {
+          "type": ["string", "null"],
+          "description": "취약점이 발견된 파일 경로"
+        },
+        "line_number": {
+          "type": ["integer", "null"],
+          "description": "취약점 라인 번호"
+        },
+        "url": {
+          "type": ["string", "null"],
+          "description": "취약점이 발견된 URL (DAST용)"
+        },
+        "http_method": {
+          "type": ["string", "null"],
+          "description": "HTTP 메서드 (DAST용)"
+        },
+        "parameter": {
+          "type": ["string", "null"],
+          "description": "취약한 파라미터 (DAST용)"
+        },
+        "package_name": {
+          "type": ["string", "null"],
+          "description": "취약한 패키지 이름 (SCA용)"
+        },
+        "package_version": {
+          "type": ["string", "null"],
+          "description": "취약한 패키지 버전 (SCA용)"
+        },
+        "fixed_version": {
+          "type": ["string", "null"],
+          "description": "수정된 버전 (SCA용)"
+        },
+        "cvss_score": {
+          "type": ["number", "null"],
+          "description": "CVSS 점수 (0.0 ~ 10.0)"
+        },
+        "remediation": {
+          "type": ["string", "null"],
+          "description": "수정 방법 제안"
+        },
+        "references": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "참고 링크 목록"
+        }
+      }
+    },
+    "Summary": {
+      "type": "object",
+      "required": ["total", "critical", "high", "medium", "low", "info"],
+      "properties": {
+        "total": {"type": "integer"},
+        "critical": {"type": "integer"},
+        "high": {"type": "integer"},
+        "medium": {"type": "integer"},
+        "low": {"type": "integer"},
+        "info": {"type": "integer"}
+      }
+    }
+  }
 }

@@ -1,22 +1,159 @@
 name: CI Security Scan
+
 on:
   push:
     branches: ["**"]
   pull_request:
 
 jobs:
-  security-ci:
+  # ── 기존: 빌드 & 테스트 ──────────────────────────────────────────────────
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
       - run: python -m pip install --upgrade pip && pip install -r backend/requirements.txt
+
       - run: cd frontend && npm install
+
       - run: pytest backend/tests -q
+
       - run: cd frontend && npm run build
-      - run: echo "TODO: tfsec/checkov/semgrep/trivy/depcheck/sonarqube/zap"
+
+  # ── SAST: Semgrep ────────────────────────────────────────────────────────
+  sast-semgrep:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    permissions:
+      contents: read
+      security-events: write   # SARIF 업로드용
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: security-tools/semgrep/.semgrep.yml
+          generateSarif: "1"
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Run Semgrep (JSON output)
+        run: |
+          pip install semgrep
+          semgrep --config security-tools/semgrep/.semgrep.yml \
+                  --json \
+                  --output semgrep-results.json \
+                  . || true   # 취약점 발견해도 파이프라인 계속
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+        continue-on-error: true
+
+  # ── SAST: SonarQube ──────────────────────────────────────────────────────
+  sast-sonarqube:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # SonarQube blame 분석에 전체 히스토리 필요
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=secureflow
+            -Dsonar.sources=backend,frontend,engine,ismsp
+            -Dsonar.python.version=3.11
+
+      - name: Export SonarQube Issues (JSON)
+        run: |
+          SONAR_URL="${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=secureflow&types=VULNERABILITY&resolved=false&ps=500"
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
+
+      - name: Upload SonarQube results
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: sonarqube-results
+          path: sonarqube-results.json
+
+  # ── SCA: OWASP Dependency-Check ──────────────────────────────────────────
+  sca-depcheck:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "secureflow"
+          path: "."
+          format: "JSON"
+          out: "depcheck-results"
+          args: >
+            --enableRetired
+            --suppression security-tools/dependency-check/suppression.xml
+        env:
+          JAVA_HOME: /opt/jdk
+
+      - name: Upload Dependency-Check results
+        uses: actions/upload-artifact@v4
+        with:
+          name: depcheck-results
+          path: depcheck-results/
+
+  # ── DAST: OWASP ZAP (Baseline) ───────────────────────────────────────────
+  # 배포된 앱이 있을 때만 실행 (main 브랜치 push 또는 수동 트리거)
+  dast-zap:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start app (Docker Compose)
+        run: |
+          docker compose up -d --wait || true
+        continue-on-error: true
+
+      - name: Run ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ vars.ZAP_TARGET_URL || 'http://localhost:3000' }}
+          rules_file_name: security-tools/owasp-zap/zap-config.yaml
+          cmd_options: "-J zap-results.json"
+          fail_action: false   # 취약점 발견해도 파이프라인 실패 안 함
+
+      - name: Upload ZAP results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-results
+          path: zap-results.json
+
+      - name: Stop app
+        if: always()
+        run: docker compose down || true

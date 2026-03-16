@@ -7,4 +7,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "TODO: ECR push, ECS deploy, ZAP"
+      - run: echo 'TODO - ECR push, ECS deploy, ZAP'
