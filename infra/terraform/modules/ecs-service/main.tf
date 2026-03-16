@@ -81,5 +81,11 @@ resource "aws_ecs_service" "this" {
     container_port   = var.container_port
   }
 
+  # Terraform creates the initial service wiring. Subsequent image rollouts
+  # are handled by GitHub Actions through new task definition revisions.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
   tags = merge(var.tags, { Name = var.service_name })
 }

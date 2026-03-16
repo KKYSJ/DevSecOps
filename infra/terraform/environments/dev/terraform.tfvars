@@ -8,7 +8,11 @@ create_rds = false
 review_table_hash_key_type = "S"
 
 # GitHub Actions OIDC는 저장소 정보가 확정된 뒤 켜는 편이 안전합니다.
-create_github_oidc_role = false
+create_github_oidc_role = true
+# To enable GitHub Actions CD later:
+github_org    = "KKYSJ"
+github_repo   = "DevSecOps"
+github_branch = "SEO"
 
 # FastAPI는 Docker 이미지를 ECR에 먼저 push한 뒤 true로 바꾸는 것을 권장합니다.
 enable_fastapi_service = true
