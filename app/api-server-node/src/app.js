@@ -4,6 +4,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const express = require('express');
 const cors = require('cors');
 const { initDatabase } = require('./config/database');
+const { seedRuntimeData } = require('./config/runtimeSeed');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -80,6 +81,10 @@ app.use((err, req, res, next) => {
 async function startServer() {
   try {
     await initDatabase();
+
+    if ((process.env.AUTO_SEED_DATABASE || '').toLowerCase() === 'true') {
+      await seedRuntimeData();
+    }
 
     app.listen(PORT, () => {
       console.log('========================================');

@@ -328,6 +328,12 @@ variable "node_assign_public_ip" {
   default     = false
 }
 
+variable "node_use_rds" {
+  description = "When create_rds is enabled, configure the Node service to use MySQL for persistent auth/cart/order data."
+  type        = bool
+  default     = true
+}
+
 variable "node_path_patterns" {
   description = "Listener path patterns routed to the Node service."
   type        = list(string)

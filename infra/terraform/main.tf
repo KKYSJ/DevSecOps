@@ -5,6 +5,7 @@ data "aws_availability_zones" "available" {
 locals {
   availability_zones = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, 2)
   name_prefix        = "${var.project_name}-${var.environment}"
+  node_uses_rds      = var.create_rds && var.node_use_rds
 
   common_tags = merge(
     var.default_tags,
@@ -55,12 +56,21 @@ locals {
   spring_image_uri   = "${module.ecr.repository_urls["api-server-spring"]}:${var.spring_image_tag}"
   frontend_image_uri = "${module.ecr.repository_urls["frontend"]}:${var.frontend_image_tag}"
 
+  node_database_environment = local.node_uses_rds ? {
+    DB_TYPE = "mysql"
+    DB_HOST = module.rds[0].endpoint
+    DB_PORT = tostring(module.rds[0].port)
+    DB_NAME = module.rds[0].db_name
+    DB_USER = var.db_username
+    } : {
+    DB_TYPE = "sqlite"
+  }
+
   node_environment = merge(
     {
       PORT                     = "5000"
       API_BASE_PATH            = "/api"
       PUBLIC_UPLOADS_BASE_PATH = "/uploads"
-      DB_TYPE                  = "sqlite"
       STORAGE_TYPE             = "s3"
       S3_BUCKET                = module.s3.uploads_bucket_name
       S3_REGION                = var.aws_region
@@ -71,7 +81,9 @@ locals {
       QUEUE_TYPE               = "sqs"
       SQS_QUEUE_URL            = aws_sqs_queue.orders.url
       SNS_TOPIC_ARN            = aws_sns_topic.orders.arn
+      AUTO_SEED_DATABASE       = "true"
     },
+    local.node_database_environment,
     var.node_environment_overrides
   )
 
@@ -110,6 +122,11 @@ locals {
       APP_AWS_REGION               = var.aws_region
     },
     var.spring_environment_overrides
+  )
+
+  node_secret_environment_variables = merge(
+    { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn },
+    local.node_uses_rds ? { DB_PASSWORD = "${module.rds[0].secret_arn}:password::" } : {}
   )
 }
 
@@ -301,7 +318,7 @@ module "node_service" {
   log_group_name               = module.monitoring.log_group_names["api-server-node"]
   aws_region                   = var.aws_region
   environment_variables        = local.node_environment
-  secret_environment_variables = { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
+  secret_environment_variables = local.node_secret_environment_variables
   tags                         = local.common_tags
 }
 
