@@ -1,9 +1,10 @@
-# FastAPI GitHub Actions Setup
+# GitHub Actions ECS CD Setup
 
 This repository now includes:
 
 - `.github/workflows/ci-security-scan.yml`
 - `.github/workflows/cd-deploy.yml`
+- `.github/workflows/reusable-ecs-deploy.yml`
 
 ## CI coverage
 
@@ -18,18 +19,28 @@ The CI workflow runs on FastAPI and Terraform changes and performs:
 
 ## CD flow
 
-The CD workflow deploys the FastAPI service to the dev ECS service by:
+The CD workflow now deploys all four dev ECS services:
 
-1. assuming an AWS role through GitHub OIDC
-2. building and pushing a Docker image to ECR with the commit SHA as the tag
-3. reading the current ECS task definition
-4. replacing the container image
-5. registering a new task definition revision
-6. updating the ECS service and waiting for stability
+- `api-server-fastapi`
+- `api-server-node`
+- `api-server-spring`
+- `frontend`
 
-The deploy workflow intentionally uses the commit SHA instead of `latest` because the ECR repositories are configured as immutable.
+On push to the `SEO` branch, GitHub Actions checks which service directories changed and deploys only those services.
 
-Terraform creates the initial ECS service, but the GitHub Actions CD workflow owns later image rollouts. The ECS service module ignores external `task_definition` revisions so future Terraform applies do not roll the service back to an older image tag.
+Each deploy job:
+
+1. assumes an AWS role through GitHub OIDC
+2. builds and pushes a Docker image to ECR
+3. tags that image with `short-sha + run-attempt`
+4. reads the current ECS task definition
+5. replaces the container image
+6. registers a new task definition revision
+7. updates the ECS service and waits for stability
+
+The workflow intentionally uses a unique tag per run instead of `latest` because the ECR repositories are configured as immutable.
+
+Terraform still creates the initial ECS services. After that, GitHub Actions owns image rollouts. Terraform can still update ECS task definitions later if you change infrastructure-managed settings such as environment variables, secrets, CPU, memory, or listener rules.
 
 ## Required AWS Terraform settings
 
@@ -41,7 +52,7 @@ Recommended `infra/terraform/environments/dev/terraform.tfvars` values:
 create_github_oidc_role = true
 github_org              = "KKYSJ"
 github_repo             = "DevSecOps"
-github_branch           = "main"
+github_branch           = "SEO"
 ```
 
 Then apply Terraform again from `infra/terraform`:
@@ -64,12 +75,31 @@ Value:
 
 ## Runtime defaults used by the deploy workflow
 
-The current CD workflow targets these dev resources:
+The current CD workflow targets these dev resources in `ap-northeast-2`:
 
-- region: `ap-northeast-2`
-- ECR repository: `api-server-fastapi`
-- ECS cluster: `secureflow-dev-cluster`
-- ECS service: `secureflow-dev-api-server-fastapi`
-- ECS task family: `secureflow-dev-api-server-fastapi`
+- FastAPI
+  - ECR: `api-server-fastapi`
+  - ECS service: `secureflow-dev-api-server-fastapi`
+  - task family: `secureflow-dev-api-server-fastapi`
+- Node
+  - ECR: `api-server-node`
+  - ECS service: `secureflow-dev-api-server-node`
+  - task family: `secureflow-dev-api-server-node`
+- Spring
+  - ECR: `api-server-spring`
+  - ECS service: `secureflow-dev-api-server-spring`
+  - task family: `secureflow-dev-api-server-spring`
+- Frontend
+  - ECR: `frontend`
+  - ECS service: `secureflow-dev-frontend`
+  - task family: `secureflow-dev-frontend`
 
-If those names change later, update `.github/workflows/cd-deploy.yml`.
+All services deploy into the ECS cluster `secureflow-dev-cluster`.
+
+## How to use it
+
+- Push FastAPI changes under `app/api-server-fastapi/**` to auto-deploy FastAPI
+- Push Node changes under `app/api-server-node/**` to auto-deploy Node
+- Push Spring changes under `app/api-server-spring/**` to auto-deploy Spring
+- Push frontend changes under `app/frontend/**` to auto-deploy the frontend
+- Run `CD Deploy` manually in GitHub Actions and choose `all`, `fastapi`, `node`, `spring`, or `frontend`

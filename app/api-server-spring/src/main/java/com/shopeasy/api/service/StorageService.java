@@ -31,6 +31,12 @@ public class StorageService {
     @Value("${app.storage.s3.region:ap-northeast-2}")
     private String s3Region;
 
+    @Value("${app.api.base-path:/api}")
+    private String apiBasePath;
+
+    @Value("${app.public-uploads-base-path:/uploads}")
+    private String publicUploadsBasePath;
+
     @Autowired
     @Lazy
     private S3Client s3Client;
@@ -65,7 +71,7 @@ public class StorageService {
         }
         Path filePath = uploadDir.resolve(fileName);
         file.transferTo(filePath.toFile());
-        return "/uploads/" + fileName;
+        return publicUploadsBasePath + "/" + fileName;
     }
 
     private String uploadToS3(String fileName, byte[] data, String contentType) {
@@ -106,8 +112,8 @@ public class StorageService {
 
             return Map.of("uploadUrl", uploadUrl, "fileUrl", fileUrl);
         } else {
-            String fileUrl = "/uploads/" + key.replace("uploads/", "");
-            return Map.of("uploadUrl", "/api/upload", "fileUrl", fileUrl);
+            String fileUrl = publicUploadsBasePath + "/" + key.replace("uploads/", "");
+            return Map.of("uploadUrl", apiBasePath + "/upload", "fileUrl", fileUrl);
         }
     }
 }

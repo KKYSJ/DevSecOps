@@ -23,7 +23,7 @@ public class ReviewController {
     private CacheService cacheService;
 
     @SuppressWarnings("unchecked")
-    @GetMapping("/api/products/{productId}/reviews")
+    @GetMapping("${app.api.base-path:/api}/products/{productId}/reviews")
     public ResponseEntity<?> getReviews(@PathVariable Long productId) {
         String cacheKey = "reviews:" + productId;
 
@@ -39,7 +39,7 @@ public class ReviewController {
         return ResponseEntity.ok(Map.of("reviews", reviews));
     }
 
-    @PostMapping("/api/products/{productId}/reviews")
+    @PostMapping("${app.api.base-path:/api}/products/{productId}/reviews")
     public ResponseEntity<?> createReview(
             @PathVariable Long productId,
             @RequestBody ReviewRequest request,

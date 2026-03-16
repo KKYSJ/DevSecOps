@@ -11,6 +11,7 @@ function OrdersPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
+      setOrders([]);
       navigate('/login');
       return;
     }

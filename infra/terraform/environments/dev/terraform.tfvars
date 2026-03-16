@@ -18,3 +18,18 @@ github_branch = "SEO"
 enable_fastapi_service = true
 fastapi_image_tag = "latest"
 fastapi_desired_count = 1
+
+# Node API service can be enabled after its image is pushed to ECR.
+enable_node_service = true
+node_image_tag = "latest"
+node_desired_count = 1
+
+# Spring API service can be enabled after its image is pushed to ECR.
+enable_spring_service = true
+spring_image_tag = "latest"
+spring_desired_count = 1
+
+# Frontend service can be enabled after its image is pushed to ECR.
+enable_frontend_service = true
+frontend_image_tag = "latest"
+frontend_desired_count = 1

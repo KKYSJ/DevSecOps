@@ -16,7 +16,7 @@ function HomePage() {
     const search = searchParams.get('search') || '';
     setSearchQuery(search);
     fetchProducts(activeCategory, search);
-  }, [searchParams]);
+  }, [activeCategory, searchParams]);
 
   const fetchProducts = async (category, search) => {
     setLoading(true);
@@ -40,7 +40,6 @@ function HomePage() {
 
   const handleCategoryChange = (category) => {
     setActiveCategory(category);
-    fetchProducts(category, searchQuery);
   };
 
   const handleSearch = (e) => {
@@ -50,7 +49,6 @@ function HomePage() {
     } else {
       setSearchParams({});
     }
-    fetchProducts(activeCategory, searchQuery.trim());
   };
 
   return (

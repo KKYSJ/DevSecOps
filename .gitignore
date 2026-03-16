@@ -19,6 +19,14 @@ app/api-server-fastapi/data/*.db
 app/api-server-fastapi/data/*.db-*
 app/api-server-fastapi/uploads/*
 !app/api-server-fastapi/uploads/.gitkeep
+app/api-server-node/data/*.db
+app/api-server-node/data/*.db-*
+app/api-server-node/uploads/*
+app/api-server-spring/data/*.mv.db
+app/api-server-spring/data/*.lock.db
+app/api-server-spring/uploads/*
+!app/api-server-spring/uploads/.gitkeep
+!app/api-server-spring/data/.gitkeep
 
 # Terraform
 .terraform/

@@ -4,7 +4,6 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '',
 });
 
-// Request interceptor: attach Authorization header
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -16,7 +15,6 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: handle 401
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -27,26 +25,22 @@ api.interceptors.response.use(
   }
 );
 
-// Auth API
 export const authAPI = {
   signup: (data) => api.post('/api/auth/signup', data),
   login: (data) => api.post('/api/auth/login', data),
   getMe: () => api.get('/api/auth/me'),
 };
 
-// Products API
 export const productsAPI = {
   getAll: (params) => api.get('/api/products', { params }),
   getById: (id) => api.get(`/api/products/${id}`),
 };
 
-// Reviews API
 export const reviewsAPI = {
   getByProduct: (productId) => api.get(`/api/products/${productId}/reviews`),
   create: (productId, data) => api.post(`/api/products/${productId}/reviews`, data),
 };
 
-// Cart API
 export const cartAPI = {
   getAll: () => api.get('/api/cart'),
   addItem: (data) => api.post('/api/cart', data),
@@ -55,13 +49,11 @@ export const cartAPI = {
   clear: () => api.delete('/api/cart'),
 };
 
-// Orders API
 export const ordersAPI = {
   create: () => api.post('/api/orders'),
   getAll: () => api.get('/api/orders'),
 };
 
-// Upload API
 export const uploadAPI = {
   uploadFile: (file) => {
     const formData = new FormData();

@@ -98,6 +98,61 @@ output "fastapi_image_uri" {
   value       = local.fastapi_image_uri
 }
 
+output "node_image_uri" {
+  description = "Node image URI expected by the ECS service."
+  value       = local.node_image_uri
+}
+
+output "node_service_name" {
+  description = "ECS service name for Node when enabled."
+  value       = try(module.node_service[0].service_name, null)
+}
+
+output "node_task_definition_arn" {
+  description = "Task definition ARN for Node when enabled."
+  value       = try(module.node_service[0].task_definition_arn, null)
+}
+
+output "node_jwt_secret_arn" {
+  description = "Secrets Manager ARN holding the shared JWT secret when APIs are enabled."
+  value       = try(aws_secretsmanager_secret.shared_jwt[0].arn, null)
+}
+
+output "spring_image_uri" {
+  description = "Spring image URI expected by the ECS service."
+  value       = local.spring_image_uri
+}
+
+output "spring_service_name" {
+  description = "ECS service name for Spring when enabled."
+  value       = try(module.spring_service[0].service_name, null)
+}
+
+output "spring_task_definition_arn" {
+  description = "Task definition ARN for Spring when enabled."
+  value       = try(module.spring_service[0].task_definition_arn, null)
+}
+
+output "spring_jwt_secret_arn" {
+  description = "Secrets Manager ARN holding the shared JWT secret when APIs are enabled."
+  value       = try(aws_secretsmanager_secret.shared_jwt[0].arn, null)
+}
+
+output "frontend_image_uri" {
+  description = "Frontend image URI expected by the ECS service."
+  value       = local.frontend_image_uri
+}
+
+output "frontend_service_name" {
+  description = "ECS service name for the frontend when enabled."
+  value       = try(module.frontend_service[0].service_name, null)
+}
+
+output "frontend_task_definition_arn" {
+  description = "Task definition ARN for the frontend when enabled."
+  value       = try(module.frontend_service[0].task_definition_arn, null)
+}
+
 output "fastapi_service_name" {
   description = "ECS service name for FastAPI when enabled."
   value       = try(module.fastapi_service[0].service_name, null)
@@ -109,6 +164,11 @@ output "fastapi_task_definition_arn" {
 }
 
 output "fastapi_jwt_secret_arn" {
-  description = "Secrets Manager ARN holding the FastAPI JWT secret when enabled."
-  value       = try(aws_secretsmanager_secret.fastapi_jwt[0].arn, null)
+  description = "Secrets Manager ARN holding the shared JWT secret when APIs are enabled."
+  value       = try(aws_secretsmanager_secret.shared_jwt[0].arn, null)
+}
+
+output "shared_jwt_secret_arn" {
+  description = "Secrets Manager ARN holding the shared JWT secret used by the API services."
+  value       = try(aws_secretsmanager_secret.shared_jwt[0].arn, null)
 }

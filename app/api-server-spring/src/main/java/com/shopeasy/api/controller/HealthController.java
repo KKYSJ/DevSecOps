@@ -16,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("${app.api.base-path:/api}")
 public class HealthController {
 
     @Value("${app.db.type}")

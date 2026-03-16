@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/upload")
+@RequestMapping("${app.api.base-path:/api}/upload")
 public class UploadController {
 
     @Autowired

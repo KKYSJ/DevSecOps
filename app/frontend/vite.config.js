@@ -6,12 +6,32 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': {
+      '^/api/auth(?:/.*)?$': {
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
-      '/uploads': {
+      '^/api/cart(?:/.*)?$': {
         target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
+      '^/api/orders(?:/.*)?$': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
+      '^/api/products/[^/]+/reviews(?:/.*)?$': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '^/api/upload(?:/.*)?$': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '^/api/products(?:/.*)?$': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/uploads': {
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

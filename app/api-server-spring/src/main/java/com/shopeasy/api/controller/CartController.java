@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/cart")
+@RequestMapping("${app.api.base-path:/api}/cart")
 public class CartController {
 
     @Autowired

@@ -263,7 +263,13 @@ variable "fastapi_assign_public_ip" {
 variable "fastapi_path_patterns" {
   description = "Listener path patterns routed to the FastAPI service."
   type        = list(string)
-  default     = ["/api/*", "/uploads/*"]
+  default     = [
+    "/api/products/*/reviews*",
+    "/api/upload*",
+    "/uploads*",
+    "/api/health",
+    "/api/config",
+  ]
 }
 
 variable "fastapi_jwt_secret_name" {
@@ -273,8 +279,173 @@ variable "fastapi_jwt_secret_name" {
   nullable    = true
 }
 
+variable "shared_jwt_secret_name" {
+  description = "Optional explicit secret name for the shared API JWT secret."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "fastapi_environment_overrides" {
   description = "Optional extra environment variables for the FastAPI container."
   type        = map(string)
   default     = {}
+}
+
+variable "enable_node_service" {
+  description = "Whether to create the ECS service for the Node application."
+  type        = bool
+  default     = false
+}
+
+variable "node_image_tag" {
+  description = "Container image tag for the Node service."
+  type        = string
+  default     = "latest"
+}
+
+variable "node_desired_count" {
+  description = "Desired task count for the Node ECS service."
+  type        = number
+  default     = 1
+}
+
+variable "node_cpu" {
+  description = "CPU units for the Node task definition."
+  type        = number
+  default     = 512
+}
+
+variable "node_memory" {
+  description = "Memory in MiB for the Node task definition."
+  type        = number
+  default     = 1024
+}
+
+variable "node_assign_public_ip" {
+  description = "Whether the Node task should receive a public IP."
+  type        = bool
+  default     = false
+}
+
+variable "node_path_patterns" {
+  description = "Listener path patterns routed to the Node service."
+  type        = list(string)
+  default     = [
+    "/api/auth*",
+    "/api/cart*",
+    "/api/orders*",
+  ]
+}
+
+variable "node_jwt_secret_name" {
+  description = "Optional explicit secret name for the Node JWT secret."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "node_environment_overrides" {
+  description = "Optional extra environment variables for the Node container."
+  type        = map(string)
+  default     = {}
+}
+
+variable "enable_spring_service" {
+  description = "Whether to create the ECS service for the Spring application."
+  type        = bool
+  default     = false
+}
+
+variable "spring_image_tag" {
+  description = "Container image tag for the Spring service."
+  type        = string
+  default     = "latest"
+}
+
+variable "spring_desired_count" {
+  description = "Desired task count for the Spring ECS service."
+  type        = number
+  default     = 1
+}
+
+variable "spring_cpu" {
+  description = "CPU units for the Spring task definition."
+  type        = number
+  default     = 512
+}
+
+variable "spring_memory" {
+  description = "Memory in MiB for the Spring task definition."
+  type        = number
+  default     = 1024
+}
+
+variable "spring_assign_public_ip" {
+  description = "Whether the Spring task should receive a public IP."
+  type        = bool
+  default     = false
+}
+
+variable "spring_path_patterns" {
+  description = "Listener path patterns routed to the Spring service."
+  type        = list(string)
+  default     = [
+    "/api/products*",
+  ]
+}
+
+variable "spring_jwt_secret_name" {
+  description = "Optional explicit secret name for the Spring JWT secret."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "spring_environment_overrides" {
+  description = "Optional extra environment variables for the Spring container."
+  type        = map(string)
+  default     = {}
+}
+
+variable "enable_frontend_service" {
+  description = "Whether to create the ECS service for the frontend application."
+  type        = bool
+  default     = false
+}
+
+variable "frontend_image_tag" {
+  description = "Container image tag for the frontend service."
+  type        = string
+  default     = "latest"
+}
+
+variable "frontend_desired_count" {
+  description = "Desired task count for the frontend ECS service."
+  type        = number
+  default     = 1
+}
+
+variable "frontend_cpu" {
+  description = "CPU units for the frontend task definition."
+  type        = number
+  default     = 256
+}
+
+variable "frontend_memory" {
+  description = "Memory in MiB for the frontend task definition."
+  type        = number
+  default     = 512
+}
+
+variable "frontend_assign_public_ip" {
+  description = "Whether the frontend task should receive a public IP."
+  type        = bool
+  default     = false
+}
+
+variable "frontend_path_patterns" {
+  description = "Listener path patterns routed to the frontend service."
+  type        = list(string)
+  default     = ["/", "/*"]
 }

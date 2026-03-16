@@ -19,7 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("${app.api.base-path:/api}/auth")
 public class AuthController {
 
     @Autowired

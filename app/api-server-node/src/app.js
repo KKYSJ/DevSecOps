@@ -1,10 +1,3 @@
-/**
- * 이커머스 API 서버 (쿠팡 스타일)
- * - AWS 교육용 프로젝트
- * - 로컬 모드 (Day 1-2): SQLite + 로컬 파일 + 인메모리 캐시
- * - AWS 모드 (Day 3-5): MySQL(RDS) + S3 + DynamoDB + Redis
- */
-
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
@@ -14,57 +7,44 @@ const { initDatabase } = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const API_BASE_PATH = normalizePath(process.env.API_BASE_PATH || '/api');
+const PUBLIC_UPLOADS_BASE_PATH = normalizePath(process.env.PUBLIC_UPLOADS_BASE_PATH || '/uploads');
 
-// ========================================
-// 미들웨어 설정
-// ========================================
+function normalizePath(value) {
+  if (!value || value === '/') {
+    return '/';
+  }
 
-// CORS 설정 (모든 출처 허용 - 개발용)
+  return `/${value.replace(/^\/+|\/+$/g, '')}`;
+}
+
+function joinPath(basePath, suffix) {
+  const normalizedSuffix = suffix.startsWith('/') ? suffix : `/${suffix}`;
+
+  if (basePath === '/') {
+    return normalizedSuffix;
+  }
+
+  return `${basePath}${normalizedSuffix}`;
+}
+
 app.use(cors());
-
-// JSON 바디 파싱
 app.use(express.json());
-
-// URL-encoded 바디 파싱
 app.use(express.urlencoded({ extended: true }));
 
-// 정적 파일 서빙 (업로드된 이미지)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use(PUBLIC_UPLOADS_BASE_PATH, express.static(path.join(__dirname, '../uploads')));
 
-// S3 이미지 URL → Pre-signed URL 변환 미들웨어
 const presignUrlsMiddleware = require('./middleware/presignUrls');
-app.use('/api', presignUrlsMiddleware);
+app.use(API_BASE_PATH, presignUrlsMiddleware);
 
-// ========================================
-// 라우트 설정
-// ========================================
+app.use(joinPath(API_BASE_PATH, '/auth'), require('./routes/auth'));
+app.use(joinPath(API_BASE_PATH, '/products'), require('./routes/products'));
+app.use(joinPath(API_BASE_PATH, '/products/:id/reviews'), require('./routes/reviews'));
+app.use(joinPath(API_BASE_PATH, '/cart'), require('./routes/cart'));
+app.use(joinPath(API_BASE_PATH, '/orders'), require('./routes/orders'));
+app.use(joinPath(API_BASE_PATH, '/upload'), require('./routes/upload'));
 
-// 인증
-app.use('/api/auth', require('./routes/auth'));
-
-// 상품
-app.use('/api/products', require('./routes/products'));
-
-// 리뷰 (상품 하위 라우트)
-app.use('/api/products/:id/reviews', require('./routes/reviews'));
-
-// 장바구니
-app.use('/api/cart', require('./routes/cart'));
-
-// 주문
-app.use('/api/orders', require('./routes/orders'));
-
-// 파일 업로드
-app.use('/api/upload', require('./routes/upload'));
-
-// ========================================
-// 헬스 체크 및 설정 확인 엔드포인트
-// ========================================
-
-/**
- * GET /api/health - 서버 상태 확인
- */
-app.get('/api/health', (req, res) => {
+app.get(joinPath(API_BASE_PATH, '/health'), (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -78,10 +58,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-/**
- * GET /api/config - 현재 서비스 설정 확인
- */
-app.get('/api/config', (req, res) => {
+app.get(joinPath(API_BASE_PATH, '/config'), (req, res) => {
   res.json({
     storageType: process.env.STORAGE_TYPE || 'local',
     reviewStore: process.env.REVIEW_STORE || 'local',
@@ -89,46 +66,35 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// ========================================
-// 에러 핸들링
-// ========================================
-
-// 404 처리
 app.use((req, res) => {
-  res.status(404).json({ error: '요청한 리소스를 찾을 수 없습니다' });
+  res.status(404).json({ error: 'Requested resource was not found' });
 });
 
-// 전역 에러 핸들러
 app.use((err, req, res, next) => {
   console.error('[Error]', err.stack);
   res.status(err.status || 500).json({
-    error: err.message || '서버 내부 오류가 발생했습니다',
+    error: err.message || 'An unexpected server error occurred',
   });
 });
 
-// ========================================
-// 서버 시작
-// ========================================
-
 async function startServer() {
   try {
-    // 데이터베이스 초기화
     await initDatabase();
 
-    // 서버 시작
     app.listen(PORT, () => {
       console.log('========================================');
-      console.log(`  이커머스 API 서버 시작`);
-      console.log(`  포트: ${PORT}`);
+      console.log('  Ecommerce API server started');
+      console.log(`  Port: ${PORT}`);
+      console.log(`  Base path: ${API_BASE_PATH}`);
       console.log(`  DB: ${process.env.DB_TYPE || 'sqlite'}`);
-      console.log(`  스토리지: ${process.env.STORAGE_TYPE || 'local'}`);
-      console.log(`  리뷰 저장소: ${process.env.REVIEW_STORE || 'local'}`);
-      console.log(`  캐시: ${process.env.CACHE_TYPE || 'memory'}`);
-      console.log(`  큐: ${process.env.QUEUE_TYPE || 'sync'}`);
+      console.log(`  Storage: ${process.env.STORAGE_TYPE || 'local'}`);
+      console.log(`  Review store: ${process.env.REVIEW_STORE || 'local'}`);
+      console.log(`  Cache: ${process.env.CACHE_TYPE || 'memory'}`);
+      console.log(`  Queue: ${process.env.QUEUE_TYPE || 'sync'}`);
       console.log('========================================');
     });
   } catch (error) {
-    console.error('[Server] 서버 시작 실패:', error);
+    console.error('[Server] Failed to start:', error);
     process.exit(1);
   }
 }

@@ -37,32 +37,32 @@ function Navbar() {
             <form onSubmit={handleSearch}>
               <input
                 type="text"
-                placeholder="상품을 검색해보세요"
+                placeholder="Search products"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              <button type="submit">검색</button>
+              <button type="submit">Search</button>
             </form>
           </div>
 
           <div className="navbar-actions">
             <Link to="/cart" className="navbar-cart">
-              <span className="navbar-cart-icon">🛒</span>
+              <span className="navbar-cart-icon">Cart</span>
               {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
             </Link>
 
             {user ? (
               <div className="navbar-user">
                 <Link to="/orders" className="navbar-user-name">
-                  {user.name}님
+                  {user.name}
                 </Link>
                 <button className="navbar-logout-btn" onClick={handleLogout}>
-                  로그아웃
+                  Logout
                 </button>
               </div>
             ) : (
               <Link to="/login" className="navbar-login-btn">
-                로그인
+                Login
               </Link>
             )}
           </div>
@@ -73,11 +73,11 @@ function Navbar() {
         <form onSubmit={handleSearch}>
           <input
             type="text"
-            placeholder="상품을 검색해보세요"
+            placeholder="Search products"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
-          <button type="submit">검색</button>
+          <button type="submit">Search</button>
         </form>
       </div>
     </>

@@ -10,5 +10,8 @@ spring:
       max-request-size: 5MB
 
 app:
+  api:
+    base-path: /api
   jwt:
     secret: ecommerce-jwt-secret-key-2024
+  public-uploads-base-path: /uploads

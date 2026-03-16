@@ -1,38 +1,56 @@
-import { createContext, useState, useEffect, useContext } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { authAPI } from '../api';
 
 const AuthContext = createContext(null);
+const TOKEN_STORAGE_KEY = 'token';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_STORAGE_KEY));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     const validateToken = async () => {
       if (!token) {
-        setLoading(false);
+        if (!cancelled) {
+          setUser(null);
+          setLoading(false);
+        }
         return;
       }
+
       try {
         const res = await authAPI.getMe();
-        setUser(res.data.user);
+        if (!cancelled) {
+          setUser(res.data.user);
+        }
       } catch (err) {
-        console.error('토큰 검증 실패:', err);
-        localStorage.removeItem('token');
-        setToken(null);
-        setUser(null);
+        console.error('Token validation failed:', err);
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
+
     validateToken();
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const login = async (email, password) => {
     const res = await authAPI.login({ email, password });
     const { token: newToken, user: newUser } = res.data;
-    localStorage.setItem('token', newToken);
+    localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
     setToken(newToken);
     setUser(newUser);
     return newUser;
@@ -41,14 +59,14 @@ export function AuthProvider({ children }) {
   const signup = async (name, email, password) => {
     const res = await authAPI.signup({ email, password, name });
     const { token: newToken, user: newUser } = res.data;
-    localStorage.setItem('token', newToken);
+    localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
     setToken(newToken);
     setUser(newUser);
     return newUser;
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken(null);
     setUser(null);
   };
@@ -63,7 +81,7 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth는 AuthProvider 내에서 사용해야 합니다');
+    throw new Error('useAuth must be used within AuthProvider');
   }
   return context;
 }
