@@ -2,7 +2,7 @@ name: CD Deploy
 
 on:
   push:
-    branches: ["main"]
+    branches: ["SEO"]
     paths:
       - ".github/workflows/cd-deploy.yml"
       - "app/api-server-fastapi/**"
