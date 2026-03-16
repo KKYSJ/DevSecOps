@@ -20,7 +20,7 @@ from app.config.database import init_database, query, close_database
 # 테스트 사용자
 TEST_USER = {
     "email": "test@test.com",
-    "password": "password123",
+    "password": "password123",  # nosec B105 - demo seed account for local/dev validation
     "name": "테스트유저",
 }
 
