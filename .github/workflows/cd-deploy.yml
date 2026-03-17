@@ -3,13 +3,6 @@ name: CD Deploy
 on:
   push:
     branches: ["dev"]
-    paths:
-      - ".github/workflows/cd-deploy.yml"
-      - ".github/workflows/reusable-ecs-deploy.yml"
-      - "app/api-server-fastapi/**"
-      - "app/api-server-node/**"
-      - "app/api-server-spring/**"
-      - "app/frontend/**"
   workflow_dispatch:
     inputs:
       service:
@@ -29,45 +22,9 @@ permissions:
   id-token: write
 
 jobs:
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      fastapi: ${{ steps.filter.outputs.fastapi }}
-      node: ${{ steps.filter.outputs.node }}
-      spring: ${{ steps.filter.outputs.spring }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Detect changed services
-        id: filter
-        if: github.event_name == 'push'
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            fastapi:
-              - ".github/workflows/cd-deploy.yml"
-              - ".github/workflows/reusable-ecs-deploy.yml"
-              - "app/api-server-fastapi/**"
-            node:
-              - ".github/workflows/cd-deploy.yml"
-              - ".github/workflows/reusable-ecs-deploy.yml"
-              - "app/api-server-node/**"
-            spring:
-              - ".github/workflows/cd-deploy.yml"
-              - ".github/workflows/reusable-ecs-deploy.yml"
-              - "app/api-server-spring/**"
-            frontend:
-              - ".github/workflows/cd-deploy.yml"
-              - ".github/workflows/reusable-ecs-deploy.yml"
-              - "app/frontend/**"
-
   deploy-fastapi:
-    needs: detect-changes
     if: |
-      (github.event_name == 'push' && needs.detect-changes.outputs.fastapi == 'true') ||
+      github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && (inputs.service == 'all' || inputs.service == 'fastapi'))
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -81,9 +38,8 @@ jobs:
       build_context: app/api-server-fastapi
 
   deploy-node:
-    needs: detect-changes
     if: |
-      (github.event_name == 'push' && needs.detect-changes.outputs.node == 'true') ||
+      github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && (inputs.service == 'all' || inputs.service == 'node'))
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -97,9 +53,8 @@ jobs:
       build_context: app/api-server-node
 
   deploy-spring:
-    needs: detect-changes
     if: |
-      (github.event_name == 'push' && needs.detect-changes.outputs.spring == 'true') ||
+      github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && (inputs.service == 'all' || inputs.service == 'spring'))
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -113,9 +68,8 @@ jobs:
       build_context: app/api-server-spring
 
   deploy-frontend:
-    needs: detect-changes
     if: |
-      (github.event_name == 'push' && needs.detect-changes.outputs.frontend == 'true') ||
+      github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && (inputs.service == 'all' || inputs.service == 'frontend'))
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -127,3 +81,107 @@ jobs:
       ecs_task_family: secureflow-dev-frontend
       ecs_container_name: frontend
       build_context: app/frontend
+
+  service-dast-zap:
+    needs:
+      - deploy-fastapi
+      - deploy-node
+      - deploy-spring
+      - deploy-frontend
+    if: |
+      always() &&
+      (needs.deploy-fastapi.result == 'success' || needs.deploy-node.result == 'success' || needs.deploy-spring.result == 'success' || needs.deploy-frontend.result == 'success') &&
+      needs.deploy-fastapi.result != 'failure' &&
+      needs.deploy-node.result != 'failure' &&
+      needs.deploy-spring.result != 'failure' &&
+      needs.deploy-frontend.result != 'failure'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Resolve DAST target URL
+        id: target
+        run: |
+          TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+
+          if [ -n "$TARGET_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No DAST target URL configured. Set DAST_TARGET_URL or ZAP_TARGET_URL to enable runtime scans."
+          fi
+
+      - name: Run ZAP baseline scan
+        if: steps.target.outputs.enabled == 'true'
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ steps.target.outputs.target_url }}
+          rules_file_name: security-tools/owasp-zap/zap-config.yaml
+          cmd_options: "-J zap-results.json"
+          fail_action: false
+
+      - name: Upload ZAP results
+        uses: actions/upload-artifact@v4
+        if: always() && steps.target.outputs.enabled == 'true'
+        with:
+          name: zap-service-results
+          path: zap-results.json
+
+  service-dast-nuclei:
+    needs:
+      - deploy-fastapi
+      - deploy-node
+      - deploy-spring
+      - deploy-frontend
+    if: |
+      always() &&
+      (needs.deploy-fastapi.result == 'success' || needs.deploy-node.result == 'success' || needs.deploy-spring.result == 'success' || needs.deploy-frontend.result == 'success') &&
+      needs.deploy-fastapi.result != 'failure' &&
+      needs.deploy-node.result != 'failure' &&
+      needs.deploy-spring.result != 'failure' &&
+      needs.deploy-frontend.result != 'failure'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Resolve DAST target URL
+        id: target
+        run: |
+          TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+
+          if [ -n "$TARGET_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No DAST target URL configured. Set DAST_TARGET_URL or ZAP_TARGET_URL to enable runtime scans."
+          fi
+
+      - name: Run Nuclei web scan
+        if: steps.target.outputs.enabled == 'true'
+        run: |
+          docker run --rm -v "${PWD}:/workspace" projectdiscovery/nuclei:latest \
+            -u "${{ steps.target.outputs.target_url }}" \
+            -severity high,critical \
+            -json-export /workspace/nuclei-results.json || true
+          if [ ! -f nuclei-results.json ]; then
+            echo '{}' > nuclei-results.json
+          fi
+
+      - name: Upload Nuclei results
+        uses: actions/upload-artifact@v4
+        if: always() && steps.target.outputs.enabled == 'true'
+        with:
+          name: nuclei-service-results
+          path: nuclei-results.json
