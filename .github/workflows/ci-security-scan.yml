@@ -284,8 +284,8 @@ jobs:
         working-directory: frontend
         run: npm install
 
-      - name: Run backend tests
-        run: pytest backend/tests -q
+      - name: Run platform tests
+        run: pytest backend/tests engine/tests ismsp/tests -q
 
       - name: Build root frontend
         working-directory: frontend
@@ -338,6 +338,9 @@ jobs:
       - core-build-and-test
     if: needs.detect-changes.outputs.core == 'true'
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
     steps:
       - name: Check out source
@@ -345,22 +348,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check SonarQube configuration
+        id: sonar-config
+        run: |
+          if [ -n "${SONAR_TOKEN}" ] && [ -n "${SONAR_HOST_URL}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SonarQube secrets are not configured. Skipping SonarQube scan on this run."
+          fi
+
       - name: SonarQube Scan
+        if: steps.sonar-config.outputs.enabled == 'true'
         uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           args: >
             -Dproject.settings=security-tools/sonarqube/sonar-project.properties
             -Dsonar.python.version=3.11
 
       - name: Export SonarQube issues
+        if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          SONAR_URL="${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=secureflow&types=VULNERABILITY&resolved=false&ps=500"
-          curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
+          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=secureflow&types=VULNERABILITY&resolved=false&ps=500"
+          curl -s -u "${SONAR_TOKEN}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
 
       - name: Upload SonarQube results
+        if: steps.sonar-config.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
