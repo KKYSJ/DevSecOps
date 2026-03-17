@@ -49,3 +49,10 @@ terraform.rc
 .terraformrc
 *.tfbackend
 *.backend.hcl
+
+# Security scan results (로컬 실행 결과)
+semgrep-results.json
+sonarqube-results.json
+zap-results.json
+depcheck-results.json
+zap.yaml
