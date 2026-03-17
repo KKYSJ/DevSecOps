@@ -4,9 +4,14 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
-from app.core.models import ScanResult
-from app.schemas.scan import IaCScanResult, SCAScanResult, SASTScanResult, DASTScanResult
+from backend.app.core.database import get_db
+from backend.app.core.models import ScanResult
+from backend.app.schemas.scan import (
+    DASTScanResult,
+    IaCScanResult,
+    SCAScanResult,
+    SASTScanResult,
+)
 
 router = APIRouter(prefix="/scan-results", tags=["scan-results"])
 

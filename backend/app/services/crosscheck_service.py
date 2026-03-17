@@ -4,9 +4,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core.config import GEMINI_MODEL, PROMPT_DIR
-from app.core.llm_client import generate_with_gemini
-from app.core.models import LLMCrosscheckResult, ScanResult
+from backend.app.core.config import GEMINI_MODEL, PROMPT_DIR
+from backend.app.core.llm_client import generate_with_gemini
+from backend.app.core.models import LLMCrosscheckResult, ScanResult
 
 
 CATEGORY_CONFIG = {
@@ -26,17 +26,17 @@ CATEGORY_CONFIG = {
     },
     "SCA": {
         "tool_a_name": "trivy",
-        "tool_b_name": "dependency-check",
+        "tool_b_name": "depcheck",
         "prompt_name": "sca_crosscheck_prompt.txt",
         "placeholder_a": "{{TRIVY_JSON}}",
         "placeholder_b": "{{DEPENDENCY_CHECK_JSON}}",
     },
     "DAST": {
         "tool_a_name": "zap",
-        "tool_b_name": "zap",
+        "tool_b_name": "nuclei",
         "prompt_name": "dast_crosscheck_prompt.txt",
         "placeholder_a": "{{ZAP_JSON}}",
-        "placeholder_b": None,
+        "placeholder_b": "{{NUCLEI_JSON}}",
     },
 }
 
@@ -57,7 +57,7 @@ def parse_json_field(value: Any):
 def load_prompt(prompt_name: str) -> str:
     prompt_path = Path(PROMPT_DIR) / prompt_name
     if not prompt_path.exists():
-        raise FileNotFoundError(f"프롬프트 파일이 없습니다: {prompt_path}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
     return prompt_path.read_text(encoding="utf-8")
 
 
@@ -126,7 +126,6 @@ def build_tool_bundle(rows: list, fallback_tool_name: str, fallback_category: st
     findings = []
     for row in rows:
         raw = parse_json_field(row.raw_data) or {}
-
         finding_item = {
             "finding": raw.get("finding"),
             "location": raw.get("location"),
@@ -187,10 +186,9 @@ def run_crosscheck(
     category = (tool_category or "").upper()
 
     if category not in CATEGORY_CONFIG:
-        raise ValueError(f"지원하지 않는 tool_category 입니다: {tool_category}")
+        raise ValueError(f"Unsupported tool category: {tool_category}")
 
     config = CATEGORY_CONFIG[category]
-
     tool_a_name = config["tool_a_name"]
     tool_b_name = config["tool_b_name"]
     prompt_name = config["prompt_name"]
@@ -202,7 +200,6 @@ def run_crosscheck(
         tool_name=tool_a_name,
         workflow_run_id=workflow_run_id,
     )
-
     tool_b_rows = get_rows_by_tool(
         db=db,
         project_name=project_name,
@@ -212,7 +209,7 @@ def run_crosscheck(
     )
 
     if not tool_a_rows and not tool_b_rows:
-        raise ValueError("교차검증 대상 결과가 없습니다.")
+        raise ValueError("No scan results found for crosscheck.")
 
     tool_a_json = build_tool_bundle(tool_a_rows, tool_a_name, category)
     tool_b_json = build_tool_bundle(tool_b_rows, tool_b_name, category)
@@ -227,7 +224,6 @@ def run_crosscheck(
 
     llm_response_text = generate_with_gemini(final_prompt)
     parsed_result = json.loads(llm_response_text)
-
     pipeline = tool_a_json.get("pipeline") or tool_b_json.get("pipeline") or {}
 
     row = LLMCrosscheckResult(
