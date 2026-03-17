@@ -27,6 +27,10 @@ on:
       build_context:
         required: true
         type: string
+      git_ref:
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -43,6 +47,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref != '' && inputs.git_ref || github.sha }}
 
       - name: Check GitHub OIDC configuration
         run: |

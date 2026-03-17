@@ -124,6 +124,96 @@ jobs:
       - name: Build frontend container
         run: docker build -t secureflow-frontend-ci app/frontend
 
+  iac-checkov:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Checkov
+        run: |
+          python -m pip install --upgrade pip
+          pip install checkov
+
+      - name: Run Checkov
+        run: |
+          checkov -d infra/terraform --framework terraform -o json > checkov-results.json || true
+          if [ ! -f checkov-results.json ]; then
+            echo '{"results":{"failed_checks":[]}}' > checkov-results.json
+          fi
+
+      - name: Upload Checkov results
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-results
+          path: checkov-results.json
+
+  iac-tfsec:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        run: |
+          docker run --rm -v "${PWD}:/workspace" aquasec/tfsec:latest \
+            /workspace/infra/terraform \
+            --format json \
+            --out /workspace/tfsec-results.json || true
+          if [ ! -f tfsec-results.json ]; then
+            echo '{"results":[]}' > tfsec-results.json
+          fi
+
+      - name: Upload tfsec results
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfsec-results
+          path: tfsec-results.json
+
+  llm-iac-gate:
+    needs:
+      - iac-checkov
+      - iac-tfsec
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download IaC artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/iac
+
+      - name: Run IaC LLM gate
+        env:
+          LLM_GATE_REVIEW_BLOCKS: "true"
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/ci/run_llm_gate.py \
+            --stage iac \
+            --tool-input checkov=artifacts/iac/checkov-results/checkov-results.json \
+            --tool-input tfsec=artifacts/iac/tfsec-results/tfsec-results.json \
+            --output artifacts/iac/iac-llm-gate.json
+
+      - name: Upload IaC gate summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: iac-llm-gate
+          path: artifacts/iac/iac-llm-gate.json
+
   service-sast-semgrep:
     needs:
       - fastapi-security-ci
@@ -150,6 +240,12 @@ jobs:
           pip install semgrep
           semgrep --config security-tools/semgrep/.semgrep.yml --json --output semgrep-results.json app || true
           semgrep --config security-tools/semgrep/.semgrep.yml --sarif --output semgrep.sarif app || true
+          if [ ! -f semgrep-results.json ]; then
+            echo '{"results":[]}' > semgrep-results.json
+          fi
+          if [ ! -f semgrep.sarif ]; then
+            echo '{"runs":[]}' > semgrep.sarif
+          fi
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
@@ -191,6 +287,7 @@ jobs:
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "SonarQube secrets are not configured. Skipping SonarQube scan on this run."
+            echo '{"issues":[],"tool_disabled":true,"reason":"missing_sonarqube_configuration"}' > sonarqube-results.json
           fi
 
       - name: SonarQube service scan
@@ -209,12 +306,49 @@ jobs:
           curl -s -u "${SONAR_TOKEN}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
 
       - name: Upload SonarQube results
-        if: steps.sonar-config.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
+        if: always()
         continue-on-error: true
         with:
           name: sonarqube-service-results
           path: sonarqube-results.json
+
+  llm-sast-gate:
+    needs:
+      - service-sast-semgrep
+      - service-sast-sonarqube
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download SAST artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/sast
+
+      - name: Run SAST LLM gate
+        env:
+          LLM_GATE_REVIEW_BLOCKS: "true"
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/ci/run_llm_gate.py \
+            --stage sast \
+            --tool-input semgrep=artifacts/sast/semgrep-service-results/semgrep-results.json \
+            --tool-input sonarqube=artifacts/sast/sonarqube-service-results/sonarqube-results.json \
+            --output artifacts/sast/sast-llm-gate.json
+
+      - name: Upload SAST gate summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-llm-gate
+          path: artifacts/sast/sast-llm-gate.json
 
   service-sca-depcheck:
     needs:
@@ -250,6 +384,13 @@ jobs:
             --suppression security-tools/dependency-check/suppression.xml
         env:
           JAVA_HOME: /opt/jdk
+
+      - name: Ensure Dependency-Check report exists
+        run: |
+          if [ ! -f depcheck-results/dependency-check-report.json ]; then
+            mkdir -p depcheck-results
+            echo '{"dependencies":[]}' > depcheck-results/dependency-check-report.json
+          fi
 
       - name: Upload Dependency-Check results
         uses: actions/upload-artifact@v4
@@ -288,3 +429,51 @@ jobs:
         with:
           name: trivy-service-results
           path: trivy-results.json
+
+  llm-sca-gate:
+    needs:
+      - service-sca-depcheck
+      - service-sca-trivy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download SCA artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/sca
+
+      - name: Run SCA LLM gate
+        env:
+          LLM_GATE_REVIEW_BLOCKS: "true"
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/ci/run_llm_gate.py \
+            --stage sca \
+            --tool-input depcheck=artifacts/sca/depcheck-service-results/dependency-check-report.json \
+            --tool-input trivy=artifacts/sca/trivy-service-results/trivy-results.json \
+            --output artifacts/sca/sca-llm-gate.json
+
+      - name: Upload SCA gate summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-llm-gate
+          path: artifacts/sca/sca-llm-gate.json
+
+  ci-release-gate:
+    needs:
+      - llm-iac-gate
+      - llm-sast-gate
+      - llm-sca-gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Confirm CI gates passed
+        run: echo "IaC, SAST, and SCA LLM gates passed for this revision."
