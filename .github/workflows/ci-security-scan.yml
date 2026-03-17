@@ -39,20 +39,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: security-tools/semgrep/.semgrep.yml
-          generateSarif: "1"
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-
-      - name: Run Semgrep (JSON output)
         run: |
           pip install semgrep
           semgrep --config security-tools/semgrep/.semgrep.yml \
-                  --json \
-                  --output semgrep-results.json \
-                  . || true   # 취약점 발견해도 파이프라인 계속
+                  --json --output semgrep-results.json \
+                  . || true
+          semgrep --config security-tools/semgrep/.semgrep.yml \
+                  --sarif --output semgrep.sarif \
+                  . || true
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Upload Semgrep results
         uses: actions/upload-artifact@v4
