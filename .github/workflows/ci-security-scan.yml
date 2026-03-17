@@ -1,23 +1,35 @@
 name: CI Security Scan
 
-
 on:
   push:
     paths:
       - ".github/workflows/ci-security-scan.yml"
-      - "app/api-server-fastapi/**"
-      - "app/api-server-node/**"
-      - "app/api-server-spring/**"
-      - "app/frontend/**"
+      - "app/**"
+      - "backend/**"
+      - "frontend/**"
+      - "engine/**"
+      - "ismsp/**"
       - "infra/terraform/**"
+      - "security-tools/**"
+      - "scripts/**"
+      - "docker-compose.yml"
+      - "docker-compose.prod.yml"
+      - "Makefile"
   pull_request:
     paths:
       - ".github/workflows/ci-security-scan.yml"
-      - "app/api-server-fastapi/**"
-      - "app/api-server-node/**"
-      - "app/api-server-spring/**"
-      - "app/frontend/**"
+      - "app/**"
+      - "backend/**"
+      - "frontend/**"
+      - "engine/**"
+      - "ismsp/**"
       - "infra/terraform/**"
+      - "security-tools/**"
+      - "scripts/**"
+      - "docker-compose.yml"
+      - "docker-compose.prod.yml"
+      - "Makefile"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,18 +39,31 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      fastapi: ${{ steps.filter.outputs.fastapi }}
-      node: ${{ steps.filter.outputs.node }}
-      spring: ${{ steps.filter.outputs.spring }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      terraform: ${{ steps.filter.outputs.terraform }}
+      fastapi: ${{ steps.manual.outputs.fastapi || steps.filter.outputs.fastapi }}
+      node: ${{ steps.manual.outputs.node || steps.filter.outputs.node }}
+      spring: ${{ steps.manual.outputs.spring || steps.filter.outputs.spring }}
+      frontend_app: ${{ steps.manual.outputs.frontend_app || steps.filter.outputs.frontend_app }}
+      terraform: ${{ steps.manual.outputs.terraform || steps.filter.outputs.terraform }}
+      core: ${{ steps.manual.outputs.core || steps.filter.outputs.core }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Detect changed services
+      - name: Enable all scans for manual runs
+        id: manual
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "fastapi=true" >> "$GITHUB_OUTPUT"
+          echo "node=true" >> "$GITHUB_OUTPUT"
+          echo "spring=true" >> "$GITHUB_OUTPUT"
+          echo "frontend_app=true" >> "$GITHUB_OUTPUT"
+          echo "terraform=true" >> "$GITHUB_OUTPUT"
+          echo "core=true" >> "$GITHUB_OUTPUT"
+
+      - name: Detect changed areas
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@v3
         with:
           filters: |
@@ -51,18 +76,27 @@ jobs:
             spring:
               - ".github/workflows/ci-security-scan.yml"
               - "app/api-server-spring/**"
-            frontend:
+            frontend_app:
               - ".github/workflows/ci-security-scan.yml"
               - "app/frontend/**"
             terraform:
               - ".github/workflows/ci-security-scan.yml"
               - "infra/terraform/**"
+            core:
+              - ".github/workflows/ci-security-scan.yml"
+              - "backend/**"
+              - "frontend/**"
+              - "engine/**"
+              - "ismsp/**"
+              - "security-tools/**"
+              - "scripts/**"
+              - "docker-compose.yml"
+              - "docker-compose.prod.yml"
+              - "Makefile"
 
   fastapi-security-ci:
     needs: detect-changes
     if: needs.detect-changes.outputs.fastapi == 'true'
-  # ── 기존: 빌드 & 테스트 ──────────────────────────────────────────────────
-  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -71,9 +105,6 @@ jobs:
 
       - name: Set up Python
         uses: actions/setup-python@v5
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
@@ -83,7 +114,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r app/api-server-fastapi/requirements.txt
-          pip install pytest httpx bandit pip-audit checkov
+          pip install pytest httpx bandit pip-audit
 
       - name: Run FastAPI smoke tests
         env:
@@ -156,7 +187,7 @@ jobs:
 
   frontend-security-ci:
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: needs.detect-changes.outputs.frontend_app == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -165,8 +196,6 @@ jobs:
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
-
-      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
@@ -213,47 +242,80 @@ jobs:
         run: terraform fmt -check -recursive infra/terraform
 
       - name: Validate bootstrap Terraform
+        working-directory: infra/terraform/bootstrap
         run: |
-          cd infra/terraform/bootstrap
-          terraform init -backend=false
+          terraform init -backend=false -input=false
           terraform validate
 
       - name: Validate root Terraform stack
+        working-directory: infra/terraform
         run: |
-          cd infra/terraform
-          terraform init -backend=false
+          terraform init -backend=false -input=false
           terraform validate
 
       - name: Run Checkov IaC scan
         run: checkov -d infra/terraform --quiet --soft-fail
 
-      - run: python -m pip install --upgrade pip && pip install -r backend/requirements.txt
-
-      - run: cd frontend && npm install
-
-      - run: pytest backend/tests -q
-
-      - run: cd frontend && npm run build
-
-  # ── SAST: Semgrep ────────────────────────────────────────────────────────
-  sast-semgrep:
+  core-build-and-test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.core == 'true'
     runs-on: ubuntu-latest
-    needs: build-and-test
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Install root frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Run backend tests
+        run: pytest backend/tests -q
+
+      - name: Build root frontend
+        working-directory: frontend
+        run: npm run build
+
+  sast-semgrep:
+    needs:
+      - detect-changes
+      - core-build-and-test
+    if: needs.detect-changes.outputs.core == 'true'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write   # SARIF 업로드용
+      security-events: write
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Run Semgrep
         run: |
+          python -m pip install --upgrade pip
           pip install semgrep
-          semgrep --config security-tools/semgrep/.semgrep.yml \
-                  --json --output semgrep-results.json \
-                  . || true
-          semgrep --config security-tools/semgrep/.semgrep.yml \
-                  --sarif --output semgrep.sarif \
-                  . || true
+          semgrep --config security-tools/semgrep/.semgrep.yml --json --output semgrep-results.json . || true
+          semgrep --config security-tools/semgrep/.semgrep.yml --sarif --output semgrep.sarif . || true
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
@@ -270,14 +332,18 @@ jobs:
           sarif_file: semgrep.sarif
         continue-on-error: true
 
-  # ── SAST: SonarQube ──────────────────────────────────────────────────────
   sast-sonarqube:
+    needs:
+      - detect-changes
+      - core-build-and-test
+    if: needs.detect-changes.outputs.core == 'true'
     runs-on: ubuntu-latest
-    needs: build-and-test
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # SonarQube blame 분석에 전체 히스토리 필요
+          fetch-depth: 0
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v5
@@ -286,11 +352,10 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           args: >
-            -Dsonar.projectKey=secureflow
-            -Dsonar.sources=backend,frontend,engine,ismsp
+            -Dproject.settings=security-tools/sonarqube/sonar-project.properties
             -Dsonar.python.version=3.11
 
-      - name: Export SonarQube Issues (JSON)
+      - name: Export SonarQube issues
         run: |
           SONAR_URL="${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=secureflow&types=VULNERABILITY&resolved=false&ps=500"
           curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
@@ -302,12 +367,16 @@ jobs:
           name: sonarqube-results
           path: sonarqube-results.json
 
-  # ── SCA: OWASP Dependency-Check ──────────────────────────────────────────
   sca-depcheck:
+    needs:
+      - detect-changes
+      - core-build-and-test
+    if: needs.detect-changes.outputs.core == 'true'
     runs-on: ubuntu-latest
-    needs: build-and-test
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
       - name: Run OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@main
@@ -328,27 +397,28 @@ jobs:
           name: depcheck-results
           path: depcheck-results/
 
-  # ── DAST: OWASP ZAP (Baseline) ───────────────────────────────────────────
-  # 배포된 앱이 있을 때만 실행 (main 브랜치 push 또는 수동 트리거)
   dast-zap:
+    needs:
+      - detect-changes
+      - core-build-and-test
+    if: needs.detect-changes.outputs.core == 'true' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    needs: build-and-test
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Start app (Docker Compose)
-        run: |
-          docker compose up -d --wait || true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Start app
+        run: docker compose up -d --wait || true
         continue-on-error: true
 
-      - name: Run ZAP Baseline Scan
+      - name: Run ZAP baseline scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: ${{ vars.ZAP_TARGET_URL || 'http://localhost:3000' }}
           rules_file_name: security-tools/owasp-zap/zap-config.yaml
           cmd_options: "-J zap-results.json"
-          fail_action: false   # 취약점 발견해도 파이프라인 실패 안 함
+          fail_action: false
 
       - name: Upload ZAP results
         uses: actions/upload-artifact@v4
