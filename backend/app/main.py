@@ -1,12 +1,15 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from backend.app.api.router import api_router
+from app.routers.scan_results import router as scan_results_router
+from app.routers.crosscheck import router as crosscheck_router
+from app.core.database import engine, Base
 
-app = FastAPI(title="SecureFlow API", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+Base.metadata.create_all(bind=engine)
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+app = FastAPI()
 
-app.include_router(api_router)
+app.include_router(scan_results_router)
+app.include_router(crosscheck_router)
+
+@app.get("/")
+def root():
+    return {"message": "DevSecOps API running"}
