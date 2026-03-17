@@ -12,3 +12,9 @@ from app.schemas.cross_validation import (
     CrosscheckSummary,
     CrosscheckReport,
 )
+
+from .crosscheck import (
+    CrosscheckRunRequest,
+    CrosscheckRunResponse,
+    CrosscheckResultResponse,
+)

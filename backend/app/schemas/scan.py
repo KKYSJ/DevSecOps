@@ -1,4 +1,6 @@
 from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional, Any
 
 
 class ScanCreate(BaseModel):
@@ -11,39 +13,125 @@ class ScanResponse(BaseModel):
     status: str
 
 
-# 공통 스캔 결과 스키마
-class BaseScanResult(BaseModel):
-    tool_name: str
-    severity: str
+class ToolInfo(BaseModel):
+    name: str
+    category: str
+    version: Optional[str] = None
+
+
+class PipelineInfo(BaseModel):
+    project_name: str
+    repository: str
+    branch: str
+    commit_sha: str
+    workflow_run_id: str
+    scanned_at: datetime
+
+
+class ConfidenceInfo(BaseModel):
+    tool_confidence: Optional[str] = None
+    correlation_confidence: Optional[str] = None
+    llm_confidence: Optional[str] = None
+    final_confidence_score: Optional[float] = None
+
+
+class TaxonomyInfo(BaseModel):
+    cwe: list[Any] = []
+    cve: list[Any] = []
+    owasp: list[Any] = []
+    isms_p: list[Any] = []
+
+
+class FindingInfo(BaseModel):
+    id: str
+    normalized_type: str
     title: str
-    description: str | None = None
-    file_path: str | None = None
-    line_number: int | None = None
-    status: str | None = None
+    description: Optional[str] = None
+    severity: str
+    confidence: Optional[ConfidenceInfo] = None
+    status: str
+    taxonomy: Optional[TaxonomyInfo] = None
 
 
-# IaC 스캔 결과
-class IaCScanResult(BaseScanResult):
-    resource: str | None = None
-    rule_id: str | None = None
+class LocationInfo(BaseModel):
+    type: str
+    path: Optional[str] = None
+    url: Optional[str] = None
+    line_start: Optional[int] = None
+    line_end: Optional[int] = None
+    resource_type: Optional[str] = None
+    resource_name: Optional[str] = None
+    resource_address: Optional[str] = None
+    provider: Optional[str] = None
+    module: Optional[str] = None
 
 
-# SCA 스캔 결과
-class SCAScanResult(BaseScanResult):
-    package_name: str | None = None
-    installed_version: str | None = None
-    fixed_version: str | None = None
-    cve_id: str | None = None
+class EvidencePolicy(BaseModel):
+    policy_id: Optional[str] = None
+    policy_name: Optional[str] = None
 
 
-# SAST 스캔 결과
-class SASTScanResult(BaseScanResult):
-    rule_id: str | None = None
-    cwe: str | None = None
+class EvidenceInfo(BaseModel):
+    summary: Optional[str] = None
+    config_snippet: Optional[str] = None
+    violated_policy: Optional[EvidencePolicy] = None
+    actual_value: Optional[str] = None
+    expected_value: Optional[str] = None
 
 
-# DAST 스캔 결과
-class DASTScanResult(BaseScanResult):
-    endpoint: str | None = None
-    parameter: str | None = None
-    cwe: str | None = None
+class RemediationInfo(BaseModel):
+    summary: Optional[str] = None
+    recommended_action: Optional[str] = None
+    fix_example: Optional[str] = None
+    patch_available: Optional[bool] = None
+
+
+class RawDetailInfo(BaseModel):
+    check_id: Optional[str] = None
+    check_name: Optional[str] = None
+    resource: Optional[str] = None
+    file: Optional[str] = None
+    original_severity: Optional[str] = None
+
+
+class IaCScanResult(BaseModel):
+    schema_version: str
+    tool: ToolInfo
+    pipeline: PipelineInfo
+    finding: FindingInfo
+    location: LocationInfo
+    evidence: Optional[EvidenceInfo] = None
+    remediation: Optional[RemediationInfo] = None
+    raw_detail: Optional[RawDetailInfo] = None
+
+
+class SCAScanResult(BaseModel):
+    schema_version: str
+    tool: ToolInfo
+    pipeline: PipelineInfo
+    finding: FindingInfo
+    evidence: Optional[EvidenceInfo] = None
+    remediation: Optional[RemediationInfo] = None
+    raw_detail: Optional[RawDetailInfo] = None
+
+
+class SASTScanResult(BaseModel):
+    schema_version: str
+    tool: ToolInfo
+    pipeline: PipelineInfo
+    finding: FindingInfo
+    location: LocationInfo
+    evidence: Optional[EvidenceInfo] = None
+    remediation: Optional[RemediationInfo] = None
+    raw_detail: Optional[RawDetailInfo] = None
+
+
+class DASTScanResult(BaseModel):
+    schema_version: str
+    tool: ToolInfo
+    pipeline: PipelineInfo
+    finding: FindingInfo
+    location: LocationInfo
+    evidence: Optional[EvidenceInfo] = None
+    remediation: Optional[RemediationInfo] = None
+    raw_detail: Optional[RawDetailInfo] = None

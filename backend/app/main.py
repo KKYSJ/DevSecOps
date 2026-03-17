@@ -1,7 +1,8 @@
 from fastapi import FastAPI
+from app.core.database import engine, Base
+from app.core import models
 from app.routers.scan_results import router as scan_results_router
 from app.routers.crosscheck import router as crosscheck_router
-from app.core.database import engine, Base
 
 Base.metadata.create_all(bind=engine)
 
