@@ -53,6 +53,20 @@ terraform.rc
 # Security scan results (로컬 실행 결과)
 semgrep-results.json
 sonarqube-results.json
+trivy-results.json
+tfsec-results.json
+checkov-results.json
 zap-results.json
 depcheck-results.json
+dependency-check-report.json
 zap.yaml
+
+# Generated reports
+*.pdf
+engine/output/
+reports/
+
+# Python
+*.egg-info/
+.mypy_cache/
+.ruff_cache/

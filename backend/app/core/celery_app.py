@@ -5,4 +5,5 @@ celery_app = Celery(
     "secureflow",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
+    include=["backend.app.workers.scan_worker"],
 )
