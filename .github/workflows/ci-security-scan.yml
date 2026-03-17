@@ -260,6 +260,8 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.core == 'true'
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
 
     steps:
       - name: Check out source
