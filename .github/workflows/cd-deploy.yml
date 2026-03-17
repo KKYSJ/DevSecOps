@@ -2,7 +2,7 @@ name: CD Deploy
 
 on:
   push:
-    branches: ["SEO"]
+    branches: ["dev"]
     paths:
       - ".github/workflows/cd-deploy.yml"
       - ".github/workflows/reusable-ecs-deploy.yml"
