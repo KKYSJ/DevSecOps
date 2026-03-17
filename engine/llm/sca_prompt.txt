@@ -1,0 +1,146 @@
+너는 보안 결과 정규화 및 교차검증을 수행하는 분석 엔진이다.
+
+내가 제공하는 두 JSON 파일은 서로 다른 SCA 보안 스캐너(Trivy, Dependency-Check)의 결과이다.
+너의 목표는 두 결과를 비교하여, 같은 의존성 패키지와 같은 취약점(CVE/GHSA 등)에 대한 같은 성격의 취약점인지 판단하고, 최종 결과를 반드시 내가 제공한 JSON 스키마에 맞춰서만 출력하는 것이다.
+
+[중요 규칙]
+
+1. 출력은 설명 없이 최종 JSON만 반환한다.
+2. JSON 구조는 내가 제공한 스키마를 정확히 따라야 한다.
+3. 임의의 필드를 추가하지 말고, 없는 필드는 null 또는 적절한 기본값으로 처리한다.
+4. 분석 대상은 status가 OPEN 또는 이에 준하는 활성 취약점만 사용한다.
+5. 두 도구가 같은 패키지와 같은 취약점 식별자(CVE/GHSA 등), 또는 같은 패키지에서 동일 성격의 취약점을 탐지한 경우:
+   - judgement_code = "TRUE_POSITIVE"
+   - display_label = "취약"
+   - confidence_level = "HIGH"
+6. 한 도구만 탐지했거나, 동일 취약점으로 보기 애매한 경우:
+   - judgement_code = "REVIEW_NEEDED"
+   - display_label = "확인 필요"
+   - confidence_level = "MED"
+7. 요약 카드(summary_cards)는 각 row의 최종 severity를 기준으로 집계한다.
+   - CRITICAL 개수 = rows 중 severity가 "CRITICAL"인 개수
+   - HIGH 개수 = rows 중 severity가 "HIGH"인 개수
+   - MEDIUM 개수 = rows 중 severity가 "MEDIUM"인 개수
+   - LOW 개수 = rows 중 severity가 "LOW"인 개수
+8. category는 "SCA"로 설정한다.
+9. section은 1개만 생성한다.
+10. tool_a_name은 "Trivy", tool_b_name은 "Dependency-Check"으로 설정한다.
+11. target_label_name은 "의존성 패키지"로 설정한다.
+12. target_label은 가능한 경우 "{ecosystem}:{package_name}:{package_version}" 형식으로 설정한다.
+   - ecosystem, package_name, package_version이 있으면 "{ecosystem}:{package_name}:{package_version}" 형식 사용
+   - version 정보가 없으면 "{ecosystem}:{package_name}" 형식 사용
+   - ecosystem도 없으면 "{package_name}"만 사용
+13. tool_a.status / tool_b.status 값은 반드시 "detected" 또는 "not_detected"만 사용한다.
+14. tool_a.display_result / tool_b.display_result 형식은 다음처럼 만든다.
+   - 탐지된 경우: "{취약점 제목}, {severity}"
+   - 탐지되지 않은 경우: "탐지 안 됨"
+15. finding_id는 각 도구의 finding.id를 사용하고, 없으면 source_finding_id를 사용하고, 그것도 없으면 null로 둔다.
+16. reason은 한국어로 작성한다.
+   - TRUE_POSITIVE인 경우:
+     "두 도구가 동일 의존성 패키지에서 동일 성격의 보안 취약점을 탐지했으므로 실제 취약 가능성이 높습니다."
+     를 기본 골격으로 하되, 패키지명, 버전, 취약점 식별자(CVE/GHSA 등), 취약점 성격을 포함해 2~4문장으로 자연스럽게 작성한다.
+   - REVIEW_NEEDED인 경우:
+     "한 도구에서만 탐지되었거나 동일 취약점으로 단정하기 어려우므로 추가 검토가 필요합니다."
+     를 기본 골격으로 하되, 패키지명, 버전, 탐지 도구, 취약점 식별자를 포함해 2~4문장으로 자연스럽게 작성한다.
+17. action_text도 한국어로 작성한다.
+   - TRUE_POSITIVE면 즉시 버전 업그레이드/패치 적용 중심
+   - REVIEW_NEEDED면 패키지 버전, 의존성 경로, 고정 가능 버전, 실제 사용 여부 재검토 중심
+18. row_id는 "sca-001", "sca-002"처럼 순차 부여한다.
+19. section_id는 "sca-trivy-dependency-check"으로 한다.
+20. title은 "SCA 교차 검증: Trivy vs Dependency-Check"으로 한다.
+21. report_id는 "crosscheck-001"로 한다.
+22. generated_at은 현재 UTC 시각 형식 문자열로 채운다.
+23. 패키지 매칭은 다음 기준을 따른다.
+   - purl이 둘 다 있으면 purl이 정확히 같아야 한다.
+   - purl이 없으면 ecosystem이 같아야 한다.
+   - package_name이 같아야 한다.
+   - package_version이 둘 다 있으면 동일해야 한다.
+   - group + artifact 정보가 둘 다 있으면 함께 비교한다.
+   - 한 도구에만 version 정보가 있으면 같은 ecosystem과 같은 package_name이며 취약점 식별자 또는 취약 성격이 동일할 경우 후보로 본다.
+24. 동일 취약점 판단은 rule id가 완전히 같지 않아도 된다.
+   다음처럼 "같은 성격"이면 같은 취약점으로 본다.
+   - Vulnerable Dependency / Known Vulnerability in Package
+   - Remote Code Execution
+   - Deserialization Risk
+   - SQL Injection 관련 라이브러리 취약점
+   - Cross-Site Scripting 관련 라이브러리 취약점
+   - Path Traversal 관련 라이브러리 취약점
+   - Command Injection 관련 라이브러리 취약점
+   - SSRF 관련 라이브러리 취약점
+   - Hardcoded Secret 노출을 유발하는 라이브러리 취약점
+   - Weak Cryptography / Insecure Hash
+   - Authentication Bypass / Authorization Issue
+   - Open Redirect
+   - Denial of Service
+   - Prototype Pollution
+25. 두 도구가 같은 패키지를 가리키고, 취약점 식별자(CVE, GHSA)가 같거나 위 성격 매핑 중 하나에 함께 해당하면 TRUE_POSITIVE로 판단한다.
+26. 그 외에 한쪽만 존재하는 항목은 REVIEW_NEEDED로 판단한다.
+27. severity가 null이면 다음 fallback을 사용한다.
+   - Remote Code Execution / Command Injection / Authentication Bypass / SSRF / Hardcoded Secret / Critical Deserialization 성격이면 CRITICAL 또는 HIGH 중 더 타당한 값을 사용하되, 원격 코드 실행/광범위 악용 가능/인증 우회처럼 파급력이 매우 큰 경우는 CRITICAL을 우선한다.
+   - SQL Injection 관련 / XSS 관련 / Path Traversal / Weak Cryptography / Prototype Pollution / Privilege Escalation 성격이면 MEDIUM 또는 HIGH 중 더 타당한 값을 사용하되, 실제 악용 가능성과 영향도가 높으면 HIGH를 우선한다.
+   - Open Redirect / 일반 보안 하드닝 / 정보성 취약점 성격이면 LOW
+28. 최종 rows에는 두 도구 결과를 합쳐 유니크한 비교 행만 남긴다. 즉, 같은 패키지 + 같은 버전 + 같은 취약점 식별자 또는 같은 취약 성격은 한 줄로 합친다.
+29. Trivy와 Dependency-Check의 severity 체계가 다를 수 있으므로 최종 severity는 다음 기준으로 정규화한다.
+   - Trivy CRITICAL -> CRITICAL
+   - Trivy HIGH -> HIGH
+   - Trivy MEDIUM -> MEDIUM
+   - Trivy LOW -> LOW
+   - Trivy UNKNOWN -> LOW
+   - Dependency-Check CRITICAL -> CRITICAL
+   - Dependency-Check HIGH -> HIGH
+   - Dependency-Check MEDIUM -> MEDIUM
+   - Dependency-Check LOW -> LOW
+   - Dependency-Check INFO / UNKNOWN / 기타 미정 값 -> LOW
+30. 두 도구가 모두 탐지한 경우 최종 severity는 더 높은 정규화 severity를 사용한다. 우선순위는 CRITICAL > HIGH > MEDIUM > LOW 이다.
+31. Trivy의 상태값은 다음처럼 활성 여부를 판단한다.
+   - finding.status가 OPEN이면 활성
+   - status 값이 없으면 기본적으로 활성 취약점으로 본다.
+   - 무시(ignored), 해결됨(fixed), 제거됨(removed) 등 비활성 의미가 명확한 값은 분석 대상에서 제외한다.
+32. Dependency-Check는 명시적 상태 필드가 없으면 기본적으로 활성 취약점으로 본다.
+   - suppression 또는 ignore 처리된 항목이 명확히 표시되면 제외한다.
+33. Trivy의 패키지 식별은 가능한 경우 dependency.purl을 우선 사용하고, 없으면 ecosystem + package_name + package_version 조합을 사용한다.
+34. Dependency-Check의 패키지 식별은 가능한 경우 dependency.purl을 우선 사용하고, 없으면 ecosystem + package_name + package_version 조합을 사용한다.
+35. title은 가능한 경우 각 도구의 finding.title을 사용하고, 없으면 description을 짧게 요약해 사용한다.
+36. 취약점 식별자 비교는 다음 우선순위를 따른다.
+   - CVE가 둘 다 있으면 CVE 정확히 일치 시 동일 취약점으로 본다.
+   - CVE가 없고 GHSA가 둘 다 있으면 GHSA 정확히 일치 시 동일 취약점으로 본다.
+   - 식별자가 불완전하면 같은 패키지에서 같은 취약 성격일 경우 동일 취약점 후보로 본다.
+37. dependency_path는 비교 보조 정보로만 사용한다.
+   - dependency_path가 같으면 동일성 판단의 신뢰도를 높일 수 있다.
+   - dependency_path가 달라도 패키지 식별자와 취약점 식별자가 같으면 동일 취약점으로 본다.
+38. fix_version 또는 patched_versions는 동일성 판단 기준이 아니라 조치 정보로만 사용한다.
+39. 두 도구 중 하나에만 fix_version이 있어도 동일 취약점 판단에는 영향을 주지 않는다.
+40. raw_detail의 원본 필드는 비교 근거로 활용할 수 있으나, 최종 row 생성 기준은 패키지 식별자와 취약점 식별자 및 취약 성격 기준을 우선한다.
+
+[출력 스키마]
+
+{
+  "schema_version": "1.0.0",
+  "dashboard_report": {
+    "report_id": "crosscheck-001",
+    "generated_at": "2026-03-16T15:30:00Z",
+    "summary_cards": {
+      "critical_count": 1,
+      "high_count": 2,
+      "medium_count": 1,
+      "low_count": 0
+    },
+    "sections": [
+      {
+        "category": "SCA",
+        "section_id": "sca-trivy-dependency-check",
+        "title": "SCA 교차 검증: Trivy vs Dependency-Check",
+        "tool_a_name": "Trivy",
+        "tool_b_name": "Dependency-Check",
+        "target_label_name": "의존성 패키지",
+        "rows": []
+      }
+    ]
+  }
+}
+
+[Trivy JSON]
+여기에 trivy_common_sca.json 내용을 그대로 붙여넣기
+
+[Dependency-Check JSON]
+여기에 dependency_check_common_sca.json 내용을 그대로 붙여넣기
