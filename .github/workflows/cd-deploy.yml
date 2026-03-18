@@ -91,6 +91,8 @@ jobs:
             branch_name="${{ inputs.branch_name }}"
             source_sha="${{ inputs.source_sha }}"
             service="${{ inputs.service }}"
+            requested_staging="${{ inputs.run_staging && 'true' || 'false' }}"
+            requested_production="${{ inputs.run_production && 'true' || 'false' }}"
 
             if [ -z "$branch_name" ]; then
               branch_name="${GITHUB_REF_NAME}"
@@ -104,11 +106,11 @@ jobs:
               service="all"
             fi
 
-            if [ "${{ inputs.run_staging }}" = "true" ]; then
+            if [ "$requested_staging" = "true" ]; then
               run_staging="true"
             fi
 
-            if [ "${{ inputs.run_production }}" = "true" ] && [ "$branch_name" = "main" ]; then
+            if [ "$requested_production" = "true" ] && [ "$branch_name" = "main" ]; then
               run_production="true"
             fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
