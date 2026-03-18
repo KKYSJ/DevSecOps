@@ -199,6 +199,7 @@ jobs:
 
       - name: Run IaC LLM gate
         env:
+          LLM_GATE_ADVISORY_MODE: "true"
           LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -336,6 +337,7 @@ jobs:
 
       - name: Run SAST LLM gate
         env:
+          LLM_GATE_ADVISORY_MODE: "true"
           LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -346,6 +348,7 @@ jobs:
             --output artifacts/sast/sast-llm-gate.json
 
       - name: Upload SAST gate summary
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sast-llm-gate
@@ -453,6 +456,7 @@ jobs:
 
       - name: Run SCA LLM gate
         env:
+          LLM_GATE_ADVISORY_MODE: "true"
           LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -463,6 +467,7 @@ jobs:
             --output artifacts/sca/sca-llm-gate.json
 
       - name: Upload SCA gate summary
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sca-llm-gate

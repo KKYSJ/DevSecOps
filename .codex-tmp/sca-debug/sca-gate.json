@@ -1,0 +1,94 @@
+{
+  "stage": "sca",
+  "prompt_file": "engine\\llm\\sca_prompt.txt",
+  "tool_summaries": [
+    {
+      "tool": "depcheck",
+      "path": ".codex-tmp\\sca-debug\\depcheck.json",
+      "summary": {
+        "total": 6,
+        "critical": 0,
+        "high": 6,
+        "medium": 0,
+        "low": 0,
+        "info": 0
+      },
+      "executed": true,
+      "disabled_reason": null
+    },
+    {
+      "tool": "trivy",
+      "path": ".codex-tmp\\sca-debug\\trivy.json",
+      "summary": {
+        "total": 0,
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "info": 0
+      },
+      "executed": true,
+      "disabled_reason": null
+    }
+  ],
+  "combined_summary": {
+    "total": 6,
+    "critical": 0,
+    "high": 6,
+    "medium": 0,
+    "low": 0,
+    "info": 0
+  },
+  "divergence_ratio": 1.0,
+  "llm_analysis": {
+    "component": "analyzer",
+    "payload": {
+      "stage": "sca",
+      "prompt_file": "engine\\llm\\sca_prompt.txt",
+      "tool_summaries": [
+        {
+          "tool": "depcheck",
+          "path": ".codex-tmp\\sca-debug\\depcheck.json",
+          "summary": {
+            "total": 6,
+            "critical": 0,
+            "high": 6,
+            "medium": 0,
+            "low": 0,
+            "info": 0
+          },
+          "executed": true,
+          "disabled_reason": null
+        },
+        {
+          "tool": "trivy",
+          "path": ".codex-tmp\\sca-debug\\trivy.json",
+          "summary": {
+            "total": 0,
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "info": 0
+          },
+          "executed": true,
+          "disabled_reason": null
+        }
+      ],
+      "combined_summary": {
+        "total": 6,
+        "critical": 0,
+        "high": 6,
+        "medium": 0,
+        "low": 0,
+        "info": 0
+      },
+      "divergence_ratio": 1.0
+    }
+  },
+  "decision": "review",
+  "reasons": [
+    "high findings 6 exceed threshold 5",
+    "advisory mode enabled: fail downgraded to review"
+  ]
+}

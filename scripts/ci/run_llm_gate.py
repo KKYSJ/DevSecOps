@@ -271,6 +271,11 @@ def main() -> int:
             decision = "review"
             reasons.append(f"{item['tool']} did not execute: {item['disabled_reason'] or 'no reason provided'}")
 
+    advisory_mode = os.getenv("LLM_GATE_ADVISORY_MODE", "false").lower() == "true"
+    if advisory_mode and decision == "fail":
+        decision = "review"
+        reasons.append("advisory mode enabled: fail downgraded to review")
+
     output = {
         "stage": args.stage,
         "prompt_file": str(prompt_file),
