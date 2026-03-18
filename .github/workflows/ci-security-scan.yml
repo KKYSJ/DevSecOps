@@ -303,6 +303,8 @@ jobs:
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.sources=app/api-server-fastapi,app/api-server-node,app/api-server-spring,app/frontend
             -Dsonar.python.version=3.11
+            -Dsonar.java.binaries=.
+            -Dsonar.exclusions=**/*.java
 
       - name: Export SonarQube issues
         if: steps.sonar-config.outputs.enabled == 'true'
