@@ -73,20 +73,7 @@ jobs:
           run_staging="false"
           run_production="false"
 
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
-              branch_name="${{ github.event.workflow_run.head_branch }}"
-              source_sha="${{ github.event.workflow_run.head_sha }}"
-              run_staging="true"
-
-              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ]; then
-                proceed="true"
-              elif [ "$branch_name" = "main" ]; then
-                proceed="true"
-                run_production="true"
-              fi
-            fi
-          elif [ "${{ github.event_name }}" = "workflow_call" ]; then
+          if [ -n "${{ inputs.branch_name }}" ] || [ -n "${{ inputs.source_sha }}" ]; then
             proceed="true"
             branch_name="${{ inputs.branch_name }}"
             source_sha="${{ inputs.source_sha }}"
@@ -113,6 +100,19 @@ jobs:
             if [ "$requested_production" = "true" ] && [ "$branch_name" = "main" ]; then
               run_production="true"
             fi
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+              branch_name="${{ github.event.workflow_run.head_branch }}"
+              source_sha="${{ github.event.workflow_run.head_sha }}"
+              run_staging="true"
+
+              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ]; then
+                proceed="true"
+              elif [ "$branch_name" = "main" ]; then
+                proceed="true"
+                run_production="true"
+              fi
+            fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             proceed="true"
             branch_name="${GITHUB_REF_NAME}"
@@ -124,6 +124,14 @@ jobs:
               run_production="true"
             fi
           fi
+
+          echo "event_name=${{ github.event_name }}"
+          echo "proceed=$proceed"
+          echo "branch_name=$branch_name"
+          echo "source_sha=$source_sha"
+          echo "service=$service"
+          echo "run_staging=$run_staging"
+          echo "run_production=$run_production"
 
           echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
           echo "branch_name=$branch_name" >> "$GITHUB_OUTPUT"
