@@ -603,14 +603,15 @@ jobs:
         run: |
           echo "Worker 파싱 완료 대기 중..."
           for i in $(seq 1 30); do
-            PENDING=$(curl -s "${BACKEND_URL}/api/v1/scans" | grep -o "\"commit_hash\":\"${COMMIT_SHA}\"[^}]*\"status\":\"received\"" | wc -l || echo "0")
-            PROCESSING=$(curl -s "${BACKEND_URL}/api/v1/scans" | grep -o "\"commit_hash\":\"${COMMIT_SHA}\"[^}]*\"status\":\"processing\"" | wc -l || echo "0")
-            WAIT=$((PENDING + PROCESSING))
-            if [ "$WAIT" -eq 0 ]; then
+            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
+            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
+            echo "  완료: ${DONE}건, 대기: ${WAIT}건 (${i}/30)"
+            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
               echo "✅ 모든 스캔 파싱 완료"
               break
             fi
-            echo "  대기 중... (미완료: ${WAIT}건, ${i}/30)"
             sleep 5
           done
 
