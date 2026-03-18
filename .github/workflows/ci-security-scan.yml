@@ -170,8 +170,8 @@ jobs:
           docker run --rm -v "${PWD}:/workspace" aquasec/tfsec:latest \
             /workspace/infra/terraform \
             --format json \
-            --out /workspace/tfsec-results.json || true
-          if [ ! -f tfsec-results.json ]; then
+            > tfsec-results.json 2>/dev/null || true
+          if [ ! -f tfsec-results.json ] || [ ! -s tfsec-results.json ]; then
             echo '{"results":[]}' > tfsec-results.json
           fi
 
@@ -323,11 +323,29 @@ jobs:
             -Dsonar.python.version=3.11
             -Dsonar.java.binaries=app/api-server-spring/target/classes
 
+      - name: SonarCloud 분석 완료 대기
+        if: steps.sonar-config.outputs.enabled == 'true'
+        run: |
+          echo "SonarCloud 분석 완료 대기 중..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -u "${SONAR_TOKEN}:" \
+              "${SONAR_HOST_URL}/api/ce/activity?component=${{ vars.SONAR_PROJECT_KEY }}&ps=1" \
+              | grep -o '"status":"[^"]*"' | head -1 || echo "")
+            echo "  상태: $STATUS ($i/12)"
+            if echo "$STATUS" | grep -q "SUCCESS"; then
+              echo "✅ 분석 완료"
+              break
+            fi
+            sleep 10
+          done
+
       - name: Export SonarQube issues
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${{ vars.SONAR_PROJECT_KEY }}&types=VULNERABILITY&resolved=false&ps=500"
+          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${{ vars.SONAR_PROJECT_KEY }}&types=VULNERABILITY,BUG,CODE_SMELL&severities=CRITICAL,MAJOR,BLOCKER&resolved=false&ps=500"
           curl -s -u "${SONAR_TOKEN}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
+          ISSUES=$(grep -o '"total":[0-9]*' sonarqube-results.json | head -1 || echo "0")
+          echo "SonarCloud issues: $ISSUES"
 
       - name: Upload SonarQube results
         uses: actions/upload-artifact@v4
