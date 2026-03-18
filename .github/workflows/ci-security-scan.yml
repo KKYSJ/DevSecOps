@@ -301,6 +301,7 @@ jobs:
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
       SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION || vars.SONAR_ORGANIZATION }}
       SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY || vars.SONAR_PROJECT_KEY }}
+      SONAR_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
 
     steps:
       - name: Check out source
@@ -359,10 +360,44 @@ jobs:
             -Dsonar.java.binaries=app/api-server-spring/target/classes
             -Dsonar.python.version=3.11
 
+      - name: Wait for SonarCloud server processing
+        if: steps.sonar-config.outputs.enabled == 'true'
+        run: |
+          if [ ! -f .scannerwork/report-task.txt ]; then
+            echo "No Sonar scanner task file found. Skipping processing wait."
+            exit 0
+          fi
+
+          CE_TASK_URL="$(grep '^ceTaskUrl=' .scannerwork/report-task.txt | cut -d= -f2-)"
+          if [ -z "$CE_TASK_URL" ]; then
+            echo "No ceTaskUrl found in report-task.txt. Skipping processing wait."
+            exit 0
+          fi
+
+          for attempt in $(seq 1 20); do
+            RESPONSE="$(curl -s -u "${SONAR_TOKEN}:" "$CE_TASK_URL")"
+            STATUS="$(printf '%s' "$RESPONSE" | python -c "import json,sys; print(json.load(sys.stdin).get('task', {}).get('status', ''))")"
+            echo "SonarCloud CE task status: ${STATUS:-unknown} (attempt ${attempt}/20)"
+
+            if [ "$STATUS" = "SUCCESS" ]; then
+              exit 0
+            fi
+
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELED" ]; then
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          echo "Timed out waiting for SonarCloud server-side processing."
+          exit 1
+
       - name: Export SonarQube issues
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&types=VULNERABILITY&resolved=false&ps=500"
+          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH_NAME}&types=VULNERABILITY&resolved=false&ps=500"
           curl -s -u "${SONAR_TOKEN}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
 
       - name: Upload SonarQube results
