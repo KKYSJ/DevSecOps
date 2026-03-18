@@ -574,6 +574,24 @@ jobs:
           upload "checkov"  "scan-results/checkov-results/checkov-results.json"
         continue-on-error: true
 
+      - name: Worker 파싱 완료 대기
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "Worker 파싱 완료 대기 중..."
+          for i in $(seq 1 30); do
+            PENDING=$(curl -s "${BACKEND_URL}/api/v1/scans" | grep -o "\"commit_hash\":\"${COMMIT_SHA}\"[^}]*\"status\":\"received\"" | wc -l || echo "0")
+            PROCESSING=$(curl -s "${BACKEND_URL}/api/v1/scans" | grep -o "\"commit_hash\":\"${COMMIT_SHA}\"[^}]*\"status\":\"processing\"" | wc -l || echo "0")
+            WAIT=$((PENDING + PROCESSING))
+            if [ "$WAIT" -eq 0 ]; then
+              echo "✅ 모든 스캔 파싱 완료"
+              break
+            fi
+            echo "  대기 중... (미완료: ${WAIT}건, ${i}/30)"
+            sleep 5
+          done
+
       - name: Phase 1 분석 실행 (교차검증 + 게이트 결정)
         if: env.BACKEND_URL != ''
         env:
