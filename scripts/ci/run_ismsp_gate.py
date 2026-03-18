@@ -28,6 +28,14 @@ def load_json(path: Path) -> dict:
     return json.loads(content)
 
 
+def load_mapping(path: Path) -> list[dict]:
+    data = load_json(path)
+    if isinstance(data, dict):
+        items = data.get("items", [])
+        return items if isinstance(items, list) else []
+    return data if isinstance(data, list) else []
+
+
 def main() -> int:
     args = parse_args()
     gate_summaries = [load_json(Path(item)) for item in args.gate_input]
@@ -43,7 +51,8 @@ def main() -> int:
     }
 
     checker_result = run_checker(evidence)
-    evaluator_result = evaluate(evidence, mapping=str(mapping_path) if mapping_path.exists() else None)
+    evaluator_mapping = load_mapping(mapping_path) if mapping_path.exists() else None
+    evaluator_result = evaluate(evidence, mapping=evaluator_mapping)
 
     if "fail" in gate_decisions:
         decision = "fail"

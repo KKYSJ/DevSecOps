@@ -34,6 +34,25 @@ def load_mapping() -> list:
     return data["items"]
 
 
+def normalize_mapping(mapping: Any) -> list[dict]:
+    if mapping is None:
+        return load_mapping()
+
+    if isinstance(mapping, (str, Path)):
+        with open(mapping, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            items = data.get("items", [])
+            return items if isinstance(items, list) else []
+        return data if isinstance(data, list) else []
+
+    if isinstance(mapping, dict):
+        items = mapping.get("items", [])
+        return items if isinstance(items, list) else []
+
+    return mapping if isinstance(mapping, list) else []
+
+
 # ---------------------------------------------------------------------------
 # 날짜 파싱 헬퍼
 # ---------------------------------------------------------------------------
@@ -802,7 +821,7 @@ CHECK_HANDLERS = {
 # 퍼블릭 인터페이스
 # ---------------------------------------------------------------------------
 
-def evaluate(aws_config: dict, mapping: list = None) -> dict:
+def evaluate(aws_config: dict, mapping: list | str | Path | dict | None = None) -> dict:
     """
     수집된 AWS 설정과 ISMS-P 매핑을 비교하여 충족/미충족 여부를 판정합니다.
 
@@ -818,8 +837,7 @@ def evaluate(aws_config: dict, mapping: list = None) -> dict:
     dict
         총계, 통과/실패 수, 항목별 결과, 카테고리별 집계를 포함하는 평가 결과
     """
-    if mapping is None:
-        mapping = load_mapping()
+    mapping = normalize_mapping(mapping)
 
     results = []
     by_category: dict[str, dict] = {}
