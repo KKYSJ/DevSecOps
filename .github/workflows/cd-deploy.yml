@@ -59,7 +59,7 @@ jobs:
               source_sha="${{ github.event.workflow_run.head_sha }}"
               run_staging="true"
 
-              if [ "$branch_name" = "dev" ]; then
+              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ]; then
                 proceed="true"
               elif [ "$branch_name" = "main" ]; then
                 proceed="true"
