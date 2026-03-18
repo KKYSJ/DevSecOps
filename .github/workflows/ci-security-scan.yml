@@ -488,6 +488,9 @@ jobs:
     needs:
       - ci-release-gate
     if: github.event_name == 'push' && github.ref_name == 'SEO'
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/cd-deploy.yml
     with:
       branch_name: ${{ github.ref_name }}
