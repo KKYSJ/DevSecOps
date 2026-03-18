@@ -79,7 +79,7 @@ export default function Deployments() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-border bg-card sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center gap-3 mb-2">
             <Server size={32} className="text-foreground" />
             <div>
@@ -168,13 +168,12 @@ export default function Deployments() {
                   </div>
                   <div className="w-32 bg-muted rounded-full h-2 overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all ${
-                        deployment.status === 'success'
-                          ? 'bg-green-600'
-                          : deployment.status === 'failed'
-                            ? 'bg-red-600'
-                            : 'bg-amber-600'
-                      }`}
+                      className={`h-full rounded-full transition-all ${deployment.status === 'success'
+                        ? 'bg-green-600'
+                        : deployment.status === 'failed'
+                          ? 'bg-red-600'
+                          : 'bg-amber-600'
+                        }`}
                       style={{ width: `${deployment.pipelineProgress}%` }}
                     />
                   </div>

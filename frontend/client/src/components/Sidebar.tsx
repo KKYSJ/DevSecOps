@@ -11,8 +11,7 @@ interface SidebarProps {
 export default function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-30 h-14 flex items-center justify-between px-5"
-      style={{ backgroundColor: 'var(--sidebar)', borderBottom: '1px solid var(--sidebar-border)' }}
+      className="w-full h-16 flex items-center justify-between px-5 bg-background border-b border-border"
     >
       <div className="flex items-center gap-4">
         {/* Logo */}
@@ -21,11 +20,11 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             className="w-8 h-8 rounded-lg flex items-center justify-center"
             style={{ backgroundColor: 'oklch(0.45 0.18 250)' }}
           >
-            <Shield size={16} className="text-white" />
+            <Shield size={20} className="text-white" />
           </div>
           <div>
             <div
-              className="text-xs font-semibold tracking-widest uppercase"
+              className="text-s font-semibold tracking-widest uppercase"
               style={{ color: 'oklch(0.55 0.18 250)', letterSpacing: '0.12em' }}
             >
               DevSecOps
@@ -42,8 +41,8 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             onClick={() => onSectionChange('iac')}
             className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
             style={{
-              backgroundColor: activeSection !== 'isms' && activeSection !== 'siem' ? 'var(--sidebar-accent)' : 'transparent',
-              color: activeSection !== 'isms' && activeSection !== 'siem' ? 'oklch(0.88 0.01 250)' : 'oklch(0.55 0.015 250)',
+              backgroundColor: activeSection !== 'isms' && activeSection !== 'siem' ? 'oklch(0.45 0.18 250)' : 'transparent',
+              color: activeSection !== 'isms' && activeSection !== 'siem' ? 'white' : 'oklch(0.55 0.015 250)',
             }}
             onMouseEnter={(e) => {
               if (activeSection === 'isms' || activeSection === 'siem') {
@@ -65,8 +64,8 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             onClick={() => onSectionChange('siem')}
             className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
             style={{
-              backgroundColor: activeSection === 'siem' ? 'var(--sidebar-accent)' : 'transparent',
-              color: activeSection === 'siem' ? 'oklch(0.88 0.01 250)' : 'oklch(0.55 0.015 250)',
+              backgroundColor: activeSection === 'siem' ? 'oklch(0.45 0.18 250)' : 'transparent',
+              color: activeSection === 'siem' ? 'white' : 'oklch(0.55 0.015 250)',
             }}
             onMouseEnter={(e) => {
               if (activeSection !== 'siem') {
@@ -88,8 +87,8 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             onClick={() => onSectionChange('isms')}
             className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
             style={{
-              backgroundColor: activeSection === 'isms' ? 'var(--sidebar-accent)' : 'transparent',
-              color: activeSection === 'isms' ? 'oklch(0.88 0.01 250)' : 'oklch(0.55 0.015 250)',
+              backgroundColor: activeSection === 'isms' ? 'oklch(0.45 0.18 250)' : 'transparent',
+              color: activeSection === 'isms' ? 'white' : 'oklch(0.55 0.015 250)',
             }}
             onMouseEnter={(e) => {
               if (activeSection !== 'isms') {
@@ -122,7 +121,7 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             e.currentTarget.style.backgroundColor = 'transparent';
             e.currentTarget.style.color = 'oklch(0.45 0.015 250)';
           }}
-          onClick={() => {}}
+          onClick={() => { }}
         >
           <Settings size={16} />
           <span className="hidden sm:inline">설정</span>
