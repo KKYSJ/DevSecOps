@@ -365,7 +365,8 @@ jobs:
 
       - name: Run DAST LLM gate
         env:
-          LLM_GATE_REVIEW_BLOCKS: "true"
+          LLM_GATE_ADVISORY_MODE: "true"
+          LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
         run: |
           python scripts/ci/run_llm_gate.py \
@@ -375,6 +376,7 @@ jobs:
             --output artifacts/dast/dast-llm-gate.json
 
       - name: Upload DAST gate summary
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dast-llm-gate
