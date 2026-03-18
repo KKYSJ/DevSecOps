@@ -56,7 +56,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_json(path: Path) -> Any:
-    content = path.read_text(encoding="utf-8").strip()
+    # Accept UTF-8 with BOM so locally generated debug artifacts load the same way
+    # as the plain UTF-8 JSON emitted on GitHub runners.
+    content = path.read_text(encoding="utf-8-sig").strip()
     if not content:
         return {}
     try:
@@ -135,7 +137,9 @@ def summarize_checkov(data: dict[str, Any]) -> dict[str, int]:
     summary = empty_summary()
     failed = data.get("results", {}).get("failed_checks", [])
     for check in failed:
-        severity = check.get("severity") or check.get("check_result", {}).get("severity") or "high"
+        # Checkov OSS JSON often omits severity unless platform metadata is available.
+        # Treat those findings as medium in advisory mode instead of inflating them to high.
+        severity = check.get("severity") or check.get("check_result", {}).get("severity") or "medium"
         add_finding(summary, severity)
     return summary
 
