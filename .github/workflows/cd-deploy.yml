@@ -236,6 +236,13 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
+      - name: Configure AWS credentials for DAST target discovery
+        if: vars.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
       - name: Resolve DAST target URL
         id: target
         run: |
@@ -246,6 +253,26 @@ jobs:
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.STAGING_BASE_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.APP_BASE_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.STAGING_ALB_DNS_NAME }}" ]; then
+            TARGET_URL="http://${{ vars.STAGING_ALB_DNS_NAME }}"
+          fi
+          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.ALB_DNS_NAME }}" ]; then
+            TARGET_URL="http://${{ vars.ALB_DNS_NAME }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            ALB_DNS="$(aws elbv2 describe-load-balancers --names secureflow-dev-alb --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || true)"
+            if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
+              TARGET_URL="http://${ALB_DNS}"
+            fi
+          fi
+          TARGET_URL="${TARGET_URL%/}"
+          echo "resolved_target_url=${TARGET_URL}"
 
           if [ -n "$TARGET_URL" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -302,6 +329,13 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
+      - name: Configure AWS credentials for DAST target discovery
+        if: vars.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
       - name: Resolve DAST target URL
         id: target
         run: |
@@ -312,6 +346,26 @@ jobs:
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.STAGING_BASE_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.APP_BASE_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.STAGING_ALB_DNS_NAME }}" ]; then
+            TARGET_URL="http://${{ vars.STAGING_ALB_DNS_NAME }}"
+          fi
+          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.ALB_DNS_NAME }}" ]; then
+            TARGET_URL="http://${{ vars.ALB_DNS_NAME }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            ALB_DNS="$(aws elbv2 describe-load-balancers --names secureflow-dev-alb --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || true)"
+            if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
+              TARGET_URL="http://${ALB_DNS}"
+            fi
+          fi
+          TARGET_URL="${TARGET_URL%/}"
+          echo "resolved_target_url=${TARGET_URL}"
 
           if [ -n "$TARGET_URL" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -357,6 +411,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Configure AWS credentials for target discovery
+        if: vars.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
 
       - name: Download DAST artifacts
         uses: actions/download-artifact@v4
@@ -413,6 +474,26 @@ jobs:
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.STAGING_BASE_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.APP_BASE_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.STAGING_ALB_DNS_NAME }}" ]; then
+            TARGET_URL="http://${{ vars.STAGING_ALB_DNS_NAME }}"
+          fi
+          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.ALB_DNS_NAME }}" ]; then
+            TARGET_URL="http://${{ vars.ALB_DNS_NAME }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            ALB_DNS="$(aws elbv2 describe-load-balancers --names secureflow-dev-alb --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || true)"
+            if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
+              TARGET_URL="http://${ALB_DNS}"
+            fi
+          fi
+          TARGET_URL="${TARGET_URL%/}"
+          echo "resolved_target_url=${TARGET_URL}"
           echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
 
       - name: Run ISMS-P gate
