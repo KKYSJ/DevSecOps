@@ -521,12 +521,30 @@ jobs:
             local tool=$1 file=$2
             if [ -f "$file" ]; then
               echo "업로드: $tool"
-              HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
-                -H "Content-Type: application/json" \
-                -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
-                --max-time 30 || echo "000")
+              # 임시 payload 파일 생성 (큰 JSON도 처리 가능)
+              jq -n --arg tool "$tool" \
+                    --arg commit "${COMMIT_SHA}" \
+                    --arg project "secureflow" \
+                    --arg branch "${GITHUB_REF_NAME}" \
+                    --slurpfile raw "$file" \
+                    '{tool:$tool, raw_result:$raw[0], commit_hash:$commit, project_name:$project, branch:$branch}' \
+                    > /tmp/payload.json 2>/dev/null
+              if [ $? -eq 0 ]; then
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -X POST "${BACKEND_URL}/api/v1/scans" \
+                  -H "Content-Type: application/json" \
+                  -d @/tmp/payload.json \
+                  --max-time 60 || echo "000")
+              else
+                echo "  ⚠ jq 실패, 직접 전송 시도"
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -X POST "${BACKEND_URL}/api/v1/scans" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
+                  --max-time 30 || echo "000")
+              fi
               echo "  → HTTP $HTTP"
+              rm -f /tmp/payload.json
             else
               echo "건너뜀: $tool (파일 없음)"
             fi
