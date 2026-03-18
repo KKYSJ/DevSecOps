@@ -294,6 +294,20 @@ jobs:
             echo '{"issues":[],"tool_disabled":true,"reason":"missing_sonarqube_configuration"}' > sonarqube-results.json
           fi
 
+      - name: Set up JDK 17
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build Spring project
+        if: steps.sonar-config.outputs.enabled == 'true'
+        run: |
+          cd app/api-server-spring
+          chmod +x mvnw
+          ./mvnw compile -q -DskipTests || echo "Maven build failed, continuing without .class files"
+
       - name: SonarQube service scan
         if: steps.sonar-config.outputs.enabled == 'true'
         uses: SonarSource/sonarqube-scan-action@v5
@@ -303,8 +317,7 @@ jobs:
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.sources=app/api-server-fastapi,app/api-server-node,app/api-server-spring,app/frontend
             -Dsonar.python.version=3.11
-            -Dsonar.java.binaries=.
-            -Dsonar.exclusions=**/*.java
+            -Dsonar.java.binaries=app/api-server-spring/target/classes
 
       - name: Export SonarQube issues
         if: steps.sonar-config.outputs.enabled == 'true'
