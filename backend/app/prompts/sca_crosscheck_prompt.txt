@@ -138,9 +138,3 @@
     ]
   }
 }
-
-[Trivy JSON]
-여기에 trivy_common_sca.json 내용을 그대로 붙여넣기
-
-[Dependency-Check JSON]
-여기에 dependency_check_common_sca.json 내용을 그대로 붙여넣기

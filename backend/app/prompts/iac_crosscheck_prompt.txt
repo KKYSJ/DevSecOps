@@ -98,9 +98,3 @@
     ]
   }
 }
-
-[tfsec JSON]
-여기에 tfsec_common_iac.json 내용을 그대로 붙여넣기
-
-[Checkov JSON]
-여기에 checkov_common_iac_with_severity.json 내용을 그대로 붙여넣기

@@ -1,0 +1,531 @@
+name: CD Deploy
+
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: false
+        type: string
+      source_sha:
+        required: false
+        type: string
+      service:
+        required: false
+        default: "all"
+        type: string
+      run_staging:
+        required: false
+        default: true
+        type: boolean
+      run_production:
+        required: false
+        default: false
+        type: boolean
+  workflow_run:
+    workflows: ["CI Security Scan"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select deployment target"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      service:
+        description: "Select which service to deploy"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - fastapi
+          - node
+          - spring
+          - frontend
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  resolve-context:
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.context.outputs.proceed }}
+      branch_name: ${{ steps.context.outputs.branch_name }}
+      source_sha: ${{ steps.context.outputs.source_sha }}
+      service: ${{ steps.context.outputs.service }}
+      run_staging: ${{ steps.context.outputs.run_staging }}
+      run_production: ${{ steps.context.outputs.run_production }}
+
+    steps:
+      - name: Resolve deployment context
+        id: context
+        run: |
+          proceed="false"
+          branch_name="${GITHUB_REF_NAME}"
+          source_sha="${GITHUB_SHA}"
+          service="all"
+          run_staging="false"
+          run_production="false"
+
+          if [ -n "${{ inputs.branch_name }}" ] || [ -n "${{ inputs.source_sha }}" ]; then
+            proceed="true"
+            branch_name="${{ inputs.branch_name }}"
+            source_sha="${{ inputs.source_sha }}"
+            service="${{ inputs.service }}"
+            requested_staging="${{ inputs.run_staging && 'true' || 'false' }}"
+            requested_production="${{ inputs.run_production && 'true' || 'false' }}"
+
+            if [ -z "$branch_name" ]; then
+              branch_name="${GITHUB_REF_NAME}"
+            fi
+
+            if [ -z "$source_sha" ]; then
+              source_sha="${GITHUB_SHA}"
+            fi
+
+            if [ -z "$service" ]; then
+              service="all"
+            fi
+
+            if [ "$requested_staging" = "true" ]; then
+              run_staging="true"
+            fi
+
+            if [ "$requested_production" = "true" ] && [ "$branch_name" = "main" ]; then
+              run_production="true"
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+              branch_name="${{ github.event.workflow_run.head_branch }}"
+              source_sha="${{ github.event.workflow_run.head_sha }}"
+              run_staging="true"
+
+              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ] || [ "$branch_name" = "nayoung" ]; then
+                proceed="true"
+              elif [ "$branch_name" = "main" ]; then
+                proceed="true"
+                run_production="true"
+              fi
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            proceed="true"
+            branch_name="${GITHUB_REF_NAME}"
+            source_sha="${GITHUB_SHA}"
+            service="${{ inputs.service }}"
+            run_staging="true"
+
+            if [ "${{ inputs.environment }}" = "production" ] && [ "$branch_name" = "main" ]; then
+              run_production="true"
+            fi
+          fi
+
+          echo "event_name=${{ github.event_name }}"
+          echo "proceed=$proceed"
+          echo "branch_name=$branch_name"
+          echo "source_sha=$source_sha"
+          echo "service=$service"
+          echo "run_staging=$run_staging"
+          echo "run_production=$run_production"
+
+          echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
+          echo "branch_name=$branch_name" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "service=$service" >> "$GITHUB_OUTPUT"
+          echo "run_staging=$run_staging" >> "$GITHUB_OUTPUT"
+          echo "run_production=$run_production" >> "$GITHUB_OUTPUT"
+
+  deploy-staging-fastapi:
+    needs: resolve-context
+    if: |
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'fastapi')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: api-server-fastapi
+      ecs_cluster: secureflow-dev-cluster
+      ecs_service: secureflow-dev-api-server-fastapi
+      ecs_task_family: secureflow-dev-api-server-fastapi
+      ecs_container_name: api-server-fastapi
+      build_context: app/api-server-fastapi
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+  deploy-staging-node:
+    needs: resolve-context
+    if: |
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'node')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: api-server-node
+      ecs_cluster: secureflow-dev-cluster
+      ecs_service: secureflow-dev-api-server-node
+      ecs_task_family: secureflow-dev-api-server-node
+      ecs_container_name: api-server-node
+      build_context: app/api-server-node
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+  deploy-staging-spring:
+    needs: resolve-context
+    if: |
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'spring')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: api-server-spring
+      ecs_cluster: secureflow-dev-cluster
+      ecs_service: secureflow-dev-api-server-spring
+      ecs_task_family: secureflow-dev-api-server-spring
+      ecs_container_name: api-server-spring
+      build_context: app/api-server-spring
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+  deploy-staging-frontend:
+    needs: resolve-context
+    if: |
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'frontend')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: frontend
+      ecs_cluster: secureflow-dev-cluster
+      ecs_service: secureflow-dev-frontend
+      ecs_task_family: secureflow-dev-frontend
+      ecs_container_name: frontend
+      build_context: app/frontend
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+  service-dast-zap:
+    needs:
+      - resolve-context
+      - deploy-staging-fastapi
+      - deploy-staging-node
+      - deploy-staging-spring
+      - deploy-staging-frontend
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (needs.deploy-staging-fastapi.result == 'success' || needs.deploy-staging-node.result == 'success' || needs.deploy-staging-spring.result == 'success' || needs.deploy-staging-frontend.result == 'success') &&
+      needs.deploy-staging-fastapi.result != 'failure' &&
+      needs.deploy-staging-node.result != 'failure' &&
+      needs.deploy-staging-spring.result != 'failure' &&
+      needs.deploy-staging-frontend.result != 'failure'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+      - name: Resolve DAST target URL
+        id: target
+        run: |
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+
+          if [ -n "$TARGET_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo '{"site":[],"tool_disabled":true,"reason":"missing_dast_target_url"}' > zap-results.json
+          fi
+
+      - name: Run ZAP baseline scan
+        if: steps.target.outputs.enabled == 'true'
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ steps.target.outputs.target_url }}
+          rules_file_name: security-tools/owasp-zap/zap-config.yaml
+          cmd_options: "-J zap-results.json"
+          fail_action: false
+
+      - name: Ensure ZAP report exists
+        if: always()
+        run: |
+          if [ ! -f zap-results.json ]; then
+            echo '{"site":[]}' > zap-results.json
+          fi
+
+      - name: Upload ZAP results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-service-results
+          path: zap-results.json
+
+  service-dast-nuclei:
+    needs:
+      - resolve-context
+      - deploy-staging-fastapi
+      - deploy-staging-node
+      - deploy-staging-spring
+      - deploy-staging-frontend
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (needs.deploy-staging-fastapi.result == 'success' || needs.deploy-staging-node.result == 'success' || needs.deploy-staging-spring.result == 'success' || needs.deploy-staging-frontend.result == 'success') &&
+      needs.deploy-staging-fastapi.result != 'failure' &&
+      needs.deploy-staging-node.result != 'failure' &&
+      needs.deploy-staging-spring.result != 'failure' &&
+      needs.deploy-staging-frontend.result != 'failure'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+      - name: Resolve DAST target URL
+        id: target
+        run: |
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+
+          if [ -n "$TARGET_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo '{"tool_disabled":true,"reason":"missing_dast_target_url","findings":[]}' > nuclei-results.json
+          fi
+
+      - name: Run Nuclei web scan
+        if: steps.target.outputs.enabled == 'true'
+        run: |
+          docker run --rm -v "${PWD}:/workspace" projectdiscovery/nuclei:latest \
+            -u "${{ steps.target.outputs.target_url }}" \
+            -severity high,critical \
+            -json-export /workspace/nuclei-results.json || true
+
+      - name: Ensure Nuclei report exists
+        if: always()
+        run: |
+          if [ ! -f nuclei-results.json ]; then
+            echo '{"tool_disabled":true,"reason":"missing_nuclei_output","findings":[]}' > nuclei-results.json
+          fi
+
+      - name: Upload Nuclei results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nuclei-service-results
+          path: nuclei-results.json
+
+  llm-dast-gate:
+    needs:
+      - service-dast-zap
+      - service-dast-nuclei
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download DAST artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/dast
+
+      - name: Run DAST LLM gate
+        env:
+          LLM_GATE_ADVISORY_MODE: "true"
+          LLM_GATE_REVIEW_BLOCKS: "false"
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/ci/run_llm_gate.py \
+            --stage dast \
+            --tool-input zap=artifacts/dast/zap-service-results/zap-results.json \
+            --tool-input nuclei=artifacts/dast/nuclei-service-results/nuclei-results.json \
+            --output artifacts/dast/dast-llm-gate.json
+
+      - name: Upload DAST gate summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-llm-gate
+          path: artifacts/dast/dast-llm-gate.json
+
+      - name: SecureFlow에 DAST 결과 업로드
+        if: always() && env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          ZAP_FILE="artifacts/dast/zap-service-results/zap-results.json"
+          if [ -f "$ZAP_FILE" ]; then
+            echo "ZAP 결과 업로드..."
+            curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
+              -H "Content-Type: application/json" \
+              -d "{\"tool\":\"zap\",\"raw_result\":$(cat "$ZAP_FILE"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\"}" \
+              --max-time 30 || true
+
+            echo "Phase 2 분석 요청..."
+            curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+              -H "Content-Type: application/json" \
+              -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
+              --max-time 120 || true
+          fi
+        continue-on-error: true
+
+  isms-preprod-gate:
+    needs:
+      - resolve-context
+      - llm-dast-gate
+    if: needs.resolve-context.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download DAST gate artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/isms
+
+      - name: Resolve staging target URL
+        id: target
+        run: |
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+          echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Run ISMS-P gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/ci/run_ismsp_gate.py \
+            --environment ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }} \
+            --target-url "${{ steps.target.outputs.target_url }}" \
+            --gate-input artifacts/isms/dast-llm-gate/dast-llm-gate.json \
+            --output artifacts/isms/ismsp-gate.json
+
+      - name: Upload ISMS-P gate summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ismsp-gate
+          path: artifacts/isms/ismsp-gate.json
+
+  deploy-production-fastapi:
+    needs:
+      - resolve-context
+      - isms-preprod-gate
+    if: |
+      needs.resolve-context.outputs.run_production == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'fastapi')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME_PROD || vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: api-server-fastapi
+      ecs_cluster: secureflow-prod-cluster
+      ecs_service: secureflow-prod-api-server-fastapi
+      ecs_task_family: secureflow-prod-api-server-fastapi
+      ecs_container_name: api-server-fastapi
+      build_context: app/api-server-fastapi
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+  deploy-production-node:
+    needs:
+      - resolve-context
+      - isms-preprod-gate
+    if: |
+      needs.resolve-context.outputs.run_production == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'node')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME_PROD || vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: api-server-node
+      ecs_cluster: secureflow-prod-cluster
+      ecs_service: secureflow-prod-api-server-node
+      ecs_task_family: secureflow-prod-api-server-node
+      ecs_container_name: api-server-node
+      build_context: app/api-server-node
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+  deploy-production-spring:
+    needs:
+      - resolve-context
+      - isms-preprod-gate
+    if: |
+      needs.resolve-context.outputs.run_production == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'spring')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME_PROD || vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: api-server-spring
+      ecs_cluster: secureflow-prod-cluster
+      ecs_service: secureflow-prod-api-server-spring
+      ecs_task_family: secureflow-prod-api-server-spring
+      ecs_container_name: api-server-spring
+      build_context: app/api-server-spring
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+
+  deploy-production-frontend:
+    needs:
+      - resolve-context
+      - isms-preprod-gate
+    if: |
+      needs.resolve-context.outputs.run_production == 'true' &&
+      (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'frontend')
+    uses: ./.github/workflows/reusable-ecs-deploy.yml
+    with:
+      aws_region: ap-northeast-2
+      aws_role_to_assume: ${{ vars.AWS_ROLE_TO_ASSUME_PROD || vars.AWS_ROLE_TO_ASSUME }}
+      ecr_repository: frontend
+      ecs_cluster: secureflow-prod-cluster
+      ecs_service: secureflow-prod-frontend
+      ecs_task_family: secureflow-prod-frontend
+      ecs_container_name: frontend
+      build_context: app/frontend
+      git_ref: ${{ needs.resolve-context.outputs.source_sha }}

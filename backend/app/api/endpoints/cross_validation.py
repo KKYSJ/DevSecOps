@@ -1,6 +1,73 @@
-from fastapi import APIRouter
+"""
+교차 검증 대시보드 엔드포인트
+"""
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from backend.app.core.database import get_db
+
 router = APIRouter()
 
+_EMPTY_REPORT = {
+    "report_id": None,
+    "gate_decision": "ALLOW",
+    "total_score": 0.0,
+    "summary": {
+        "total_pairs": 0,
+        "severity_counts": {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0},
+        "judgement_counts": {"TRUE_POSITIVE": 0, "REVIEW_NEEDED": 0, "FALSE_POSITIVE": 0},
+    },
+    "sections": {"SAST": [], "SCA": [], "IaC": [], "DAST": []},
+    "message": "스캔 결과가 없습니다. CI 파이프라인을 실행하세요.",
+}
+
+
 @router.get("")
-def get_cross_validation():
-    return {"message": "cross validation ready"}
+def get_cross_validation(db: Session = Depends(get_db)):
+    """최신 교차 검증 대시보드 리포트를 반환합니다."""
+    from backend.app.models.tool_result import ToolResult
+
+    try:
+        record = (
+            db.query(ToolResult)
+            .filter(ToolResult.name == "report")
+            .order_by(ToolResult.id.desc())
+            .first()
+        )
+        if record and record.data:
+            return record.data
+    except Exception:
+        pass
+
+    return _EMPTY_REPORT
+
+
+@router.get("/history")
+def get_cross_validation_history(db: Session = Depends(get_db)):
+    """교차 검증 리포트 이력을 반환합니다."""
+    from backend.app.models.tool_result import ToolResult
+
+    try:
+        records = (
+            db.query(ToolResult)
+            .filter(ToolResult.name == "report")
+            .order_by(ToolResult.id.desc())
+            .limit(20)
+            .all()
+        )
+        history = []
+        for rec in records:
+            data = rec.data or {}
+            history.append({
+                "id": str(rec.id),
+                "report_id": data.get("report_id", str(rec.id)),
+                "generated_at": data.get("generated_at", ""),
+                "project_name": data.get("project_name", "secureflow"),
+                "commit_hash": data.get("commit_hash"),
+                "gate_decision": data.get("gate_decision", "ALLOW"),
+                "total_score": data.get("total_score", 0.0),
+            })
+        return {"history": history, "total": len(history)}
+    except Exception:
+        return {"history": [], "total": 0}

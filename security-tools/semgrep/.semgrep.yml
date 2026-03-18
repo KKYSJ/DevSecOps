@@ -1,2 +1,5 @@
 rules:
   - p/default
+  - p/security-audit
+  - p/python
+  - p/javascript

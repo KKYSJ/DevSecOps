@@ -124,6 +124,3 @@
     ]
   }
 }
-
-[OWASP ZAP JSON]
-여기에 owasp_zap_common_dast.json 내용을 그대로 붙여넣기

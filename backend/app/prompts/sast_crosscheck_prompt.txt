@@ -123,8 +123,3 @@
   }
 }
 
-[SonarQube JSON]
-여기에 sonarqube_common_sast.json 내용을 그대로 붙여넣기
-
-[Semgrep JSON]
-여기에 semgrep_common_sast.json 내용을 그대로 붙여넣기
