@@ -488,6 +488,80 @@ jobs:
       - name: Confirm CI gates passed
         run: echo "IaC, SAST, and SCA LLM gates passed for this revision."
 
+  upload-to-secureflow:
+    name: "SecureFlow 대시보드 업로드"
+    needs:
+      - service-sast-semgrep
+      - service-sast-sonarqube
+      - service-sca-trivy
+      - service-sca-depcheck
+      - iac-tfsec
+      - iac-checkov
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+
+    steps:
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-results/
+        continue-on-error: true
+
+      - name: 수집된 결과 확인
+        run: find scan-results/ -name "*.json" | sort || echo "결과 없음"
+
+      - name: SecureFlow 백엔드에 결과 업로드
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          upload() {
+            local tool=$1 file=$2
+            if [ -f "$file" ]; then
+              echo "업로드: $tool"
+              HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -H "Content-Type: application/json" \
+                -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
+                --max-time 30 || echo "000")
+              echo "  → HTTP $HTTP"
+            else
+              echo "건너뜀: $tool (파일 없음)"
+            fi
+          }
+
+          upload "semgrep"  "scan-results/semgrep-service-results/semgrep-results.json"
+          upload "sonarqube" "scan-results/sonarqube-service-results/sonarqube-results.json"
+          upload "trivy"    "scan-results/trivy-service-results/trivy-results.json"
+          upload "depcheck" "scan-results/depcheck-service-results/dependency-check-report.json"
+          upload "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
+          upload "checkov"  "scan-results/checkov-results/checkov-results.json"
+        continue-on-error: true
+
+      - name: Phase 1 분석 실행 (교차검증 + 게이트 결정)
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "Phase 1 분석 요청..."
+          RESULT=$(curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+            -H "Content-Type: application/json" \
+            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
+            --max-time 120 || echo "{}")
+          echo "$RESULT" | head -500
+          GATE=$(echo "$RESULT" | grep -o '"gate_decision":"[^"]*"' | head -1 || echo "")
+          echo "게이트 결정: $GATE"
+        continue-on-error: true
+
+      - name: BACKEND_URL 미설정 안내
+        if: env.BACKEND_URL == ''
+        run: |
+          echo "⚠️ BACKEND_URL secret이 설정되지 않았습니다."
+          echo "  SecureFlow 백엔드 배포 후 GitHub Secrets에 BACKEND_URL을 추가하면"
+          echo "  스캔 결과가 대시보드에 자동 반영됩니다."
+
   chain-cd-nayoung:
     needs:
       - ci-release-gate

@@ -383,6 +383,28 @@ jobs:
           name: dast-llm-gate
           path: artifacts/dast/dast-llm-gate.json
 
+      - name: SecureFlow에 DAST 결과 업로드
+        if: always() && env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          ZAP_FILE="artifacts/dast/zap-service-results/zap-results.json"
+          if [ -f "$ZAP_FILE" ]; then
+            echo "ZAP 결과 업로드..."
+            curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
+              -H "Content-Type: application/json" \
+              -d "{\"tool\":\"zap\",\"raw_result\":$(cat "$ZAP_FILE"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\"}" \
+              --max-time 30 || true
+
+            echo "Phase 2 분석 요청..."
+            curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+              -H "Content-Type: application/json" \
+              -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
+              --max-time 120 || true
+          fi
+        continue-on-error: true
+
   isms-preprod-gate:
     needs:
       - resolve-context
