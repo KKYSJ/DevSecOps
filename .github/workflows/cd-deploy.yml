@@ -157,6 +157,7 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-node:
     needs: resolve-context
@@ -175,6 +176,7 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-spring:
     needs: resolve-context
@@ -193,6 +195,7 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-frontend:
     needs: resolve-context
@@ -211,6 +214,7 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   service-dast-zap:
     needs:
@@ -459,6 +463,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Configure AWS credentials for target discovery
+        if: vars.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
       - name: Download DAST gate artifact
         uses: actions/download-artifact@v4
         with:
@@ -530,6 +541,7 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-node:
     needs:
@@ -549,6 +561,7 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-spring:
     needs:
@@ -568,6 +581,7 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-frontend:
     needs:
@@ -587,3 +601,4 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
