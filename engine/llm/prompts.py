@@ -233,4 +233,34 @@ def parse_llm_response(response_text: str, matched_pairs: list[dict]) -> list[di
 
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.warning("LLM 응답 파싱 실패 (%s), 규칙 기반 판정 사용", e)
-        return matched_pairs
+        return _rule_based_fallback(matched_pairs)
+
+
+def _rule_based_fallback(matched_pairs: list[dict]) -> list[dict]:
+    """LLM 파싱 실패 시 규칙 기반으로 judgement_code와 한국어 reason을 채웁니다."""
+    result = []
+    for pair in matched_pairs:
+        p = dict(pair)
+        fa = p.get("finding_a")
+        fb = p.get("finding_b")
+        sev = p.get("severity", "MEDIUM")
+
+        if fa and fb:
+            p["judgement_code"] = "TRUE_POSITIVE"
+            p["confidence_level"] = "HIGH"
+            p["reason"] = f"두 도구 모두 동일한 위치에서 {sev} 수준의 취약점을 탐지했습니다. 실제 취약점일 가능성이 높습니다."
+            p["action_text"] = "즉시 코드를 검토하고 수정하세요."
+        elif fa or fb:
+            found = fa or fb
+            tool = found.get("tool", "도구")
+            p["judgement_code"] = "REVIEW_NEEDED"
+            p["confidence_level"] = "MED"
+            p["reason"] = f"{tool}만 탐지한 항목입니다. 다른 도구에서는 미탐지되어 추가 확인이 필요합니다."
+            p["action_text"] = "수동으로 해당 코드/패키지를 검토하세요."
+        else:
+            p["judgement_code"] = "FALSE_POSITIVE"
+            p["confidence_level"] = "LOW"
+            p["reason"] = "두 도구 모두 탐지하지 않았습니다."
+            p["action_text"] = "조치 불필요."
+        result.append(p)
+    return result

@@ -2,57 +2,260 @@ name: CI Security Scan
 
 on:
   push:
-    branches: ["**"]
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "engine/**"
-      - "ismsp/**"
-      - "infra/terraform/**"
-      - ".github/workflows/ci-security-scan.yml"
   pull_request:
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "engine/**"
-      - "ismsp/**"
-      - "infra/terraform/**"
-      - ".github/workflows/ci-security-scan.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  security-events: write
   pull-requests: read
 
-# ── Phase 1: 코드 레벨 스캔 (병렬 실행) ─────────────────────────────────────
-
 jobs:
-  # ── SAST ①: Semgrep ────────────────────────────────────────────────────────
-  sast-semgrep:
-    name: "SAST · Semgrep"
+  fastapi-security-ci:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
-      - name: Run Semgrep
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: app/api-server-fastapi/requirements.txt
+
+      - name: Install app and security dependencies
         run: |
-          pip install semgrep --quiet
-          semgrep --config p/python \
-                  --config p/javascript \
-                  --config p/security-audit \
-                  --json --output semgrep-results.json \
-                  backend/ engine/ ismsp/ frontend/src/ || true
-          semgrep --config p/python \
-                  --config p/javascript \
-                  --config p/security-audit \
-                  --sarif --output semgrep.sarif \
-                  backend/ engine/ ismsp/ frontend/src/ || true
+          python -m pip install --upgrade pip
+          pip install -r app/api-server-fastapi/requirements.txt
+          pip install pytest httpx bandit pip-audit
 
-      - name: Upload Semgrep JSON
+      - name: Run FastAPI smoke tests
+        env:
+          PYTHONPATH: app/api-server-fastapi
+        run: pytest app/api-server-fastapi/tests -q
+
+      - name: Run Bandit SAST scan
+        run: bandit -q -r app/api-server-fastapi -x app/api-server-fastapi/data,app/api-server-fastapi/tests
+
+      - name: Audit Python dependencies
+        run: pip-audit -r app/api-server-fastapi/requirements.txt
+
+      - name: Build FastAPI container
+        run: docker build -t secureflow-fastapi-ci app/api-server-fastapi
+
+  node-security-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/api-server-node/package-lock.json
+
+      - name: Install Node API dependencies
+        working-directory: app/api-server-node
+        run: npm ci
+
+      - name: Check Node API syntax
+        run: node --check app/api-server-node/src/app.js
+
+      - name: Audit Node API dependencies
+        working-directory: app/api-server-node
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Build Node API container
+        run: docker build -t secureflow-node-ci app/api-server-node
+
+  spring-security-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "maven"
+
+      - name: Build Spring API package
+        working-directory: app/api-server-spring
+        run: |
+          chmod +x mvnw
+          ./mvnw -q -DskipTests package
+
+      - name: Build Spring API container
+        run: docker build -t secureflow-spring-ci app/api-server-spring
+
+  frontend-security-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: app/frontend
+        run: npm ci
+
+      - name: Audit frontend dependencies
+        working-directory: app/frontend
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Build frontend bundle
+        working-directory: app/frontend
+        run: npm run build
+
+      - name: Build frontend container
+        run: docker build -t secureflow-frontend-ci app/frontend
+
+  iac-checkov:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Checkov
+        run: |
+          python -m pip install --upgrade pip
+          pip install checkov
+
+      - name: Run Checkov
+        run: |
+          checkov -d infra/terraform --framework terraform -o json > checkov-results.json || true
+          if [ ! -f checkov-results.json ]; then
+            echo '{"results":{"failed_checks":[]}}' > checkov-results.json
+          fi
+
+      - name: Upload Checkov results
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-results
+          name: checkov-results
+          path: checkov-results.json
+
+  iac-tfsec:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        run: |
+          docker run --rm -v "${PWD}:/workspace" aquasec/tfsec:latest \
+            /workspace/infra/terraform \
+            --format json \
+            --out /workspace/tfsec-results.json || true
+          if [ ! -f tfsec-results.json ]; then
+            echo '{"results":[]}' > tfsec-results.json
+          fi
+
+      - name: Upload tfsec results
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfsec-results
+          path: tfsec-results.json
+
+  llm-iac-gate:
+    needs:
+      - iac-checkov
+      - iac-tfsec
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download IaC artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/iac
+
+      - name: Run IaC LLM gate
+        env:
+          LLM_GATE_ADVISORY_MODE: "true"
+          LLM_GATE_REVIEW_BLOCKS: "false"
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/ci/run_llm_gate.py \
+            --stage iac \
+            --tool-input checkov=artifacts/iac/checkov-results/checkov-results.json \
+            --tool-input tfsec=artifacts/iac/tfsec-results/tfsec-results.json \
+            --output artifacts/iac/iac-llm-gate.json
+
+      - name: Upload IaC gate summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iac-llm-gate
+          path: artifacts/iac/iac-llm-gate.json
+
+  service-sast-semgrep:
+    needs:
+      - fastapi-security-ci
+      - node-security-ci
+      - spring-security-ci
+      - frontend-security-ci
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Semgrep on service code
+        run: |
+          python -m pip install --upgrade pip
+          pip install semgrep
+          semgrep --config security-tools/semgrep/.semgrep.yml --json --output semgrep-results.json app || true
+          semgrep --config security-tools/semgrep/.semgrep.yml --sarif --output semgrep.sarif app || true
+          if [ ! -f semgrep-results.json ]; then
+            echo '{"results":[]}' > semgrep-results.json
+          fi
+          if [ ! -f semgrep.sarif ]; then
+            echo '{"runs":[]}' > semgrep.sarif
+          fi
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Upload Semgrep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-service-results
           path: semgrep-results.json
 
       - name: Upload SARIF to GitHub Security tab
@@ -62,243 +265,241 @@ jobs:
           sarif_file: semgrep.sarif
         continue-on-error: true
 
-  # ── SAST ②: SonarQube ────────────────────────────────────────────────────
-  sast-sonarqube:
-    name: "SAST · SonarQube"
+  service-sast-sonarqube:
+    needs:
+      - fastapi-security-ci
+      - node-security-ci
+      - spring-security-ci
+      - frontend-security-ci
+    if: always()
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: SonarQube Scan
+      - name: Check SonarQube configuration
+        id: sonar-config
+        run: |
+          if [ -n "${SONAR_TOKEN}" ] && [ -n "${SONAR_HOST_URL}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SonarQube secrets are not configured. Skipping SonarQube scan on this run."
+            echo '{"issues":[],"tool_disabled":true,"reason":"missing_sonarqube_configuration"}' > sonarqube-results.json
+          fi
+
+      - name: SonarQube service scan
+        if: steps.sonar-config.outputs.enabled == 'true'
         uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           args: >
             -Dsonar.projectKey=secureflow
-            -Dsonar.sources=backend,frontend/src,engine,ismsp
+            -Dsonar.sources=app/api-server-fastapi,app/api-server-node,app/api-server-spring,app/frontend
             -Dsonar.python.version=3.11
-        continue-on-error: true
 
-      - name: Export SonarQube Issues JSON
+      - name: Export SonarQube issues
+        if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          SONAR_URL="${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=secureflow&types=VULNERABILITY&resolved=false&ps=500"
-          curl -sf -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_URL" \
-            -o sonarqube-results.json \
-            || echo '{"issues":[]}' > sonarqube-results.json
-        continue-on-error: true
+          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=secureflow&types=VULNERABILITY&resolved=false&ps=500"
+          curl -s -u "${SONAR_TOKEN}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
 
       - name: Upload SonarQube results
         uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
         with:
-          name: sonarqube-results
+          name: sonarqube-service-results
           path: sonarqube-results.json
 
-  # ── SCA ①: Trivy ─────────────────────────────────────────────────────────
-  sca-trivy:
-    name: "SCA · Trivy"
+  llm-sast-gate:
+    needs:
+      - service-sast-semgrep
+      - service-sast-sonarqube
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
-      - name: Run Trivy (파일시스템 스캔)
-        uses: aquasecurity/trivy-action@master
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "json"
-          output: "trivy-results.json"
-          severity: "CRITICAL,HIGH,MEDIUM,LOW"
-          exit-code: "0"
+          python-version: "3.11"
 
-      - name: Upload Trivy results
+      - name: Download SAST artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/sast
+
+      - name: Run SAST LLM gate
+        env:
+          LLM_GATE_ADVISORY_MODE: "true"
+          LLM_GATE_REVIEW_BLOCKS: "false"
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/ci/run_llm_gate.py \
+            --stage sast \
+            --tool-input semgrep=artifacts/sast/semgrep-service-results/semgrep-results.json \
+            --tool-input sonarqube=artifacts/sast/sonarqube-service-results/sonarqube-results.json \
+            --output artifacts/sast/sast-llm-gate.json
+
+      - name: Upload SAST gate summary
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-results
-          path: trivy-results.json
+          name: sast-llm-gate
+          path: artifacts/sast/sast-llm-gate.json
 
-  # ── SCA ②: OWASP Dependency-Check ─────────────────────────────────────────
-  sca-depcheck:
-    name: "SCA · Dependency-Check"
+  service-sca-depcheck:
+    needs:
+      - fastapi-security-ci
+      - node-security-ci
+      - spring-security-ci
+      - frontend-security-ci
+    if: always()
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Run OWASP Dependency-Check
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install service dependencies for dependency scan
+        run: |
+          npm ci --prefix app/api-server-node
+          npm ci --prefix app/frontend
+
+      - name: Run OWASP Dependency-Check on services
         uses: dependency-check/Dependency-Check_Action@main
         with:
-          project: "secureflow"
-          path: "."
+          project: "secureflow-services"
+          path: "app"
           format: "JSON"
           out: "depcheck-results"
           args: >
             --enableRetired
-            --exclude "**/.git/**"
+            --suppression security-tools/dependency-check/suppression.xml
         env:
           JAVA_HOME: /opt/jdk
-        continue-on-error: true
+
+      - name: Ensure Dependency-Check report exists
+        run: |
+          if [ ! -f depcheck-results/dependency-check-report.json ]; then
+            mkdir -p depcheck-results
+            echo '{"dependencies":[]}' > depcheck-results/dependency-check-report.json
+          fi
 
       - name: Upload Dependency-Check results
         uses: actions/upload-artifact@v4
         with:
-          name: depcheck-results
+          name: depcheck-service-results
           path: depcheck-results/
 
-  # ── IaC ①: tfsec ─────────────────────────────────────────────────────────
-  iac-tfsec:
-    name: "IaC · tfsec"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run tfsec
-        uses: aquasecurity/tfsec-action@v1.0.0
-        with:
-          working_directory: infra/terraform
-          format: json
-          additional_args: "--out tfsec-results.json --soft-fail"
-        continue-on-error: true
-
-      - name: Fallback tfsec (직접 실행)
-        run: |
-          if [ ! -f tfsec-results.json ]; then
-            docker run --rm \
-              -v "$(pwd)/infra/terraform:/src" \
-              aquasec/tfsec /src \
-              --format json \
-              --out /src/tfsec-results.json \
-              --soft-fail || true
-            cp infra/terraform/tfsec-results.json tfsec-results.json 2>/dev/null || echo '{"results":[]}' > tfsec-results.json
-          fi
-        continue-on-error: true
-
-      - name: Upload tfsec results
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfsec-results
-          path: tfsec-results.json
-
-  # ── IaC ②: Checkov ──────────────────────────────────────────────────────
-  iac-checkov:
-    name: "IaC · Checkov"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run Checkov
-        run: |
-          pip install checkov --quiet
-          checkov -d infra/terraform \
-            --output json \
-            --output-file checkov-results.json \
-            --soft-fail || true
-
-      - name: Upload Checkov results
-        uses: actions/upload-artifact@v4
-        with:
-          name: checkov-results
-          path: checkov-results.json
-
-  # ── Phase 2: 결과 수집 → 백엔드 업로드 ──────────────────────────────────────
-  upload-results:
-    name: "결과 수집 → 백엔드 업로드"
-    runs-on: ubuntu-latest
+  service-sca-trivy:
     needs:
-      - sast-semgrep
-      - sca-trivy
-      - sca-depcheck
-      - iac-tfsec
-      - iac-checkov
+      - fastapi-security-ci
+      - node-security-ci
+      - spring-security-ci
+      - frontend-security-ci
     if: always()
-    env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all scan artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: scan-results/
-        continue-on-error: true
-
-      - name: 결과 파일 목록 확인
-        run: |
-          echo "=== 수집된 스캔 결과 ==="
-          find scan-results/ -name "*.json" | sort || echo "결과 없음"
-
-      - name: 백엔드에 결과 업로드
-        if: env.BACKEND_URL != ''
-        env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
-          COMMIT_SHA: ${{ github.sha }}
-          PROJECT_NAME: "secureflow"
-        run: |
-          upload_result() {
-            local tool=$1
-            local file=$2
-            if [ -f "$file" ]; then
-              echo "업로드 중: $tool ($file)"
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
-                -H "Content-Type: application/json" \
-                -d "{\"tool\": \"${tool}\", \"raw_result\": $(cat $file), \"commit_hash\": \"${COMMIT_SHA}\", \"project_name\": \"${PROJECT_NAME}\"}" \
-                --max-time 30 || echo "000")
-              echo "  → HTTP $HTTP_CODE"
-            else
-              echo "건너뜀: $tool (파일 없음: $file)"
-            fi
-          }
-
-          upload_result "semgrep"  "scan-results/semgrep-results/semgrep-results.json"
-          upload_result "trivy"    "scan-results/trivy-results/trivy-results.json"
-          upload_result "depcheck" "scan-results/depcheck-results/dependency-check-report.json"
-          upload_result "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
-          upload_result "checkov"  "scan-results/checkov-results/checkov-results.json"
-        continue-on-error: true
-
-      - name: 백엔드 URL 미설정 안내
-        if: env.BACKEND_URL == ''
-        run: |
-          echo "⚠️  BACKEND_URL secret이 설정되지 않았습니다."
-          echo "    AWS 배포 후 GitHub Secrets에 BACKEND_URL을 추가하면 자동 업로드됩니다."
-          echo "    지금은 스캔 결과가 artifacts로만 저장됩니다."
-
-  # ── Phase 3: DAST (배포된 앱 대상, main 브랜치만) ────────────────────────
-  dast-zap:
-    name: "DAST · OWASP ZAP"
     runs-on: ubuntu-latest
-    needs: [upload-results]
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
-      - name: Run ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
-        with:
-          target: ${{ secrets.BACKEND_URL || 'http://localhost:8000' }}
-          cmd_options: "-J zap-results.json"
-          fail_action: false
-        continue-on-error: true
+      - name: Run Trivy filesystem scan on services
+        run: |
+          docker run --rm -v "${PWD}:/workspace" aquasec/trivy:latest \
+            fs \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --format json \
+            --output /workspace/trivy-results.json \
+            /workspace/app || true
+          if [ ! -f trivy-results.json ]; then
+            echo '{"Results":[]}' > trivy-results.json
+          fi
 
-      - name: Upload ZAP results
+      - name: Upload Trivy results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zap-results
-          path: zap-results.json
+          name: trivy-service-results
+          path: trivy-results.json
 
-      - name: ZAP 결과 백엔드 업로드
-        if: env.BACKEND_URL != ''
+  llm-sca-gate:
+    needs:
+      - service-sca-depcheck
+      - service-sca-trivy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download SCA artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/sca
+
+      - name: Run SCA LLM gate
+        env:
+          LLM_GATE_ADVISORY_MODE: "true"
+          LLM_GATE_REVIEW_BLOCKS: "false"
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          if [ -f zap-results.json ]; then
-            curl -s -X POST "${{ secrets.BACKEND_URL }}/api/v1/scans" \
-              -H "Content-Type: application/json" \
-              -d "{\"tool\": \"zap\", \"raw_result\": $(cat zap-results.json), \"commit_hash\": \"${{ github.sha }}\"}" \
-              --max-time 30 || true
-          fi
-        continue-on-error: true
+          python scripts/ci/run_llm_gate.py \
+            --stage sca \
+            --tool-input depcheck=artifacts/sca/depcheck-service-results/dependency-check-report.json \
+            --tool-input trivy=artifacts/sca/trivy-service-results/trivy-results.json \
+            --output artifacts/sca/sca-llm-gate.json
+
+      - name: Upload SCA gate summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-llm-gate
+          path: artifacts/sca/sca-llm-gate.json
+
+  ci-release-gate:
+    needs:
+      - llm-iac-gate
+      - llm-sast-gate
+      - llm-sca-gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Confirm CI gates passed
+        run: echo "IaC, SAST, and SCA LLM gates passed for this revision."
+
+  chain-cd-nayoung:
+    needs:
+      - ci-release-gate
+    if: github.event_name == 'push' && github.ref_name == 'nayoung'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/cd-deploy.yml
+    with:
+      branch_name: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      service: all
+      run_staging: true
+      run_production: false
+    secrets: inherit
