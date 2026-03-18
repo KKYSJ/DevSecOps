@@ -333,14 +333,30 @@ jobs:
             echo "{\"issues\":[],\"tool_disabled\":true,\"reason\":\"missing_sonarqube_configuration\",\"missing\":\"${missing_summary}\"}" > sonarqube-results.json
           fi
 
+      - name: Set up Java for SonarQube Java analysis
+        if: steps.sonar-config.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "maven"
+
+      - name: Build Spring classes for SonarQube
+        if: steps.sonar-config.outputs.enabled == 'true'
+        working-directory: app/api-server-spring
+        run: |
+          chmod +x mvnw
+          ./mvnw -q -DskipTests package
+
       - name: SonarQube service scan
         if: steps.sonar-config.outputs.enabled == 'true'
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v6
         with:
           args: >
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.sources=app/api-server-fastapi,app/api-server-node,app/api-server-spring,app/frontend
+            -Dsonar.java.binaries=app/api-server-spring/target/classes
             -Dsonar.python.version=3.11
 
       - name: Export SonarQube issues
