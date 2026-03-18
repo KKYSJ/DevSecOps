@@ -483,3 +483,16 @@ jobs:
     steps:
       - name: Confirm CI gates passed
         run: echo "IaC, SAST, and SCA LLM gates passed for this revision."
+
+  chain-cd-seo:
+    needs:
+      - ci-release-gate
+    if: github.event_name == 'push' && github.ref_name == 'SEO'
+    uses: ./.github/workflows/cd-deploy.yml
+    with:
+      branch_name: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      service: all
+      run_staging: true
+      run_production: false
+    secrets: inherit

@@ -1,6 +1,26 @@
 name: CD Deploy
 
 on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: false
+        type: string
+      source_sha:
+        required: false
+        type: string
+      service:
+        required: false
+        default: "all"
+        type: string
+      run_staging:
+        required: false
+        default: true
+        type: boolean
+      run_production:
+        required: false
+        default: false
+        type: boolean
   workflow_run:
     workflows: ["CI Security Scan"]
     types:
@@ -66,7 +86,32 @@ jobs:
                 run_production="true"
               fi
             fi
-          else
+          elif [ "${{ github.event_name }}" = "workflow_call" ]; then
+            proceed="true"
+            branch_name="${{ inputs.branch_name }}"
+            source_sha="${{ inputs.source_sha }}"
+            service="${{ inputs.service }}"
+
+            if [ -z "$branch_name" ]; then
+              branch_name="${GITHUB_REF_NAME}"
+            fi
+
+            if [ -z "$source_sha" ]; then
+              source_sha="${GITHUB_SHA}"
+            fi
+
+            if [ -z "$service" ]; then
+              service="all"
+            fi
+
+            if [ "${{ inputs.run_staging }}" = "true" ]; then
+              run_staging="true"
+            fi
+
+            if [ "${{ inputs.run_production }}" = "true" ] && [ "$branch_name" = "main" ]; then
+              run_production="true"
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             proceed="true"
             branch_name="${GITHUB_REF_NAME}"
             source_sha="${GITHUB_SHA}"
