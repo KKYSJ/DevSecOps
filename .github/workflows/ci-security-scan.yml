@@ -285,6 +285,7 @@ jobs:
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      SONAR_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
 
     steps:
       - name: Check out source
@@ -347,10 +348,55 @@ jobs:
       - name: Export SonarQube issues
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${{ vars.SONAR_PROJECT_KEY }}&types=VULNERABILITY,BUG,CODE_SMELL&severities=CRITICAL,MAJOR,BLOCKER&resolved=false&ps=500"
-          curl -s -u "${SONAR_TOKEN}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
-          ISSUES=$(grep -o '"total":[0-9]*' sonarqube-results.json | head -1 || echo "0")
-          echo "SonarCloud issues: $ISSUES"
+          RAW_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${{ vars.SONAR_PROJECT_KEY }}&branch=${SONAR_BRANCH_NAME}&resolved=false&ps=500"
+          FILTERED_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${{ vars.SONAR_PROJECT_KEY }}&branch=${SONAR_BRANCH_NAME}&types=VULNERABILITY,BUG,CODE_SMELL&severities=CRITICAL,MAJOR,BLOCKER&resolved=false&ps=500"
+          curl -s -u "${SONAR_TOKEN}:" "$RAW_URL" -o sonarqube-results-raw.json || echo '{"issues":[]}' > sonarqube-results-raw.json
+          curl -s -u "${SONAR_TOKEN}:" "$FILTERED_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
+          RAW_ISSUES=$(grep -o '"total":[0-9]*' sonarqube-results-raw.json | head -1 || echo "0")
+          FILTERED_ISSUES=$(grep -o '"total":[0-9]*' sonarqube-results.json | head -1 || echo "0")
+          echo "SonarCloud raw issues: $RAW_ISSUES"
+          echo "SonarCloud filtered issues: $FILTERED_ISSUES"
+
+      - name: Summarize SonarQube raw issues
+        if: steps.sonar-config.outputs.enabled == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          raw_path = Path("sonarqube-results-raw.json")
+          if not raw_path.exists():
+              raw_path.write_text('{"issues":[]}', encoding="utf-8")
+
+          data = json.loads(raw_path.read_text(encoding="utf-8"))
+          issues = data.get("issues", [])
+          by_type = Counter(issue.get("type", "UNKNOWN") for issue in issues)
+          by_severity = Counter(issue.get("severity", "UNKNOWN") for issue in issues)
+
+          summary = {
+              "total": len(issues),
+              "by_type": dict(sorted(by_type.items())),
+              "by_severity": dict(sorted(by_severity.items())),
+              "sample_issues": [
+                  {
+                      "key": issue.get("key"),
+                      "type": issue.get("type"),
+                      "severity": issue.get("severity"),
+                      "rule": issue.get("rule"),
+                      "component": issue.get("component"),
+                      "line": issue.get("line"),
+                      "message": issue.get("message"),
+                  }
+                  for issue in issues[:20]
+              ],
+          }
+          Path("sonarqube-results-summary.json").write_text(
+              json.dumps(summary, indent=2),
+              encoding="utf-8",
+          )
+          print(json.dumps(summary, indent=2))
+          PY
 
       - name: Upload SonarQube results
         uses: actions/upload-artifact@v4
@@ -358,7 +404,10 @@ jobs:
         continue-on-error: true
         with:
           name: sonarqube-service-results
-          path: sonarqube-results.json
+          path: |
+            sonarqube-results.json
+            sonarqube-results-raw.json
+            sonarqube-results-summary.json
 
   llm-sast-gate:
     needs:
