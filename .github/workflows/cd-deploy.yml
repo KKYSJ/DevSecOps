@@ -157,6 +157,7 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: staging-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-node:
     needs: resolve-context
@@ -175,6 +176,7 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: staging-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-spring:
     needs: resolve-context
@@ -193,6 +195,7 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: staging-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-frontend:
     needs: resolve-context
@@ -211,6 +214,7 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: staging-${{ needs.resolve-context.outputs.branch_name }}
 
   service-dast-zap:
     needs:
@@ -369,6 +373,10 @@ jobs:
           LLM_GATE_ADVISORY_MODE: "true"
           LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         run: |
           python scripts/ci/run_llm_gate.py \
             --stage dast \
@@ -472,6 +480,7 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-node:
     needs:
@@ -491,6 +500,7 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-spring:
     needs:
@@ -510,6 +520,7 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-frontend:
     needs:
@@ -529,3 +540,4 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}

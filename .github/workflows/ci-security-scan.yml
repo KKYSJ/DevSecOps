@@ -206,6 +206,10 @@ jobs:
           LLM_GATE_ADVISORY_MODE: "true"
           LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         run: |
           python scripts/ci/run_llm_gate.py \
             --stage iac \
@@ -381,6 +385,10 @@ jobs:
           LLM_GATE_ADVISORY_MODE: "true"
           LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         run: |
           python scripts/ci/run_llm_gate.py \
             --stage sast \
@@ -502,6 +510,10 @@ jobs:
           LLM_GATE_ADVISORY_MODE: "true"
           LLM_GATE_REVIEW_BLOCKS: "false"
           PYTHONPATH: ${{ github.workspace }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
         run: |
           python scripts/ci/run_llm_gate.py \
             --stage sca \

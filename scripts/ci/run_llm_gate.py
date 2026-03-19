@@ -239,6 +239,163 @@ def build_decision(stage: str, combined: dict[str, int], divergence: float) -> t
     return "pass", ["all findings are within configured thresholds"]
 
 
+def apply_llm_recommendation(
+    decision: str,
+    reasons: list[str],
+    analyzer_result: dict[str, Any],
+) -> tuple[str, list[str]]:
+    llm_decision = str(analyzer_result.get("recommended_decision", "")).strip().lower()
+    llm_summary = str(analyzer_result.get("summary", "")).strip()
+    llm_reasons = analyzer_result.get("reasons", [])
+
+    if llm_summary:
+        reasons.append(f"llm summary: {llm_summary}")
+
+    if isinstance(llm_reasons, list):
+        for reason in llm_reasons[:3]:
+            text = str(reason).strip()
+            if text:
+                reasons.append(f"llm reason: {text}")
+
+    if llm_decision == "fail" and decision != "fail":
+        decision = "review"
+        reasons.append("llm recommended fail; escalated gate outcome to review")
+    elif llm_decision == "review" and decision == "pass":
+        decision = "review"
+        reasons.append("llm recommended manual review")
+
+    return decision, reasons
+
+
+def emit_console_summary(output: dict[str, Any], output_path: Path) -> None:
+    llm = output.get("llm_analysis", {})
+    combined = output.get("combined_summary", {})
+
+    print(f"LLM gate [{output['stage']}] completed")
+    print(f"  output: {output_path}")
+    print(f"  decision: {output['decision']}")
+    print(f"  provider: {llm.get('provider')}")
+    print(f"  model: {llm.get('model')}")
+    print(f"  confidence: {llm.get('confidence')}")
+    print(f"  divergence_ratio: {output.get('divergence_ratio', 0)}")
+    print(
+        "  combined_summary: "
+        f"critical={combined.get('critical', 0)}, "
+        f"high={combined.get('high', 0)}, "
+        f"medium={combined.get('medium', 0)}, "
+        f"low={combined.get('low', 0)}, "
+        f"info={combined.get('info', 0)}, "
+        f"total={combined.get('total', 0)}"
+    )
+
+    for item in output.get("tool_summaries", []):
+        summary = item.get("summary", {})
+        executed = "yes" if item.get("executed", True) else "no"
+        reason = item.get("disabled_reason") or "-"
+        print(
+            "  tool="
+            f"{item.get('tool')} executed={executed} "
+            f"critical={summary.get('critical', 0)} "
+            f"high={summary.get('high', 0)} "
+            f"medium={summary.get('medium', 0)} "
+            f"low={summary.get('low', 0)} "
+            f"info={summary.get('info', 0)} "
+            f"total={summary.get('total', 0)} "
+            f"reason={reason}"
+        )
+
+    for reason in output.get("reasons", [])[:8]:
+        print(f"  reason: {reason}")
+
+
+def escape_annotation(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def emit_github_annotation(output: dict[str, Any]) -> None:
+    llm = output.get("llm_analysis", {})
+    message = (
+        f"stage={output['stage']}; decision={output['decision']}; "
+        f"provider={llm.get('provider')}; model={llm.get('model')}; "
+        f"confidence={llm.get('confidence')}"
+    )
+    reasons = output.get("reasons", [])
+    if reasons:
+        message += f"; top_reason={reasons[0]}"
+
+    level = "notice"
+    if output["decision"] == "review":
+        level = "warning"
+    elif output["decision"] == "fail":
+        level = "error"
+
+    print(f"::{level} title=LLM Gate {output['stage'].upper()}::{escape_annotation(message)}")
+
+
+def write_step_summary(output: dict[str, Any]) -> None:
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY", "").strip()
+    if not summary_path:
+        return
+
+    llm = output.get("llm_analysis", {})
+    combined = output.get("combined_summary", {})
+    lines = [
+        f"## LLM Gate `{output['stage']}`",
+        "",
+        f"- Decision: `{output['decision']}`",
+        f"- Provider: `{llm.get('provider')}`",
+        f"- Model: `{llm.get('model')}`",
+        f"- Confidence: `{llm.get('confidence')}`",
+        f"- Divergence ratio: `{output.get('divergence_ratio', 0)}`",
+        "",
+        "**Combined Summary**",
+        "",
+        "| Critical | High | Medium | Low | Info | Total |",
+        "| --- | --- | --- | --- | --- | --- |",
+        (
+            f"| {combined.get('critical', 0)} | {combined.get('high', 0)} | "
+            f"{combined.get('medium', 0)} | {combined.get('low', 0)} | "
+            f"{combined.get('info', 0)} | {combined.get('total', 0)} |"
+        ),
+        "",
+        "**Tool Summaries**",
+        "",
+        "| Tool | Executed | Critical | High | Medium | Low | Info | Total | Disabled Reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+
+    for item in output.get("tool_summaries", []):
+        summary = item.get("summary", {})
+        lines.append(
+            f"| {item.get('tool')} | "
+            f"{'yes' if item.get('executed', True) else 'no'} | "
+            f"{summary.get('critical', 0)} | "
+            f"{summary.get('high', 0)} | "
+            f"{summary.get('medium', 0)} | "
+            f"{summary.get('low', 0)} | "
+            f"{summary.get('info', 0)} | "
+            f"{summary.get('total', 0)} | "
+            f"{item.get('disabled_reason') or '-'} |"
+        )
+
+    reasons = output.get("reasons", [])
+    if reasons:
+        lines.extend(["", "**Reasons**", ""])
+        for reason in reasons[:8]:
+            lines.append(f"- {reason}")
+
+    provider_notes = llm.get("provider_notes")
+    if provider_notes:
+        lines.extend(["", f"**Provider notes:** {provider_notes}"])
+
+    fallback_reason = llm.get("fallback_reason")
+    if fallback_reason:
+        lines.extend(["", f"**Fallback reason:** `{fallback_reason}`"])
+
+    with Path(summary_path).open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+
+
 def main() -> int:
     args = parse_args()
     parsed_inputs = []
@@ -265,6 +422,7 @@ def main() -> int:
     }
     analyzer_result = run_llm_analyzer(analyzer_payload)
     decision, reasons = build_decision(args.stage, combined, divergence)
+    decision, reasons = apply_llm_recommendation(decision, reasons, analyzer_result)
 
     for item in tool_summaries:
         if not item["executed"]:
@@ -290,6 +448,9 @@ def main() -> int:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+    emit_console_summary(output, output_path)
+    emit_github_annotation(output)
+    write_step_summary(output)
 
     review_blocks = os.getenv("LLM_GATE_REVIEW_BLOCKS", "false").lower() == "true"
     if decision == "fail" or (decision == "review" and review_blocks):

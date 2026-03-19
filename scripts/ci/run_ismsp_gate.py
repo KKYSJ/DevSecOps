@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -34,6 +35,85 @@ def load_mapping(path: Path) -> list[dict]:
         items = data.get("items", [])
         return items if isinstance(items, list) else []
     return data if isinstance(data, list) else []
+
+
+def emit_console_summary(output: dict, output_path: Path) -> None:
+    evidence = output.get("evidence", {})
+    print(f"ISMS-P gate [{output['environment']}] completed")
+    print(f"  output: {output_path}")
+    print(f"  decision: {output['decision']}")
+    print(f"  target_url: {output.get('target_url')}")
+    print(f"  mapping_exists: {evidence.get('mapping_exists')}")
+    print(f"  mapping_path: {evidence.get('mapping_path')}")
+    print(f"  gate_decisions: {', '.join(evidence.get('gate_decisions', [])) or '-'}")
+
+    for reason in output.get("reasons", [])[:8]:
+        print(f"  reason: {reason}")
+
+
+def escape_annotation(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def emit_github_annotation(output: dict) -> None:
+    message = (
+        f"environment={output['environment']}; decision={output['decision']}; "
+        f"target_url={output.get('target_url') or '-'}"
+    )
+    reasons = output.get("reasons", [])
+    if reasons:
+        message += f"; top_reason={reasons[0]}"
+
+    level = "notice"
+    if output["decision"] == "review":
+        level = "warning"
+    elif output["decision"] == "fail":
+        level = "error"
+
+    print(f"::{level} title=ISMS-P Gate::{escape_annotation(message)}")
+
+
+def write_step_summary(output: dict) -> None:
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY", "").strip()
+    if not summary_path:
+        return
+
+    evidence = output.get("evidence", {})
+    lines = [
+        f"## ISMS-P Gate `{output['environment']}`",
+        "",
+        f"- Decision: `{output['decision']}`",
+        f"- Target URL: `{output.get('target_url') or '-'}`",
+        f"- Mapping exists: `{evidence.get('mapping_exists')}`",
+        f"- Mapping path: `{evidence.get('mapping_path')}`",
+        "",
+        "**Upstream Gate Decisions**",
+        "",
+    ]
+
+    gate_decisions = evidence.get("gate_decisions", [])
+    if gate_decisions:
+        for gate_decision in gate_decisions:
+            lines.append(f"- `{gate_decision}`")
+    else:
+        lines.append("- None")
+
+    reasons = output.get("reasons", [])
+    if reasons:
+        lines.extend(["", "**Reasons**", ""])
+        for reason in reasons[:8]:
+            lines.append(f"- {reason}")
+
+    checker_result = output.get("checker_result")
+    if checker_result is not None:
+        lines.extend(["", "**Checker Result**", "", "```json", json.dumps(checker_result, indent=2), "```"])
+
+    evaluator_result = output.get("evaluator_result")
+    if evaluator_result is not None:
+        lines.extend(["", "**Evaluator Result**", "", "```json", json.dumps(evaluator_result, indent=2), "```"])
+
+    with Path(summary_path).open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
 
 
 def main() -> int:
@@ -80,6 +160,9 @@ def main() -> int:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+    emit_console_summary(output, output_path)
+    emit_github_annotation(output)
+    write_step_summary(output)
 
     if decision == "fail":
         return 1
