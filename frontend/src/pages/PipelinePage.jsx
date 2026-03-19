@@ -57,26 +57,105 @@ function SummaryDetail({ step }) {
   const { gate, totalScore } = step;
   const sections = normalizeSections(step.sections);
   const cats = ["IaC", "SAST", "SCA", "DAST"];
+
+  const gateColor = gate === "BLOCK" ? "var(--cr)" : gate === "REVIEW" ? "var(--hi)" : "var(--ok)";
+
   return (
     <div className="detail-panel">
       <div className="detail-head">
-        <div><div className="detail-title">교차 검증</div><div className="detail-sub">정규화 + 스코어링</div></div>
+        <div><div className="detail-title">교차 검증</div><div className="detail-sub">LLM 기반 배포 게이트</div></div>
         <div className={`detail-status ${getStatusClass(gate)}`}>{getBadgeLabel(gate)}</div>
       </div>
-      <div className="stat-row">
-        <div className="stat-card"><div className="stat-n" style={{ color: gate === "BLOCK" ? "var(--cr)" : gate === "REVIEW" ? "var(--hi)" : "var(--ok)" }}>{getBadgeLabel(gate)}</div><div className="stat-l">판정</div></div>
-        <div className="stat-card"><div className="stat-n" style={{ color: "var(--ac)" }}>{totalScore?.toFixed(1) || "0"}</div><div className="stat-l">Total Score</div></div>
+
+      {/* 게이트 판정 + 점수 */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <div className="stat-card" style={{ flex: 1 }}>
+          <div className="stat-n" style={{ color: gateColor }}>{getBadgeLabel(gate)}</div>
+          <div className="stat-l">배포 판정</div>
+        </div>
+        <div className="stat-card" style={{ flex: 1 }}>
+          <div className="stat-n" style={{ color: (totalScore || 0) >= 100 ? "var(--cr)" : (totalScore || 0) >= 10 ? "var(--hi)" : "var(--ok)", fontFamily: "monospace" }}>
+            {typeof totalScore === "number" ? totalScore.toFixed(1) : "0"}
+          </div>
+          <div className="stat-l">위험도 점수</div>
+        </div>
       </div>
+
+      {/* ── LLM이 필요한 이유 ── */}
+      <div style={{ background: "var(--bg)", border: "1px solid var(--bd)", borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--ac)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>
+          왜 LLM 교차검증인가?
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 1, background: "var(--cr-bg)", border: "1px solid var(--cr-bd)", borderRadius: 6, padding: "8px 10px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--cr)", marginBottom: 3 }}>두 도구 동시 탐지</div>
+            <div style={{ fontSize: 10, color: "var(--tx2)", lineHeight: 1.5 }}>실제 취약점 가능성 높음<br/>LLM → TRUE_POSITIVE 판정<br/>점수 전액 반영</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", color: "var(--tx3)", fontSize: 13 }}>vs</div>
+          <div style={{ flex: 1, background: "var(--hi-bg)", border: "1px solid var(--hi-bd)", borderRadius: 6, padding: "8px 10px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--hi)", marginBottom: 3 }}>한 도구만 탐지</div>
+            <div style={{ fontSize: 10, color: "var(--tx2)", lineHeight: 1.5 }}>오탐 가능성 있음<br/>LLM → REVIEW_NEEDED 판정<br/>점수 50% 반영</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 10, color: "var(--tx3)", lineHeight: 1.5 }}>
+          도구 1개만 쓰면 오탐·미탐이 많아 신뢰하기 어렵습니다. 두 도구가 독립적으로 같은 취약점을 탐지했을 때 LLM이 최종 확인하여 보안 담당자가 봐야 할 항목을 크게 줄여줍니다.
+        </div>
+      </div>
+
+      {/* ── 스코어링 기준 ── */}
+      <div style={{ background: "var(--bg)", border: "1px solid var(--bd)", borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--tx3)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>
+          스코어링 기준
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+          {[
+            { label: "Critical × TRUE_POS", score: "100점", color: "var(--cr)", bg: "var(--cr-bg)", bd: "var(--cr-bd)" },
+            { label: "High × TRUE_POS", score: "10점", color: "var(--hi)", bg: "var(--hi-bg)", bd: "var(--hi-bd)" },
+            { label: "Medium × TRUE_POS", score: "1점", color: "var(--ac)", bg: "var(--ac-bg)", bd: "var(--ac-bd)" },
+          ].map(({ label, score, color, bg, bd }) => (
+            <div key={label} style={{ background: bg, border: `1px solid ${bd}`, borderRadius: 6, padding: "6px 8px", textAlign: "center" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color, fontFamily: "var(--mono)" }}>{score}</div>
+              <div style={{ fontSize: 9, color: "var(--tx3)", marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+          {[
+            { gate: "BLOCK", cond: "≥ 100점 또는 Critical 1건", color: "var(--cr)", bg: "var(--cr-bg)" },
+            { gate: "REVIEW", cond: "≥ 10점 (High 1건)", color: "var(--hi)", bg: "var(--hi-bg)" },
+            { gate: "ALLOW", cond: "< 10점", color: "var(--ok)", bg: "var(--ok-bg)" },
+          ].map(({ gate: g, cond, color, bg }) => (
+            <div key={g} style={{ background: bg, borderRadius: 6, padding: "5px 8px" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color, fontFamily: "var(--mono)" }}>{g}</div>
+              <div style={{ fontSize: 9, color: "var(--tx3)", marginTop: 1 }}>{cond}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── 단계별 LLM 판정 집계 ── */}
       <div className="sec-label" style={{ marginTop: 0 }}>단계별 LLM 판정 집계</div>
       <table className="vtbl">
-        <thead><tr><th>단계</th><th>도구</th><th>TRUE_POS</th><th>REVIEW</th><th>FALSE_POS</th></tr></thead>
+        <thead><tr><th>단계</th><th>도구 쌍</th><th style={{ color: "var(--cr)" }}>실제 취약점</th><th style={{ color: "var(--hi)" }}>검토 필요</th><th style={{ color: "var(--tx3)" }}>오탐 제거</th></tr></thead>
         <tbody>{cats.map((cat) => {
           const rows = (sections[cat]?.rows) || [];
-          const tp = rows.filter((r) => r.judgement === "TRUE_POSITIVE").length;
-          const rv = rows.filter((r) => r.judgement === "REVIEW_NEEDED").length;
-          const fp = rows.filter((r) => r.judgement === "FALSE_POSITIVE").length;
+          const tp = rows.filter((r) => (r.judgement_code || r.judgement) === "TRUE_POSITIVE").length;
+          const rv = rows.filter((r) => (r.judgement_code || r.judgement) === "REVIEW_NEEDED").length;
+          const fp = rows.filter((r) => (r.judgement_code || r.judgement) === "FALSE_POSITIVE").length;
           const p = TOOL_PAIRS[cat];
-          return (<tr key={cat}><td><span className={`sev-b cat-${cat.toLowerCase()}`}>{cat}</span></td><td style={{ fontSize: 11, color: "var(--tx2)" }}>{p.b ? `${p.a} + ${p.b}` : p.a}</td><td style={{ fontWeight: 700, fontFamily: "monospace", color: "var(--ok)" }}>{tp}</td><td style={{ fontWeight: 700, fontFamily: "monospace", color: "var(--hi)" }}>{rv}</td><td style={{ fontWeight: 700, fontFamily: "monospace", color: "var(--tx3)" }}>{fp}</td></tr>);
+          const bothDetect = rows.filter((r) => r.tool_a?.status === "detected" && r.tool_b?.status === "detected").length;
+          return (
+            <tr key={cat}>
+              <td><span className={`sev-b cat-${cat.toLowerCase()}`}>{cat}</span></td>
+              <td style={{ fontSize: 10, color: "var(--tx2)" }}>
+                {p.b ? `${p.a} + ${p.b}` : p.a}
+                {bothDetect > 0 && <span style={{ marginLeft: 4, fontSize: 9, color: "var(--cr)", fontWeight: 700 }}>동시{bothDetect}건</span>}
+              </td>
+              <td style={{ fontWeight: 700, fontFamily: "monospace", color: tp > 0 ? "var(--cr)" : "var(--tx3)" }}>{tp}</td>
+              <td style={{ fontWeight: 700, fontFamily: "monospace", color: rv > 0 ? "var(--hi)" : "var(--tx3)" }}>{rv}</td>
+              <td style={{ fontWeight: 700, fontFamily: "monospace", color: "var(--tx3)" }}>{fp}</td>
+            </tr>
+          );
         })}</tbody>
       </table>
     </div>
@@ -103,45 +182,70 @@ function StepDetail({ step }) {
 
       {rows.length > 0 && (<>
         <div className="sec-label" style={{ marginTop: 0 }}>교차 검증 결과 — {pair.a || step.category}{pair.b ? ` ↔ ${pair.b}` : ""}</div>
-        <div className="cross-head"><span>위치 / 대상</span><span>{pair.a || "Tool A"}</span><span>↔</span><span>{pair.b || "—"}</span><span>결과</span></div>
-        {rows.map((r, i) => {
-          const fa = r.finding_a || r.tool_a_finding;
-          const fb = r.finding_b || r.tool_b_finding;
-          const isBoth = fa && fb;
-          const label = r.target_label || (fa || fb)?.file_path || r.correlation_key || "—";
-          return (
-            <div key={i} className={`cross-row-t ${r.severity === "CRITICAL" ? "row-cr" : r.severity === "HIGH" ? "row-hi" : ""}`}>
-              <span className="cross-loc">{label}</span>
-              <span style={{ fontSize: 11, color: "var(--tx2)" }}>{fa?.title || "— 미탐지"}</span>
-              <span className="cross-arrow">↔</span>
-              <span style={{ fontSize: 11, color: "var(--tx2)" }}>{fb?.title || "— 미탐지"}</span>
-              <span className={`f-match ${isBoth ? "m-both" : "m-single"}`}>{isBoth ? "동시 탐지" : "단독 탐지"}</span>
-            </div>
-          );
-        })}
-
-        <div className={`ai-box ${rows.some((r) => r.severity === "CRITICAL" && r.judgement === "TRUE_POSITIVE") ? "ai-fail" : "ai-ok"}`}>
-          <div className="ai-head">
-            <span className="ai-chip">LLM 판정</span>
-            <span className="ai-verdict">{rows.filter((r) => r.judgement === "TRUE_POSITIVE").length}건 실제 취약점 · {rows.filter((r) => r.judgement === "REVIEW_NEEDED").length}건 검토 필요</span>
-          </div>
-          {rows.map((r, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(0,0,0,.06)" }}>
-              <span className={`f-sev ${r.judgement === "TRUE_POSITIVE" ? "s-ok" : r.judgement === "FALSE_POSITIVE" ? "s-pu" : "s-ac"}`} style={{ flexShrink: 0, marginTop: 1, whiteSpace: "nowrap" }}>
-                {r.judgement === "TRUE_POSITIVE" ? "실제 취약점" : r.judgement === "FALSE_POSITIVE" ? "오탐" : "검토 필요"}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--tx2)", marginBottom: 2 }}>{r.target_label || (r.finding_a || r.finding_b)?.file_path || r.correlation_key || "—"} · {r.severity}</div>
-                <div style={{ fontSize: 11, color: "var(--tx2)", lineHeight: 1.6 }}>{r.reason || r.action_text || (r.finding_b || r.finding_a)?.description || "—"}</div>
-                {(r.action || r.action_text) && <div style={{ fontSize: 11, color: "var(--ac)", marginTop: 3, fontWeight: 500 }}>→ {r.action || r.action_text}</div>}
-              </div>
-            </div>
-          ))}
-        </div>
+        <CrossTableWithLlm rows={rows} pair={pair} />
       </>)}
 
       {rows.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "var(--tx3)", fontSize: 12, fontFamily: "monospace" }}>이 단계는 실행되지 않았거나 데이터가 없습니다</div>}
     </div>
+  );
+}
+
+function CrossTableWithLlm({ rows, pair }) {
+  const [openIdx, setOpenIdx] = React.useState(null);
+
+  return (
+    <>
+      <div className="cross-head"><span>위치 / 대상</span><span>{pair.a || "Tool A"}</span><span>↔</span><span>{pair.b || "—"}</span><span>결과</span></div>
+      {rows.map((r, i) => {
+        const fa = r.finding_a || r.tool_a_finding;
+        const fb = r.finding_b || r.tool_b_finding;
+        const isBoth = fa && fb;
+        const label = r.target_label || (fa || fb)?.file_path || r.correlation_key || "—";
+        const isOpen = openIdx === i;
+        const jud = r.judgement_code || r.judgement || "REVIEW_NEEDED";
+        const judColor = jud === "TRUE_POSITIVE" ? "var(--cr)" : jud === "FALSE_POSITIVE" ? "var(--ok)" : "var(--hi)";
+        const judBg = jud === "TRUE_POSITIVE" ? "var(--cr-bg)" : jud === "FALSE_POSITIVE" ? "var(--ok-bg)" : "var(--hi-bg)";
+        const judLabel = jud === "TRUE_POSITIVE" ? "실제 취약점" : jud === "FALSE_POSITIVE" ? "오탐" : "검토 필요";
+
+        return (
+          <React.Fragment key={i}>
+            <div
+              className={`cross-row-t ${r.severity === "CRITICAL" ? "row-cr" : r.severity === "HIGH" ? "row-hi" : ""}`}
+              onClick={() => setOpenIdx(isOpen ? null : i)}
+              style={{ cursor: "pointer" }}
+            >
+              <span className="cross-loc">{label}</span>
+              <span style={{ fontSize: 11, color: "var(--tx2)" }}>{fa?.title ? (fa.title.length > 40 ? fa.title.slice(0, 40) + "..." : fa.title) : "— 미탐지"}</span>
+              <span className="cross-arrow">↔</span>
+              <span style={{ fontSize: 11, color: "var(--tx2)" }}>{fb?.title ? (fb.title.length > 40 ? fb.title.slice(0, 40) + "..." : fb.title) : "— 미탐지"}</span>
+              <span className={`f-match ${isBoth ? "m-both" : "m-single"}`}>{isBoth ? "동시 탐지" : "단독 탐지"}</span>
+            </div>
+
+            {isOpen && (
+              <div style={{ border: "1px solid var(--bd)", borderTop: "none", borderLeft: `3px solid ${judColor}`, background: judBg, padding: "14px 16px", animation: "fadeUp .15s ease" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, fontFamily: "var(--mono)", padding: "2px 8px", borderRadius: 4, background: judColor, color: "#fff" }}>{judLabel}</span>
+                  <span className={`sev-b ${r.severity === "CRITICAL" ? "s-cr" : r.severity === "HIGH" ? "s-hi" : r.severity === "MEDIUM" ? "s-ac" : "s-ok"}`}>{r.severity}</span>
+                  <span style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--tx3)" }}>{r.confidence_level || r.confidence || ""}</span>
+                  <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, fontFamily: "var(--mono)", color: (r.row_score || 0) >= 50 ? "var(--cr)" : "var(--tx2)" }}>
+                    {typeof r.row_score === "number" ? r.row_score.toFixed(1) + "점" : ""}
+                  </span>
+                </div>
+                {r.title_ko && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{r.title_ko}</div>}
+                {r.risk_summary && <div style={{ fontSize: 12, color: "var(--tx)", lineHeight: 1.7, marginBottom: 8 }}>{r.risk_summary}</div>}
+                {r.reason && <div style={{ fontSize: 12, color: "var(--tx2)", lineHeight: 1.7, marginBottom: 8 }}>{r.reason}</div>}
+                {(r.action || r.action_text) && (
+                  <div style={{ fontSize: 12, color: "var(--ac)", fontWeight: 500, padding: "8px 12px", background: "rgba(255,255,255,.6)", borderRadius: 6, border: "1px solid var(--ac-bd)" }}>
+                    → {r.action || r.action_text}
+                  </div>
+                )}
+                {!r.risk_summary && !r.reason && !r.action_text && <div style={{ fontSize: 12, color: "var(--tx3)" }}>LLM 분석 결과가 없습니다.</div>}
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
   );
 }
 

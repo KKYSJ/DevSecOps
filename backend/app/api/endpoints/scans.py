@@ -300,18 +300,33 @@ def trigger_analysis(body: AnalyzeRequest = None, db: Session = Depends(get_db))
             analyzed_pairs = list(matched_pairs)
             categories = list(dict.fromkeys(p["category"] for p in matched_pairs))
 
+            BATCH_SIZE = 8  # Gemini가 처리 가능한 최대 쌍 수
+
             for category in categories:
                 cat_indices = [i for i, p in enumerate(matched_pairs) if p["category"] == category]
                 cat_pairs = [matched_pairs[i] for i in cat_indices]
 
-                prompt = build_cross_validation_prompt(category, cat_pairs)
-                response = call_llm(prompt)
-                cat_analyzed = parse_llm_response(response, cat_pairs)
+                # 배치 단위로 LLM 호출
+                for batch_start in range(0, len(cat_pairs), BATCH_SIZE):
+                    batch_pairs = cat_pairs[batch_start:batch_start + BATCH_SIZE]
+                    batch_indices = cat_indices[batch_start:batch_start + BATCH_SIZE]
 
-                for list_idx, analyzed_pair in zip(cat_indices, cat_analyzed):
-                    if analyzed_pair.get("confidence_level"):
-                        analyzed_pair["confidence"] = analyzed_pair["confidence_level"]
-                    analyzed_pairs[list_idx] = analyzed_pair
+                    try:
+                        prompt = build_cross_validation_prompt(category, batch_pairs)
+                        response = call_llm(prompt)
+                        batch_analyzed = parse_llm_response(response, batch_pairs)
+
+                        for list_idx, analyzed_pair in zip(batch_indices, batch_analyzed):
+                            if analyzed_pair.get("confidence_level"):
+                                analyzed_pair["confidence"] = analyzed_pair["confidence_level"]
+                            analyzed_pairs[list_idx] = analyzed_pair
+                    except Exception:
+                        import logging
+                        logging.getLogger(__name__).warning("LLM 배치 호출 실패, 규칙 기반 fallback 사용")
+                        from engine.llm.prompts import _rule_based_fallback
+                        batch_fallback = _rule_based_fallback(batch_pairs)
+                        for list_idx, fb_pair in zip(batch_indices, batch_fallback):
+                            analyzed_pairs[list_idx] = fb_pair
 
         except Exception:
             analyzed_pairs = scan_service.analyze_with_llm(matched_pairs)
