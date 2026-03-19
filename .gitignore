@@ -36,3 +36,16 @@ reports/
 *.egg-info/
 .mypy_cache/
 .ruff_cache/
+
+terraform.tfstate
+terraform.tfvars
+.terraform/
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

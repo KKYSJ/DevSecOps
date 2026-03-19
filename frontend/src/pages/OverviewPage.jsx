@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import SeverityChart from '../components/dashboard/SeverityChart';
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE = process.env.REACT_APP_API_BASE_URL || '/api/v1';
 
 const EMPTY_SUMMARY = { critical: 0, high: 0, medium: 0, low: 0, gateDecision: 'ALLOW', totalScore: 0 };
 
