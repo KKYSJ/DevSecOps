@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-import React, { useState, useEffect } from "react";
-import api from "../services/api";
-
-const CAT_TOOLS = { SAST: "SonarQube ↔ Semgrep", SCA: "Trivy ↔ Dep-Check", IaC: "tfsec ↔ Checkov", DAST: "OWASP ZAP" };
-=======
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -196,7 +190,6 @@ function SectionTable({ section }) {
       marginBottom: 24,
       overflow: 'hidden',
     }}>
-      {/* Section Header */}
       <div style={{
         padding: '14px 20px',
         borderBottom: '1px solid #374151',
@@ -229,7 +222,6 @@ function SectionTable({ section }) {
         </span>
       </div>
 
-      {/* Tool names header bar */}
       <div style={{
         padding: '8px 20px',
         background: '#1a2332',
@@ -255,7 +247,6 @@ function SectionTable({ section }) {
         )}
       </div>
 
-      {/* Table */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -283,7 +274,6 @@ function SectionTable({ section }) {
                     ? `3px solid ${SEVERITY_COLORS[row.severity]?.bg || '#ea580c'}`
                     : '3px solid transparent',
                 }}>
-                  {/* Target */}
                   <td style={{ ...tdStyle, maxWidth: 220 }}>
                     <div style={{
                       color: '#e5e7eb',
@@ -296,22 +286,18 @@ function SectionTable({ section }) {
                     </div>
                   </td>
 
-                  {/* Severity */}
                   <td style={tdStyle}>
                     <SeverityBadge severity={row.severity} />
                   </td>
 
-                  {/* Judgement */}
                   <td style={tdStyle}>
                     <JudgementBadge code={row.judgement_code} label={row.display_label} />
                   </td>
 
-                  {/* Confidence */}
                   <td style={tdStyle}>
                     <ConfidenceBadge level={row.confidence_level} />
                   </td>
 
-                  {/* Score */}
                   <td style={{ ...tdStyle, textAlign: 'right' }}>
                     <span style={{
                       color: row.row_score >= 50 ? '#f87171' : row.row_score >= 20 ? '#fbbf24' : '#9ca3af',
@@ -323,19 +309,16 @@ function SectionTable({ section }) {
                     </span>
                   </td>
 
-                  {/* Tool A */}
                   <td style={{ ...tdStyle, maxWidth: 200 }}>
                     <ToolResult result={row.tool_a} />
                   </td>
 
-                  {/* Tool B */}
                   {hasTwoTools && (
                     <td style={{ ...tdStyle, maxWidth: 200 }}>
                       <ToolResult result={row.tool_b} />
                     </td>
                   )}
 
-                  {/* Reason / Action */}
                   <td style={tdStyle}>
                     <ExpandableCell reason={row.reason} action_text={row.action_text} />
                   </td>
@@ -348,22 +331,10 @@ function SectionTable({ section }) {
     </div>
   );
 }
->>>>>>> origin/nayoung
 
 export default function CrossValidationPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-<<<<<<< HEAD
-  const [activeTab, setActiveTab] = useState(null);
-
-  useEffect(() => {
-    api.get("/cross")
-      .then((res) => {
-        const d = res.data?.dashboard_report || res.data || {};
-        setReport(d);
-        const cats = Object.keys(d.sections || {});
-        if (cats.length > 0) setActiveTab(cats[0]);
-=======
 
   useEffect(() => {
     axios.get(`${API_BASE}/cross`)
@@ -371,98 +342,11 @@ export default function CrossValidationPage() {
         if (res.data) {
           setReport(res.data);
         }
->>>>>>> origin/nayoung
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-<<<<<<< HEAD
-  if (loading) return <div className="loading-center">로딩 중...</div>;
-
-  const dr = report || {};
-  const cards = dr.summary_cards || dr.summary || {};
-  const rawSections = dr.sections || {};
-  // Normalize: sections can be { SAST: [...] } or { SAST: { rows: [...] } }
-  const sections = {};
-  Object.entries(rawSections).forEach(([cat, val]) => {
-    sections[cat] = Array.isArray(val) ? val : (val?.rows || []);
-  });
-  const gate = (cards.gate_decision || dr.gate_decision || "—").toUpperCase();
-  const totalScore = cards.total_score ?? dr.total_score ?? 0;
-  const catKeys = Object.keys(sections);
-  const rows = sections[activeTab] || [];
-
-  const gateClass = gate === "BLOCK" ? "fail" : gate === "REVIEW" ? "review" : "ok";
-
-  return (
-    <div className="full-page">
-      <div className="page-head">
-        <h2>교차 검증 결과</h2>
-        <p>다중 보안 도구 교차 검증 리포트 — Gemini LLM 분석</p>
-      </div>
-
-      {/* Gate Banner */}
-      <div className={`verdict ${gateClass}`} style={{ marginBottom: 20 }}>
-        <div className="verdict-top">
-          <div className="verdict-icon">{gate === "BLOCK" ? "✕" : gate === "REVIEW" ? "!" : "✓"}</div>
-          <div>
-            <div className="verdict-title">배포 판정: {gate}</div>
-            <div className="verdict-meta">총점: {typeof totalScore === "number" ? totalScore.toFixed(1) : totalScore}</div>
-          </div>
-        </div>
-        <div className="verdict-counts">
-          <div className="vc"><span className="vc-n" style={{ color: "var(--cr)" }}>{cards.critical_count || cards.by_severity?.CRITICAL || 0}</span><span className="vc-l">Critical</span></div>
-          <div className="vc"><span className="vc-n" style={{ color: "var(--hi)" }}>{cards.high_count || cards.by_severity?.HIGH || 0}</span><span className="vc-l">High</span></div>
-          <div className="vc"><span className="vc-n" style={{ color: "var(--ac)" }}>{cards.medium_count || cards.by_severity?.MEDIUM || 0}</span><span className="vc-l">Medium</span></div>
-          <div className="vc"><span className="vc-n">{cards.low_count || cards.by_severity?.LOW || 0}</span><span className="vc-l">Low</span></div>
-        </div>
-      </div>
-
-      {/* Category Tabs */}
-      <div className="filter-row">
-        {catKeys.map((cat) => (
-          <span key={cat} className={`filter-chip${activeTab === cat ? " active" : ""}`} onClick={() => setActiveTab(cat)}>
-            {cat} ({(sections[cat] || []).length})
-          </span>
-        ))}
-      </div>
-
-      {catKeys.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "var(--tx3)" }}>교차 검증 데이터가 없습니다</div>}
-
-      {activeTab && rows.length > 0 && (
-        <>
-          <div className="sec-label" style={{ marginTop: 0 }}>{activeTab} — {CAT_TOOLS[activeTab] || activeTab}</div>
-          <table className="vtbl">
-            <thead>
-              <tr><th>대상</th><th>심각도</th><th>판정</th><th>신뢰도</th><th>점수</th><th>근거</th><th>조치</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => {
-                const sevCls = r.severity === "CRITICAL" ? "s-cr" : r.severity === "HIGH" ? "s-hi" : r.severity === "MEDIUM" ? "s-ac" : "s-ok";
-                const jud = r.judgement || r.judgement_code || "";
-                const judCls = jud === "TRUE_POSITIVE" ? "s-cr" : jud === "FALSE_POSITIVE" ? "s-pu" : "s-ac";
-                const judLabel = jud.replace("_", " ") || "REVIEW";
-                const label = r.target_label || (r.finding_a || r.finding_b)?.file_path || r.correlation_key || "—";
-                return (
-                  <tr key={r.row_id || i} style={{ borderLeft: r.severity === "CRITICAL" ? "3px solid var(--cr)" : r.severity === "HIGH" ? "3px solid var(--hi)" : "none" }}>
-                    <td><code>{label}</code></td>
-                    <td><span className={`sev-b ${sevCls}`}>{r.severity}</span></td>
-                    <td><span className={`sev-b ${judCls}`}>{judLabel}</span></td>
-                    <td><span className="sev-b s-ac">{r.confidence_level || r.confidence || "—"}</span></td>
-                    <td style={{ fontFamily: "monospace", fontWeight: 700, color: (r.row_score || 0) >= 50 ? "var(--cr)" : "var(--tx2)" }}>{typeof r.row_score === "number" ? r.row_score.toFixed(1) : "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--tx2)", maxWidth: 250 }}>{r.reason || "—"}</td>
-                    <td style={{ fontSize: 11, color: "var(--ac)", maxWidth: 200 }}>{r.action || r.action_text || "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </>
-      )}
-
-      {activeTab && rows.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "var(--tx3)", fontFamily: "monospace" }}>이 카테고리에 데이터가 없습니다</div>}
-=======
   if (loading) {
     return (
       <div style={{ color: 'white', padding: 60, textAlign: 'center', fontSize: 16, fontFamily: 'monospace' }}>
@@ -488,7 +372,6 @@ export default function CrossValidationPage() {
 
   return (
     <div style={containerStyle}>
-      {/* Page Header */}
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: 0, marginBottom: 6 }}>
           교차 검증 결과
@@ -498,7 +381,6 @@ export default function CrossValidationPage() {
         </div>
       </div>
 
-      {/* Gate Decision Banner */}
       <div style={{
         background: gateStyle.bg,
         border: `2px solid ${gateStyle.border}`,
@@ -522,7 +404,6 @@ export default function CrossValidationPage() {
             </div>
           </div>
         </div>
-        {/* Summary mini-cards */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {[
             { label: 'CRITICAL', count: cards.critical_count || 0, color: '#dc2626' },
@@ -545,7 +426,6 @@ export default function CrossValidationPage() {
         </div>
       </div>
 
-      {/* Score display */}
       <div style={{
         background: '#1f2937',
         border: '1px solid #374151',
@@ -591,7 +471,6 @@ export default function CrossValidationPage() {
         </span>
       </div>
 
-      {/* Category navigation */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
         {sections.map(section => {
           const catKey = section.category?.toUpperCase();
@@ -618,7 +497,6 @@ export default function CrossValidationPage() {
         })}
       </div>
 
-      {/* Sections */}
       {sections.map(section => (
         <div key={section.section_id} id={section.section_id}>
           <SectionTable section={section} />
@@ -637,7 +515,6 @@ export default function CrossValidationPage() {
           교차 검증 섹션이 없습니다.
         </div>
       )}
->>>>>>> origin/nayoung
     </div>
   );
 }

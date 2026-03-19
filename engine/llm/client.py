@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 _OPENAI_MODEL = "gpt-4o-mini"
-_GEMINI_MODEL = "gemini-2.5-flash"
+_GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
 _TIMEOUT = 60.0
 _MAX_RETRIES = 2
 
