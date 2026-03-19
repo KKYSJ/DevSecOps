@@ -277,6 +277,9 @@ def emit_console_summary(output: dict[str, Any], output_path: Path) -> None:
     print(f"  provider: {llm.get('provider')}")
     print(f"  model: {llm.get('model')}")
     print(f"  confidence: {llm.get('confidence')}")
+    print(f"  gemini_configured: {llm.get('gemini_configured')}")
+    print(f"  openai_configured: {llm.get('openai_configured')}")
+    print(f"  attempted_providers: {', '.join(llm.get('attempted_providers', [])) or '-'}")
     print(f"  divergence_ratio: {output.get('divergence_ratio', 0)}")
     print(
         "  combined_summary: "
@@ -317,7 +320,9 @@ def emit_github_annotation(output: dict[str, Any]) -> None:
     message = (
         f"stage={output['stage']}; decision={output['decision']}; "
         f"provider={llm.get('provider')}; model={llm.get('model')}; "
-        f"confidence={llm.get('confidence')}"
+        f"confidence={llm.get('confidence')}; "
+        f"gemini_configured={llm.get('gemini_configured')}; "
+        f"openai_configured={llm.get('openai_configured')}"
     )
     reasons = output.get("reasons", [])
     if reasons:
@@ -346,6 +351,9 @@ def write_step_summary(output: dict[str, Any]) -> None:
         f"- Provider: `{llm.get('provider')}`",
         f"- Model: `{llm.get('model')}`",
         f"- Confidence: `{llm.get('confidence')}`",
+        f"- Gemini configured: `{llm.get('gemini_configured')}`",
+        f"- OpenAI configured: `{llm.get('openai_configured')}`",
+        f"- Attempted providers: `{', '.join(llm.get('attempted_providers', [])) or '-'}`",
         f"- Divergence ratio: `{output.get('divergence_ratio', 0)}`",
         "",
         "**Combined Summary**",

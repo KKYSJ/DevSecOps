@@ -31,12 +31,21 @@ def run(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     openai_model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+    gemini_configured = bool(gemini_key)
+    openai_configured = bool(openai_key)
 
     if gemini_key:
         try:
             raw = call_gemini(prompt, gemini_key, gemini_model)
             parsed = parse_json_object(raw)
-            return normalize_result(parsed, "gemini", gemini_model)
+            return normalize_result(
+                parsed,
+                "gemini",
+                gemini_model,
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["gemini"],
+            )
         except Exception as exc:  # pragma: no cover - defensive fallback
             if openai_key:
                 try:
@@ -47,23 +56,54 @@ def run(payload: dict[str, Any] | None = None) -> dict[str, Any]:
                         "openai",
                         openai_model,
                         fallback_reason=f"gemini_failed: {exc}",
+                        gemini_configured=gemini_configured,
+                        openai_configured=openai_configured,
+                        attempted_providers=["gemini", "openai"],
                     )
                 except Exception as openai_exc:  # pragma: no cover - defensive fallback
                     return fallback_result(
                         reason=f"gemini_failed: {exc}; openai_failed: {openai_exc}",
                         prompt_preview=prompt[:600],
+                        gemini_configured=gemini_configured,
+                        openai_configured=openai_configured,
+                        attempted_providers=["gemini", "openai"],
                     )
-            return fallback_result(reason=f"gemini_failed: {exc}", prompt_preview=prompt[:600])
+            return fallback_result(
+                reason=f"gemini_failed: {exc}",
+                prompt_preview=prompt[:600],
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["gemini"],
+            )
 
     if openai_key:
         try:
             raw = call_openai(prompt, openai_key, openai_model)
             parsed = parse_json_object(raw)
-            return normalize_result(parsed, "openai", openai_model)
+            return normalize_result(
+                parsed,
+                "openai",
+                openai_model,
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["openai"],
+            )
         except Exception as exc:  # pragma: no cover - defensive fallback
-            return fallback_result(reason=f"openai_failed: {exc}", prompt_preview=prompt[:600])
+            return fallback_result(
+                reason=f"openai_failed: {exc}",
+                prompt_preview=prompt[:600],
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["openai"],
+            )
 
-    return fallback_result(reason="missing_llm_api_keys", prompt_preview=prompt[:600])
+    return fallback_result(
+        reason="missing_llm_api_keys",
+        prompt_preview=prompt[:600],
+        gemini_configured=gemini_configured,
+        openai_configured=openai_configured,
+        attempted_providers=[],
+    )
 
 
 def build_prompt(payload: dict[str, Any]) -> str:
@@ -208,6 +248,9 @@ def normalize_result(
     provider: str,
     model: str,
     fallback_reason: str | None = None,
+    gemini_configured: bool = False,
+    openai_configured: bool = False,
+    attempted_providers: list[str] | None = None,
 ) -> dict[str, Any]:
     recommended = normalize_decision(data.get("recommended_decision"))
     confidence = str(data.get("confidence", "medium")).strip().lower()
@@ -227,6 +270,9 @@ def normalize_result(
         "summary": str(data.get("summary", "")).strip(),
         "reasons": [str(reason) for reason in reasons if str(reason).strip()],
         "provider_notes": str(data.get("provider_notes", "")).strip() or None,
+        "gemini_configured": gemini_configured,
+        "openai_configured": openai_configured,
+        "attempted_providers": attempted_providers or [],
     }
     if fallback_reason:
         result["fallback_reason"] = fallback_reason
@@ -249,7 +295,13 @@ def normalize_decision(value: Any) -> str:
     return mapping.get(text, "review")
 
 
-def fallback_result(reason: str, prompt_preview: str | None = None) -> dict[str, Any]:
+def fallback_result(
+    reason: str,
+    prompt_preview: str | None = None,
+    gemini_configured: bool = False,
+    openai_configured: bool = False,
+    attempted_providers: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "component": "analyzer",
         "provider": "fallback",
@@ -260,4 +312,7 @@ def fallback_result(reason: str, prompt_preview: str | None = None) -> dict[str,
         "reasons": [reason],
         "provider_notes": None,
         "prompt_preview": prompt_preview,
+        "gemini_configured": gemini_configured,
+        "openai_configured": openai_configured,
+        "attempted_providers": attempted_providers or [],
     }
