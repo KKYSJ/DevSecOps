@@ -92,7 +92,8 @@ export default function StageCrossAnalysis({
     };
 
     return (
-        <div className="space-y-4">
+        //<div className="space-y-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
             {/* 1. 비교 결과 블록 */}
             <div className="bg-card rounded-lg border border-border shadow-sm p-4">
                 <div className="flex items-center justify-between mb-3 gap-3">

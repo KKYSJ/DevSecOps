@@ -164,7 +164,7 @@ export default function SummaryCards({ summary, activeSection, vulnerabilities, 
           key={card.title}
           className="bg-card rounded-lg p-3.5 shadow-sm border border-border animate-fade-in-up"
           style={{
-            borderLeft: `3px solid ${card.accent}`,
+            // borderLeft: `3px solid ${card.accent}`,
             animationDelay: `${card.delay}ms`,
             opacity: 0,
             animationFillMode: 'forwards',
