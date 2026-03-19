@@ -12,7 +12,7 @@ from typing import Any
 
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 TIMEOUT_SECONDS = 60
 MAX_RETRIES = 2
 
@@ -136,11 +136,23 @@ def build_prompt(payload: dict[str, Any]) -> str:
         "divergence_ratio": payload.get("divergence_ratio", 0),
         "tool_summaries": tool_lines,
     }
+    if payload.get("confirmed_summary"):
+        compact_payload["confirmed_summary"] = payload.get("confirmed_summary", {})
+    if payload.get("mismatch_summary"):
+        compact_payload["mismatch_summary"] = payload.get("mismatch_summary", {})
+    if payload.get("matching"):
+        compact_payload["matching"] = payload.get("matching", {})
+    if payload.get("unmatched_findings"):
+        compact_payload["unmatched_findings"] = payload.get("unmatched_findings", {})
+    if payload.get("unmatched_truncated"):
+        compact_payload["unmatched_truncated"] = payload.get("unmatched_truncated", {})
 
     return (
         f"{SYSTEM_PROMPT}\n\n"
         "Evaluate the following CI/CD security gate context.\n"
         "Be conservative: if tools disagree materially or important tools did not execute, prefer review.\n"
+        "If unmatched_findings are present, focus your verdict on whether those unmatched findings are likely true positives, likely tool-specific noise, or need manual review.\n"
+        "Do not re-judge matched findings unless the payload explicitly indicates confirmed criticality.\n"
         "Use this JSON schema exactly:\n"
         "{\n"
         '  "recommended_decision": "pass | review | fail",\n'
