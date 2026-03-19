@@ -147,13 +147,16 @@ def _build_row(pair: dict, row_id: str) -> dict:
     return {
         "row_id": row_id,
         "target_label": target_label,
-        "severity": pair.get("severity", "MEDIUM"),
+        "severity": pair.get("reassessed_severity", pair.get("severity", "MEDIUM")),
+        "original_severity": pair.get("severity", "MEDIUM"),
         "judgement_code": pair.get("judgement_code", "REVIEW_NEEDED"),
         "display_label": pair.get("display_label", "확인 필요"),
         "confidence_level": pair.get("confidence_level", "MED"),
         "row_score": pair.get("row_score", 0.0),
         "tool_a": tool_a_status,
         "tool_b": tool_b_status,
+        "title_ko": pair.get("title_ko", ""),
+        "risk_summary": pair.get("risk_summary", ""),
         "reason": reason,
         "action_text": action_text,
     }

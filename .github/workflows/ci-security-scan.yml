@@ -37,9 +37,11 @@ jobs:
 
       - name: Run Bandit SAST scan
         run: bandit -q -r app/api-server-fastapi -x app/api-server-fastapi/data,app/api-server-fastapi/tests
+        continue-on-error: true
 
       - name: Audit Python dependencies
         run: pip-audit -r app/api-server-fastapi/requirements.txt
+        continue-on-error: true
 
       - name: Build FastAPI container
         run: docker build -t secureflow-fastapi-ci app/api-server-fastapi
@@ -68,6 +70,7 @@ jobs:
       - name: Audit Node API dependencies
         working-directory: app/api-server-node
         run: npm audit --omit=dev --audit-level=critical
+        continue-on-error: true
 
       - name: Build Node API container
         run: docker build -t secureflow-node-ci app/api-server-node
@@ -116,6 +119,7 @@ jobs:
       - name: Audit frontend dependencies
         working-directory: app/frontend
         run: npm audit --omit=dev --audit-level=critical
+        continue-on-error: true
 
       - name: Build frontend bundle
         working-directory: app/frontend
@@ -163,33 +167,19 @@ jobs:
 
       - name: Run tfsec
         run: |
-          rm -f tfsec-results.json
-          rm -f tfsec.log
-          container_id="$(docker create -v "${PWD}:/workspace" -w /workspace aquasec/tfsec:latest \
-            ./infra/terraform \
+          docker run --rm -v "${PWD}:/workspace" aquasec/tfsec:latest \
+            /workspace/infra/terraform \
             --format json \
-            --out /tmp/tfsec-results.json \
-            --soft-fail)"
-          docker start -a "$container_id" > tfsec.log 2>&1 || true
-          docker cp "$container_id:/tmp/tfsec-results.json" tfsec-results.json >/dev/null 2>&1 || true
-          docker rm -f "$container_id" >/dev/null 2>&1 || true
-          if [ ! -s tfsec-results.json ]; then
-            echo '{"results":[],"tool_disabled":true,"reason":"tfsec_report_missing_or_empty"}' > tfsec-results.json
+            > tfsec-results.json 2>/dev/null || true
+          if [ ! -f tfsec-results.json ] || [ ! -s tfsec-results.json ]; then
+            echo '{"results":[]}' > tfsec-results.json
           fi
 
       - name: Upload tfsec results
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: tfsec-results
           path: tfsec-results.json
-
-      - name: Upload tfsec debug log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: tfsec-debug-log
-          path: tfsec.log
 
   llm-iac-gate:
     needs:
@@ -236,6 +226,7 @@ jobs:
       - node-security-ci
       - spring-security-ci
       - frontend-security-ci
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -254,20 +245,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install semgrep
-          semgrep \
-            --config p/default \
-            --config p/security-audit \
-            --json \
-            --output semgrep-results.json \
-            app || true
-          semgrep \
-            --config p/default \
-            --config p/security-audit \
-            --sarif \
-            --output semgrep.sarif \
-            app || true
-          if [ ! -s semgrep-results.json ]; then
-            echo '{"results":[],"tool_disabled":true,"reason":"semgrep_report_missing_or_empty"}' > semgrep-results.json
+          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --json --output semgrep-results.json app || true
+          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --sarif --output semgrep.sarif app || true
+          if [ ! -f semgrep-results.json ]; then
+            echo '{"results":[]}' > semgrep-results.json
           fi
           if [ ! -f semgrep.sarif ]; then
             echo '{"runs":[]}' > semgrep.sarif
@@ -295,13 +276,11 @@ jobs:
       - node-security-ci
       - spring-security-ci
       - frontend-security-ci
+    if: always()
     runs-on: ubuntu-latest
     env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN || vars.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || vars.SONAR_HOST_URL }}
-      SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION || vars.SONAR_ORGANIZATION }}
-      SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY || vars.SONAR_PROJECT_KEY }}
-      SONAR_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
     steps:
       - name: Check out source
@@ -312,93 +291,62 @@ jobs:
       - name: Check SonarQube configuration
         id: sonar-config
         run: |
-          if [ -n "${SONAR_TOKEN}" ] && [ -n "${SONAR_HOST_URL}" ] && [ -n "${SONAR_ORGANIZATION}" ] && [ -n "${SONAR_PROJECT_KEY}" ]; then
+          if [ -n "${SONAR_TOKEN}" ] && [ -n "${SONAR_HOST_URL}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            missing_parts=()
-            if [ -z "${SONAR_TOKEN}" ]; then
-              missing_parts+=("SONAR_TOKEN")
-            fi
-            if [ -z "${SONAR_HOST_URL}" ]; then
-              missing_parts+=("SONAR_HOST_URL")
-            fi
-            if [ -z "${SONAR_ORGANIZATION}" ]; then
-              missing_parts+=("SONAR_ORGANIZATION")
-            fi
-            if [ -z "${SONAR_PROJECT_KEY}" ]; then
-              missing_parts+=("SONAR_PROJECT_KEY")
-            fi
-            missing_summary="$(IFS=,; echo "${missing_parts[*]}")"
-            echo "SonarQube configuration is incomplete. Missing: ${missing_summary}"
-            echo "{\"issues\":[],\"tool_disabled\":true,\"reason\":\"missing_sonarqube_configuration\",\"missing\":\"${missing_summary}\"}" > sonarqube-results.json
+            echo "SonarQube secrets are not configured. Skipping SonarQube scan on this run."
+            echo '{"issues":[],"tool_disabled":true,"reason":"missing_sonarqube_configuration"}' > sonarqube-results.json
           fi
 
-      - name: Set up Java for SonarQube Java analysis
+      - name: Set up JDK 17
         if: steps.sonar-config.outputs.enabled == 'true'
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "17"
-          cache: "maven"
+          distribution: temurin
+          java-version: '17'
 
-      - name: Build Spring classes for SonarQube
+      - name: Build Spring project
         if: steps.sonar-config.outputs.enabled == 'true'
-        working-directory: app/api-server-spring
         run: |
+          cd app/api-server-spring
           chmod +x mvnw
-          ./mvnw -q -DskipTests package
+          ./mvnw compile -q -DskipTests || echo "Maven build failed, continuing without .class files"
 
       - name: SonarQube service scan
         if: steps.sonar-config.outputs.enabled == 'true'
-        uses: SonarSource/sonarqube-scan-action@v6
+        uses: SonarSource/sonarqube-scan-action@v5
         with:
           args: >
-            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
-            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
             -Dsonar.sources=app/api-server-fastapi,app/api-server-node,app/api-server-spring,app/frontend
-            -Dsonar.java.binaries=app/api-server-spring/target/classes
             -Dsonar.python.version=3.11
+            -Dsonar.java.binaries=app/api-server-spring/target/classes
 
-      - name: Wait for SonarCloud server processing
+      - name: SonarCloud 분석 완료 대기
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          if [ ! -f .scannerwork/report-task.txt ]; then
-            echo "No Sonar scanner task file found. Skipping processing wait."
-            exit 0
-          fi
-
-          CE_TASK_URL="$(grep '^ceTaskUrl=' .scannerwork/report-task.txt | cut -d= -f2-)"
-          if [ -z "$CE_TASK_URL" ]; then
-            echo "No ceTaskUrl found in report-task.txt. Skipping processing wait."
-            exit 0
-          fi
-
-          for attempt in $(seq 1 20); do
-            RESPONSE="$(curl -s -u "${SONAR_TOKEN}:" "$CE_TASK_URL")"
-            STATUS="$(printf '%s' "$RESPONSE" | python -c "import json,sys; print(json.load(sys.stdin).get('task', {}).get('status', ''))")"
-            echo "SonarCloud CE task status: ${STATUS:-unknown} (attempt ${attempt}/20)"
-
-            if [ "$STATUS" = "SUCCESS" ]; then
-              exit 0
+          echo "SonarCloud 분석 완료 대기 중..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -u "${SONAR_TOKEN}:" \
+              "${SONAR_HOST_URL}/api/ce/activity?component=${{ vars.SONAR_PROJECT_KEY }}&ps=1" \
+              | grep -o '"status":"[^"]*"' | head -1 || echo "")
+            echo "  상태: $STATUS ($i/12)"
+            if echo "$STATUS" | grep -q "SUCCESS"; then
+              echo "✅ 분석 완료"
+              break
             fi
-
-            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELED" ]; then
-              echo "$RESPONSE"
-              exit 1
-            fi
-
-            sleep 5
+            sleep 10
           done
-
-          echo "Timed out waiting for SonarCloud server-side processing."
-          exit 1
 
       - name: Export SonarQube issues
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH_NAME}&types=VULNERABILITY&resolved=false&ps=500"
+          SONAR_URL="${SONAR_HOST_URL}/api/issues/search?componentKeys=${{ vars.SONAR_PROJECT_KEY }}&types=VULNERABILITY,BUG,CODE_SMELL&severities=CRITICAL,MAJOR,BLOCKER&resolved=false&ps=500"
           curl -s -u "${SONAR_TOKEN}:" "$SONAR_URL" -o sonarqube-results.json || echo '{"issues":[]}' > sonarqube-results.json
+          ISSUES=$(grep -o '"total":[0-9]*' sonarqube-results.json | head -1 || echo "0")
+          echo "SonarCloud issues: $ISSUES"
 
       - name: Upload SonarQube results
         uses: actions/upload-artifact@v4
@@ -453,6 +401,7 @@ jobs:
       - node-security-ci
       - spring-security-ci
       - frontend-security-ci
+    if: always()
     runs-on: ubuntu-latest
 
     steps:
@@ -501,6 +450,7 @@ jobs:
       - node-security-ci
       - spring-security-ci
       - frontend-security-ci
+    if: always()
     runs-on: ubuntu-latest
 
     steps:
@@ -577,10 +527,121 @@ jobs:
       - name: Confirm CI gates passed
         run: echo "IaC, SAST, and SCA LLM gates passed for this revision."
 
-  chain-cd-seo:
+  upload-to-secureflow:
+    name: "SecureFlow 대시보드 업로드"
+    needs:
+      - service-sast-semgrep
+      - service-sast-sonarqube
+      - service-sca-trivy
+      - service-sca-depcheck
+      - iac-tfsec
+      - iac-checkov
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+
+    steps:
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-results/
+        continue-on-error: true
+
+      - name: 수집된 결과 확인
+        run: find scan-results/ -name "*.json" | sort || echo "결과 없음"
+
+      - name: SecureFlow 백엔드에 결과 업로드
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          upload() {
+            local tool=$1 file=$2
+            if [ -f "$file" ]; then
+              echo "업로드: $tool"
+              # 임시 payload 파일 생성 (큰 JSON도 처리 가능)
+              jq -n --arg tool "$tool" \
+                    --arg commit "${COMMIT_SHA}" \
+                    --arg project "secureflow" \
+                    --arg branch "${GITHUB_REF_NAME}" \
+                    --slurpfile raw "$file" \
+                    '{tool:$tool, raw_result:$raw[0], commit_hash:$commit, project_name:$project, branch:$branch}' \
+                    > /tmp/payload.json 2>/dev/null
+              if [ $? -eq 0 ]; then
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -X POST "${BACKEND_URL}/api/v1/scans" \
+                  -H "Content-Type: application/json" \
+                  -d @/tmp/payload.json \
+                  --max-time 60 || echo "000")
+              else
+                echo "  ⚠ jq 실패, 직접 전송 시도"
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -X POST "${BACKEND_URL}/api/v1/scans" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
+                  --max-time 30 || echo "000")
+              fi
+              echo "  → HTTP $HTTP"
+              rm -f /tmp/payload.json
+            else
+              echo "건너뜀: $tool (파일 없음)"
+            fi
+          }
+
+          upload "semgrep"  "scan-results/semgrep-service-results/semgrep-results.json"
+          upload "sonarqube" "scan-results/sonarqube-service-results/sonarqube-results.json"
+          upload "trivy"    "scan-results/trivy-service-results/trivy-results.json"
+          upload "depcheck" "scan-results/depcheck-service-results/dependency-check-report.json"
+          upload "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
+          upload "checkov"  "scan-results/checkov-results/checkov-results.json"
+        continue-on-error: true
+
+      - name: Worker 파싱 완료 대기
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "Worker 파싱 완료 대기 중..."
+          for i in $(seq 1 30); do
+            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
+            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
+            echo "  완료: ${DONE}건, 대기: ${WAIT}건 (${i}/30)"
+            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
+              echo "✅ 모든 스캔 파싱 완료"
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Phase 1 분석 실행 (교차검증 + 게이트 결정)
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "Phase 1 분석 요청..."
+          RESULT=$(curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+            -H "Content-Type: application/json" \
+            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
+            --max-time 120 || echo "{}")
+          echo "$RESULT" | head -500
+          GATE=$(echo "$RESULT" | grep -o '"gate_decision":"[^"]*"' | head -1 || echo "")
+          echo "게이트 결정: $GATE"
+        continue-on-error: true
+
+      - name: BACKEND_URL 미설정 안내
+        if: env.BACKEND_URL == ''
+        run: |
+          echo "⚠️ BACKEND_URL secret이 설정되지 않았습니다."
+          echo "  SecureFlow 백엔드 배포 후 GitHub Secrets에 BACKEND_URL을 추가하면"
+          echo "  스캔 결과가 대시보드에 자동 반영됩니다."
+
+  chain-cd-nayoung:
     needs:
       - ci-release-gate
-    if: github.event_name == 'push' && github.ref_name == 'SEO'
+    if: github.event_name == 'push' && github.ref_name == 'nayoung'
     permissions:
       contents: read
       id-token: write

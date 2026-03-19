@@ -29,14 +29,26 @@ def get_cross_validation(db: Session = Depends(get_db)):
     from backend.app.models.tool_result import ToolResult
 
     try:
-        record = (
+        # findings가 있는 최신 report를 우선 반환
+        from sqlalchemy import cast, Integer
+        from sqlalchemy.dialects.postgresql import JSONB
+
+        records = (
             db.query(ToolResult)
             .filter(ToolResult.name == "report")
             .order_by(ToolResult.id.desc())
-            .first()
+            .limit(10)
+            .all()
         )
-        if record and record.data:
-            return record.data
+        for record in records:
+            if record and record.data:
+                total = record.data.get("summary", {}).get("total_findings", 0)
+                if total > 0:
+                    return record.data
+
+        # findings 있는 게 없으면 최신 반환
+        if records and records[0] and records[0].data:
+            return records[0].data
     except Exception:
         pass
 

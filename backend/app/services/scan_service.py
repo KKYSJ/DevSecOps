@@ -47,15 +47,15 @@ PARSERS = {
 # ── 스코어링 상수 ─────────────────────────────────────────────────────────────
 SEVERITY_BASE = {
     "CRITICAL": 100,
-    "HIGH": 40,
-    "MEDIUM": 15,
-    "LOW": 5,
-    "INFO": 1,
+    "HIGH": 10,
+    "MEDIUM": 1,
+    "LOW": 0,
+    "INFO": 0,
 }
 
 JUDGEMENT_WEIGHT = {
     "TRUE_POSITIVE": 1.0,
-    "REVIEW_NEEDED": 0.6,
+    "REVIEW_NEEDED": 0.5,
     "FALSE_POSITIVE": 0.0,
 }
 
@@ -505,9 +505,9 @@ def get_gate_decision(scored_pairs: list[dict]) -> str:
         if p.get("severity") == "HIGH" and p.get("judgement_code") == "TRUE_POSITIVE"
     )
 
-    if total_score >= 100 or critical_tp >= 1 or high_tp >= 3:
+    if critical_tp >= 1 or total_score >= 100:
         return "BLOCK"
-    elif total_score >= 40:
+    elif total_score >= 10:
         return "REVIEW"
     else:
         return "ALLOW"

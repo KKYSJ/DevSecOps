@@ -106,7 +106,7 @@ jobs:
               source_sha="${{ github.event.workflow_run.head_sha }}"
               run_staging="true"
 
-              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ]; then
+              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ] || [ "$branch_name" = "nayoung" ]; then
                 proceed="true"
               elif [ "$branch_name" = "main" ]; then
                 proceed="true"
@@ -157,7 +157,6 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-node:
     needs: resolve-context
@@ -176,7 +175,6 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-spring:
     needs: resolve-context
@@ -195,7 +193,6 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-staging-frontend:
     needs: resolve-context
@@ -214,7 +211,6 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   service-dast-zap:
     needs:
@@ -240,13 +236,6 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
-      - name: Configure AWS credentials for DAST target discovery
-        if: vars.AWS_ROLE_TO_ASSUME != ''
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-2
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
-
       - name: Resolve DAST target URL
         id: target
         run: |
@@ -257,26 +246,6 @@ jobs:
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.STAGING_BASE_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.APP_BASE_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.STAGING_ALB_DNS_NAME }}" ]; then
-            TARGET_URL="http://${{ vars.STAGING_ALB_DNS_NAME }}"
-          fi
-          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.ALB_DNS_NAME }}" ]; then
-            TARGET_URL="http://${{ vars.ALB_DNS_NAME }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            ALB_DNS="$(aws elbv2 describe-load-balancers --names secureflow-dev-alb --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || true)"
-            if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
-              TARGET_URL="http://${ALB_DNS}"
-            fi
-          fi
-          TARGET_URL="${TARGET_URL%/}"
-          echo "resolved_target_url=${TARGET_URL}"
 
           if [ -n "$TARGET_URL" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -333,13 +302,6 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
-      - name: Configure AWS credentials for DAST target discovery
-        if: vars.AWS_ROLE_TO_ASSUME != ''
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-2
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
-
       - name: Resolve DAST target URL
         id: target
         run: |
@@ -350,26 +312,6 @@ jobs:
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.STAGING_BASE_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.APP_BASE_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.STAGING_ALB_DNS_NAME }}" ]; then
-            TARGET_URL="http://${{ vars.STAGING_ALB_DNS_NAME }}"
-          fi
-          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.ALB_DNS_NAME }}" ]; then
-            TARGET_URL="http://${{ vars.ALB_DNS_NAME }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            ALB_DNS="$(aws elbv2 describe-load-balancers --names secureflow-dev-alb --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || true)"
-            if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
-              TARGET_URL="http://${ALB_DNS}"
-            fi
-          fi
-          TARGET_URL="${TARGET_URL%/}"
-          echo "resolved_target_url=${TARGET_URL}"
 
           if [ -n "$TARGET_URL" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -405,6 +347,7 @@ jobs:
     needs:
       - service-dast-zap
       - service-dast-nuclei
+    if: always()
     runs-on: ubuntu-latest
 
     steps:
@@ -415,13 +358,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Configure AWS credentials for target discovery
-        if: vars.AWS_ROLE_TO_ASSUME != ''
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-2
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
 
       - name: Download DAST artifacts
         uses: actions/download-artifact@v4
@@ -447,6 +383,28 @@ jobs:
           name: dast-llm-gate
           path: artifacts/dast/dast-llm-gate.json
 
+      - name: SecureFlow에 DAST 결과 업로드
+        if: always() && env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          ZAP_FILE="artifacts/dast/zap-service-results/zap-results.json"
+          if [ -f "$ZAP_FILE" ]; then
+            echo "ZAP 결과 업로드..."
+            curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
+              -H "Content-Type: application/json" \
+              -d "{\"tool\":\"zap\",\"raw_result\":$(cat "$ZAP_FILE"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\"}" \
+              --max-time 30 || true
+
+            echo "Phase 2 분석 요청..."
+            curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+              -H "Content-Type: application/json" \
+              -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
+              --max-time 120 || true
+          fi
+        continue-on-error: true
+
   isms-preprod-gate:
     needs:
       - resolve-context
@@ -463,13 +421,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Configure AWS credentials for target discovery
-        if: vars.AWS_ROLE_TO_ASSUME != ''
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ap-northeast-2
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
-
       - name: Download DAST gate artifact
         uses: actions/download-artifact@v4
         with:
@@ -485,26 +436,6 @@ jobs:
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.STAGING_BASE_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.APP_BASE_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.STAGING_ALB_DNS_NAME }}" ]; then
-            TARGET_URL="http://${{ vars.STAGING_ALB_DNS_NAME }}"
-          fi
-          if [ -z "$TARGET_URL" ] && [ -n "${{ vars.ALB_DNS_NAME }}" ]; then
-            TARGET_URL="http://${{ vars.ALB_DNS_NAME }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            ALB_DNS="$(aws elbv2 describe-load-balancers --names secureflow-dev-alb --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null || true)"
-            if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
-              TARGET_URL="http://${ALB_DNS}"
-            fi
-          fi
-          TARGET_URL="${TARGET_URL%/}"
-          echo "resolved_target_url=${TARGET_URL}"
           echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
 
       - name: Run ISMS-P gate
@@ -541,7 +472,6 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-node:
     needs:
@@ -561,7 +491,6 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-spring:
     needs:
@@ -581,7 +510,6 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-frontend:
     needs:
@@ -601,4 +529,3 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
-      concurrency_suffix: ${{ needs.resolve-context.outputs.branch_name }}

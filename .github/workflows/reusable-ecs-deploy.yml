@@ -31,17 +31,13 @@ on:
         required: false
         default: ""
         type: string
-      concurrency_suffix:
-        required: false
-        default: "shared"
-        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: deploy-${{ inputs.ecs_service }}-${{ inputs.concurrency_suffix }}
+  group: deploy-${{ inputs.ecs_service }}
   cancel-in-progress: true
 
 jobs:
