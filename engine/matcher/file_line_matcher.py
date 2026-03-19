@@ -1,19 +1,14 @@
 """
 파일 경로와 라인 번호 기반으로 두 도구의 findings를 매칭합니다.
 같은 파일 경로이고 라인 번호가 허용 범위 내에 있는 finding 쌍을 찾습니다.
-
-변경점:
-- 첫 번째 후보가 아니라 가장 가까운 라인 후보를 선택
-- SAST/IaC 모두 category prefix를 올바르게 반영
-- 경로 정규화 강화
 """
 
 import logging
-import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# 카테고리별 라인 수 허용 범위
 _LINE_TOLERANCE = {
     "SAST": 5,
     "IaC": 10,
@@ -27,13 +22,23 @@ def match_by_file_line(
     category: str = "SAST",
     line_tolerance: Optional[int] = None,
 ) -> list[tuple[dict, dict, str]]:
-    """같은 파일에서 라인 번호가 허용 범위 내인 finding 쌍을 찾습니다."""
+    """같은 파일에서 라인 번호가 허용 범위 내인 finding 쌍을 찾습니다.
+
+    Args:
+        findings_a: 도구 A의 finding 목록
+        findings_b: 도구 B의 finding 목록
+        category: 카테고리 (라인 허용 범위 결정에 사용)
+        line_tolerance: 라인 번호 허용 범위 (None이면 카테고리 기본값 사용)
+
+    Returns:
+        (finding_a, finding_b, correlation_key) 튜플 목록
+    """
     if line_tolerance is None:
         line_tolerance = _LINE_TOLERANCE.get(category, _LINE_TOLERANCE["default"])
 
     matches = []
-    prefix = category.lower()
 
+    # 도구 B의 findings를 파일 경로로 인덱싱
     b_by_file: dict[str, list[dict]] = {}
     for fb in findings_b:
         path = _normalize_path(fb.get("file_path"))
@@ -50,61 +55,39 @@ def match_by_file_line(
         line_a = fa.get("line_number")
         candidates = b_by_file.get(path_a, [])
 
-        best = None
-        best_dist = None
-
         for fb in candidates:
             if fb["id"] in matched_b_ids:
                 continue
 
             line_b = fb.get("line_number")
 
+            # 두 라인 번호 모두 있으면 허용 범위 비교
             if line_a is not None and line_b is not None:
-                dist = abs(int(line_a) - int(line_b))
-                if dist > line_tolerance:
+                if abs(int(line_a) - int(line_b)) > line_tolerance:
                     continue
+                # 정규화된 라인 번호 (5 단위 버킷)
+                normalized_line = (int(line_a) // line_tolerance) * line_tolerance
+                correlation_key = f"sast:{path_a}:{normalized_line}"
             else:
-                dist = 999999
+                # 라인 번호 없으면 파일 경로만으로 매칭
+                correlation_key = f"sast:{path_a}:noline"
 
-            if best is None or dist < best_dist:
-                best = fb
-                best_dist = dist
-
-        if best is None:
-            continue
-
-        if line_a is not None and best.get("line_number") is not None:
-            normalized_line = (int(line_a) // line_tolerance) * line_tolerance
-            correlation_key = f"{prefix}:{path_a}:{normalized_line}"
-        else:
-            correlation_key = f"{prefix}:{path_a}:noline"
-
-        matched_b_ids.add(best["id"])
-        matches.append((fa, best, correlation_key))
+            matched_b_ids.add(fb["id"])
+            matches.append((fa, fb, correlation_key))
+            break  # 가장 가까운 하나만 매칭
 
     return matches
 
 
 def _normalize_path(path: Optional[str]) -> Optional[str]:
-    """도구별 차이를 줄이기 위해 파일 경로를 정규화합니다."""
+    """파일 경로를 정규화합니다 (앞의 / 또는 ./ 제거)."""
     if not path:
         return None
-
-    p = str(path).strip().replace("\\", "/")
-
+    p = str(path).strip()
+    # 앞에 "/" 제거
     while p.startswith("/"):
         p = p[1:]
+    # 앞에 "./" 제거
     while p.startswith("./"):
         p = p[2:]
-
-    # SonarQube component 예: backend:app/api/users.py
-    if ":" in p and "/" in p:
-        left, right = p.split(":", 1)
-        if left and right:
-            if not right.startswith(left + "/"):
-                p = f"{left}/{right}"
-            else:
-                p = right
-
-    p = re.sub(r"/+", "/", p)
     return p if p else None

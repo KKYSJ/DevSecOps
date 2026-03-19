@@ -1,0 +1,304 @@
+name: CI Security Scan
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "engine/**"
+      - "ismsp/**"
+      - "infra/terraform/**"
+      - ".github/workflows/ci-security-scan.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "engine/**"
+      - "ismsp/**"
+      - "infra/terraform/**"
+      - ".github/workflows/ci-security-scan.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+# ── Phase 1: 코드 레벨 스캔 (병렬 실행) ─────────────────────────────────────
+
+jobs:
+  # ── SAST ①: Semgrep ────────────────────────────────────────────────────────
+  sast-semgrep:
+    name: "SAST · Semgrep"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          pip install semgrep --quiet
+          semgrep --config p/python \
+                  --config p/javascript \
+                  --config p/security-audit \
+                  --json --output semgrep-results.json \
+                  backend/ engine/ ismsp/ frontend/src/ || true
+          semgrep --config p/python \
+                  --config p/javascript \
+                  --config p/security-audit \
+                  --sarif --output semgrep.sarif \
+                  backend/ engine/ ismsp/ frontend/src/ || true
+
+      - name: Upload Semgrep JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep-results.json
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+        continue-on-error: true
+
+  # ── SAST ②: SonarQube ────────────────────────────────────────────────────
+  sast-sonarqube:
+    name: "SAST · SonarQube"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=secureflow
+            -Dsonar.sources=backend,frontend/src,engine,ismsp
+            -Dsonar.python.version=3.11
+        continue-on-error: true
+
+      - name: Export SonarQube Issues JSON
+        run: |
+          SONAR_URL="${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=secureflow&types=VULNERABILITY&resolved=false&ps=500"
+          curl -sf -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_URL" \
+            -o sonarqube-results.json \
+            || echo '{"issues":[]}' > sonarqube-results.json
+        continue-on-error: true
+
+      - name: Upload SonarQube results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonarqube-results
+          path: sonarqube-results.json
+
+  # ── SCA ①: Trivy ─────────────────────────────────────────────────────────
+  sca-trivy:
+    name: "SCA · Trivy"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy (파일시스템 스캔)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "json"
+          output: "trivy-results.json"
+          severity: "CRITICAL,HIGH,MEDIUM,LOW"
+          exit-code: "0"
+
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.json
+
+  # ── SCA ②: OWASP Dependency-Check ─────────────────────────────────────────
+  sca-depcheck:
+    name: "SCA · Dependency-Check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "secureflow"
+          path: "."
+          format: "JSON"
+          out: "depcheck-results"
+          args: >
+            --enableRetired
+            --exclude "**/.git/**"
+        env:
+          JAVA_HOME: /opt/jdk
+        continue-on-error: true
+
+      - name: Upload Dependency-Check results
+        uses: actions/upload-artifact@v4
+        with:
+          name: depcheck-results
+          path: depcheck-results/
+
+  # ── IaC ①: tfsec ─────────────────────────────────────────────────────────
+  iac-tfsec:
+    name: "IaC · tfsec"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: infra/terraform
+          format: json
+          additional_args: "--out tfsec-results.json --soft-fail"
+        continue-on-error: true
+
+      - name: Fallback tfsec (직접 실행)
+        run: |
+          if [ ! -f tfsec-results.json ]; then
+            docker run --rm \
+              -v "$(pwd)/infra/terraform:/src" \
+              aquasec/tfsec /src \
+              --format json \
+              --out /src/tfsec-results.json \
+              --soft-fail || true
+            cp infra/terraform/tfsec-results.json tfsec-results.json 2>/dev/null || echo '{"results":[]}' > tfsec-results.json
+          fi
+        continue-on-error: true
+
+      - name: Upload tfsec results
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfsec-results
+          path: tfsec-results.json
+
+  # ── IaC ②: Checkov ──────────────────────────────────────────────────────
+  iac-checkov:
+    name: "IaC · Checkov"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov
+        run: |
+          pip install checkov --quiet
+          checkov -d infra/terraform \
+            --output json \
+            --output-file checkov-results.json \
+            --soft-fail || true
+
+      - name: Upload Checkov results
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-results
+          path: checkov-results.json
+
+  # ── Phase 2: 결과 수집 → 백엔드 업로드 ──────────────────────────────────────
+  upload-results:
+    name: "결과 수집 → 백엔드 업로드"
+    runs-on: ubuntu-latest
+    needs:
+      - sast-semgrep
+      - sca-trivy
+      - sca-depcheck
+      - iac-tfsec
+      - iac-checkov
+    if: always()
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-results/
+        continue-on-error: true
+
+      - name: 결과 파일 목록 확인
+        run: |
+          echo "=== 수집된 스캔 결과 ==="
+          find scan-results/ -name "*.json" | sort || echo "결과 없음"
+
+      - name: 백엔드에 결과 업로드
+        if: env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          PROJECT_NAME: "secureflow"
+        run: |
+          upload_result() {
+            local tool=$1
+            local file=$2
+            if [ -f "$file" ]; then
+              echo "업로드 중: $tool ($file)"
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -H "Content-Type: application/json" \
+                -d "{\"tool\": \"${tool}\", \"raw_result\": $(cat $file), \"commit_hash\": \"${COMMIT_SHA}\", \"project_name\": \"${PROJECT_NAME}\"}" \
+                --max-time 30 || echo "000")
+              echo "  → HTTP $HTTP_CODE"
+            else
+              echo "건너뜀: $tool (파일 없음: $file)"
+            fi
+          }
+
+          upload_result "semgrep"  "scan-results/semgrep-results/semgrep-results.json"
+          upload_result "trivy"    "scan-results/trivy-results/trivy-results.json"
+          upload_result "depcheck" "scan-results/depcheck-results/dependency-check-report.json"
+          upload_result "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
+          upload_result "checkov"  "scan-results/checkov-results/checkov-results.json"
+        continue-on-error: true
+
+      - name: 백엔드 URL 미설정 안내
+        if: env.BACKEND_URL == ''
+        run: |
+          echo "⚠️  BACKEND_URL secret이 설정되지 않았습니다."
+          echo "    AWS 배포 후 GitHub Secrets에 BACKEND_URL을 추가하면 자동 업로드됩니다."
+          echo "    지금은 스캔 결과가 artifacts로만 저장됩니다."
+
+  # ── Phase 3: DAST (배포된 앱 대상, main 브랜치만) ────────────────────────
+  dast-zap:
+    name: "DAST · OWASP ZAP"
+    runs-on: ubuntu-latest
+    needs: [upload-results]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ secrets.BACKEND_URL || 'http://localhost:8000' }}
+          cmd_options: "-J zap-results.json"
+          fail_action: false
+        continue-on-error: true
+
+      - name: Upload ZAP results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-results
+          path: zap-results.json
+
+      - name: ZAP 결과 백엔드 업로드
+        if: env.BACKEND_URL != ''
+        run: |
+          if [ -f zap-results.json ]; then
+            curl -s -X POST "${{ secrets.BACKEND_URL }}/api/v1/scans" \
+              -H "Content-Type: application/json" \
+              -d "{\"tool\": \"zap\", \"raw_result\": $(cat zap-results.json), \"commit_hash\": \"${{ github.sha }}\"}" \
+              --max-time 30 || true
+          fi
+        continue-on-error: true
