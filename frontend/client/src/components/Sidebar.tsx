@@ -9,6 +9,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
+  const isPipelineActive = ['iac', 'sast', 'sca', 'cross', 'image', 'deploy', 'dast'].includes(activeSection);
   return (
     <header
       className="w-full h-16 flex items-center justify-between px-5 bg-background border-b border-border"
@@ -41,8 +42,8 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             onClick={() => onSectionChange('iac')}
             className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
             style={{
-              backgroundColor: activeSection !== 'isms' && activeSection !== 'siem' ? 'oklch(0.45 0.18 250)' : 'transparent',
-              color: activeSection !== 'isms' && activeSection !== 'siem' ? 'white' : 'oklch(0.55 0.015 250)',
+              backgroundColor: isPipelineActive ? 'oklch(0.45 0.18 250)' : 'transparent',
+              color: isPipelineActive ? 'white' : 'oklch(0.55 0.015 250)',
             }}
             onMouseEnter={(e) => {
               if (activeSection === 'isms' || activeSection === 'siem') {
@@ -58,6 +59,43 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             }}
           >
             <span>파이프라인</span>
+          </button>
+
+
+          <button
+            onClick={() => onSectionChange('isms')}
+            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
+            style={{
+              backgroundColor: activeSection === 'isms' ? 'oklch(0.45 0.18 250)' : 'transparent',
+              color: activeSection === 'isms' ? 'white' : 'oklch(0.55 0.015 250)',
+            }}
+            onMouseEnter={(e) => {
+              if (activeSection !== 'isms') {
+                e.currentTarget.style.backgroundColor = 'oklch(0.20 0.02 250)';
+                e.currentTarget.style.color = 'oklch(0.78 0.01 250)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeSection !== 'isms') {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'oklch(0.55 0.015 250)';
+              }
+            }}
+          >
+            <span>ISMS-P</span>
+          </button>
+
+
+
+          <button
+            onClick={() => onSectionChange('aws')}
+            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
+            style={{
+              backgroundColor: activeSection === 'aws' ? 'oklch(0.45 0.18 250)' : 'transparent',
+              color: activeSection === 'aws' ? 'white' : 'oklch(0.55 0.015 250)',
+            }}
+          >
+            <span>AWS</span>
           </button>
 
           <button
@@ -83,28 +121,10 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
             <span>모니터링</span>
           </button>
 
-          <button
-            onClick={() => onSectionChange('isms')}
-            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
-            style={{
-              backgroundColor: activeSection === 'isms' ? 'oklch(0.45 0.18 250)' : 'transparent',
-              color: activeSection === 'isms' ? 'white' : 'oklch(0.55 0.015 250)',
-            }}
-            onMouseEnter={(e) => {
-              if (activeSection !== 'isms') {
-                e.currentTarget.style.backgroundColor = 'oklch(0.20 0.02 250)';
-                e.currentTarget.style.color = 'oklch(0.78 0.01 250)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeSection !== 'isms') {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = 'oklch(0.55 0.015 250)';
-              }
-            }}
-          >
-            <span>ISMS-P</span>
-          </button>
+
+
+
+
         </nav>
       </div>
 

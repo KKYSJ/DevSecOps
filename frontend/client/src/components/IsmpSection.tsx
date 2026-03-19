@@ -45,6 +45,46 @@ export default function IsmpSection({ items, compliance }: IsmpSectionProps) {
   // Group by domain
   const domains = Array.from(new Set(items.map(i => i.domain)));
 
+  const handleDownload = () => {
+    const headers = [
+      'Control ID',
+      'Domain',
+      'Requirement',
+      'Status',
+      'Evidence',
+      'Last Checked',
+    ];
+
+    const rows = items.map((item) => [
+      item.controlId,
+      item.domain,
+      item.requirement,
+      item.status,
+      item.evidence,
+      new Date(item.lastChecked).toLocaleString('ko-KR'),
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(',')
+      )
+      .join('\n');
+
+    const blob = new Blob([csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `isms-report-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+
   return (
     <div className="bg-card rounded-lg border border-border shadow-sm animate-fade-in-up"
       style={{ animationDelay: '700ms', opacity: 0, animationFillMode: 'forwards' }}>
@@ -53,13 +93,27 @@ export default function IsmpSection({ items, compliance }: IsmpSectionProps) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-sm font-semibold text-foreground">ISMS-P 점검 현황</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">정보보호 관리체계 인증 통제 항목 점검</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              정보보호 관리체계 인증 통제 항목 점검
+            </p>
           </div>
 
-          {/* Compliance Score */}
-          <div className="flex-shrink-0 text-right">
-            <div className="text-2xl font-bold font-mono text-emerald-600">{compliance.toFixed(1)}%</div>
-            <div className="text-xs text-muted-foreground">충족률</div>
+          <div className="flex items-center gap-3">
+            {/* 다운로드 버튼 */}
+            <button
+              onClick={handleDownload}
+              className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted transition"
+            >
+              📄 보고서 다운로드
+            </button>
+
+            {/* 기존 compliance */}
+            <div className="text-right">
+              <div className="text-2xl font-bold font-mono text-emerald-600">
+                {compliance.toFixed(1)}%
+              </div>
+              <div className="text-xs text-muted-foreground">충족률</div>
+            </div>
           </div>
         </div>
 
@@ -131,7 +185,7 @@ export default function IsmpSection({ items, compliance }: IsmpSectionProps) {
               const Icon = config.icon;
               const rowBg =
                 item.status === 'FAIL' ? 'bg-red-50/30' :
-                item.status === 'PARTIAL' ? 'bg-amber-50/20' : '';
+                  item.status === 'PARTIAL' ? 'bg-amber-50/20' : '';
 
               return (
                 <tr key={item.id} className={`hover:bg-muted/20 transition-colors ${rowBg}`}>

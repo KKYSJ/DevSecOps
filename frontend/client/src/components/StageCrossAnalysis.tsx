@@ -1,20 +1,11 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import type { CrossAnalysisItem } from '@/lib/types';
 
 interface LlmJudgment {
     judgment: 'TRUE_POSITIVE' | 'FALSE_POSITIVE' | 'UNCERTAIN';
     confidence: number;
     reasoning: string;
-}
-
-interface CrossAnalysisItem {
-    id: string | number;
-    category: string;
-    severity: 'HIGH' | 'MEDIUM' | 'LOW';
-    detectionCount: number;
-    description: string;
-    tools: string[];
-    llmJudgment?: LlmJudgment;
 }
 
 interface StageCrossAnalysisProps {
@@ -23,8 +14,10 @@ interface StageCrossAnalysisProps {
 }
 
 function getSeverityClass(severity: CrossAnalysisItem['severity']) {
+    if (severity === 'CRITICAL') return 'bg-red-200 text-red-800 border-red-300';
     if (severity === 'HIGH') return 'bg-red-100 text-red-700 border-red-200';
     if (severity === 'MEDIUM') return 'bg-amber-100 text-amber-700 border-amber-200';
+    if (severity === 'LOW') return 'bg-blue-100 text-blue-700 border-blue-200';
     return 'bg-blue-100 text-blue-700 border-blue-200';
 }
 

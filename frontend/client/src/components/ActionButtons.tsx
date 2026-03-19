@@ -93,12 +93,13 @@ export default function ActionButtons({
   const spinner = <Loader2 size={16} className="animate-spin" />;
 
   return (
-    <div className="bg-card rounded-lg border border-border p-4 shadow-sm animate-fade-in-up"
+    // <div className="bg-card rounded-lg border border-border p-4 shadow-sm animate-fade-in-up"
+    <div className="animate-fade-in-up"
       style={{ animationDelay: '400ms', opacity: 0, animationFillMode: 'forwards' }}>
       <div className="flex items-center gap-2 mb-3">
-        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        {/* <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           스캔 제어
-        </div>
+        </div> */}
         {isAnyRunning && (
           <div className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
             <div className="w-1.5 h-1.5 rounded-full bg-amber-500 status-running" />
@@ -123,8 +124,9 @@ export default function ActionButtons({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <ActionButton
+      {/* <div className="flex flex-wrap gap-2"> */}
+      <div className="flex justify-end">
+        {/* <ActionButton
           label="결과 새로고침"
           description="현재 스캔 결과 갱신"
           icon={<RefreshCw size={16} />}
@@ -153,7 +155,7 @@ export default function ActionButtons({
           isDisabled={isAnyRunning}
           onClick={onCrossAnalysis}
           variant="warning"
-        />
+        /> */}
         <ActionButton
           label="ISMS-P 점검 실행"
           description="통제 항목 자동 점검"

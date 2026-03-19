@@ -30,6 +30,7 @@ import {
 } from '@/lib/mockData';
 import type { ScanSummary } from '@/lib/types';
 import StageCrossAnalysis from '@/components/StageCrossAnalysis';
+import AwsResources from '@/components/AwsResources';
 
 const PIPELINE_STAGES = [
   { id: 'iac', label: 'IaC 스캔', subtitle: 'tfsec + Checkov', icon: Cloud },
@@ -139,9 +140,16 @@ export default function Home({ params }: HomeProps) {
     pipelineProgress,
   };
 
-  const activeStageLabel = PIPELINE_STAGES.find((s) => s.id === activeSection)?.label ?? '';
+  //const activeStageLabel = PIPELINE_STAGES.find((s) => s.id === activeSection)?.label ?? '';
+  const activeStageLabel =
+    PIPELINE_STAGES.find((s) => s.id === activeSection)?.label ??
+    (activeSection === 'isms' ? 'ISMS-P' :
+      activeSection === 'siem' ? '모니터링' :
+        activeSection === 'aws' ? 'AWS 리소스 현황' : '');
 
   const isPipelineStage = PIPELINE_STAGES.some(stage => stage.id === activeSection);
+
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -513,19 +521,57 @@ export default function Home({ params }: HomeProps) {
             </div>
           )}
 
+          {activeSection === 'aws' && (
+            <div className="space-y-5">
+              <AwsResources />
+            </div>
+          )}
+
           {activeSection === 'isms' && (
             <div className="space-y-5">
-              {/* ISMS-P Compliance Card */}
               <div className="bg-card rounded-lg p-4 shadow-sm border border-border">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="text-sm font-semibold text-foreground">ISMS-P 연관 항목</div>
-                  <div className="text-xs text-muted-foreground">충족률</div>
+                <div className="flex items-start justify-between mb-3 gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">ISMS-P 연관 항목</div>
+                    <div className="text-xs text-muted-foreground mt-1">충족률</div>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-2">
+                    <button
+                      onClick={handleIsmpCheck}
+                      disabled={scanState.isIsmpChecking}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {scanState.isIsmpChecking ? '점검 실행 중...' : 'ISMS-P 점검 실행'}
+                    </button>
+
+                    {scanState.isIsmpChecking && (
+                      <div className="w-56">
+                        <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
+                          <span>{scanState.stage}</span>
+                          <span>{scanState.progress}%</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                            style={{ width: `${scanState.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
-                    <div className="text-2xl font-bold font-mono text-emerald-600">{currentSummary.ismsPCompliance.toFixed(1)}%</div>
+                    <div className="text-2xl font-bold font-mono text-emerald-600">
+                      {currentSummary.ismsPCompliance.toFixed(1)}%
+                    </div>
                     <div className="mt-2 h-2 bg-emerald-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${currentSummary.ismsPCompliance}%` }} />
+                      <div
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${currentSummary.ismsPCompliance}%` }}
+                      />
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -535,13 +581,6 @@ export default function Home({ params }: HomeProps) {
                 </div>
               </div>
 
-              <ActionButtons
-                scanState={scanState}
-                onRefresh={handleRefresh}
-                onSecurityScan={handleSecurityScan}
-                onCrossAnalysis={handleCrossAnalysis}
-                onIsmpCheck={handleIsmpCheck}
-              />
               <IsmpSection items={mockIsmpItems} compliance={currentSummary.ismsPCompliance} />
             </div>
           )}
