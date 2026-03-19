@@ -15,17 +15,10 @@ from backend.app.services.llm.analyzer import run as run_llm_analyzer
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 PROMPT_FILES = {
-<<<<<<< HEAD
-    "iac": Path("engine/llm/iac_prompt.txt"),
-    "sast": Path("engine/llm/sast_prompt.txt"),
-    "sca": Path("engine/llm/sca_prompt.txt"),
-    "dast": Path("engine/llm/dast_prompt.txt"),
-=======
     "iac": Path("engine/llm/iac_crosscheck_prompt.txt"),
     "sast": Path("engine/llm/sast_crosscheck_prompt.txt"),
     "sca": Path("engine/llm/sca_crosscheck_prompt.txt"),
     "dast": Path("engine/llm/dast_crosscheck_prompt.txt"),
->>>>>>> c20de1321153a348012a9aa64584b3d943863fdd
 }
 DEFAULT_THRESHOLDS = {
     "iac": {"critical": 0, "high": 2, "medium_review": 10},
