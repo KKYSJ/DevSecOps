@@ -188,6 +188,18 @@ variable "create_github_oidc_role" {
   default     = false
 }
 
+variable "create_github_oidc_provider" {
+  description = "Whether to create the shared GitHub Actions OIDC provider. Disable this when the account already has one."
+  type        = bool
+  default     = true
+}
+
+variable "create_ecr_repositories" {
+  description = "Whether to create shared ECR repositories. Disable this when they already exist in the AWS account."
+  type        = bool
+  default     = true
+}
+
 variable "github_org" {
   description = "GitHub organization or user name."
   type        = string

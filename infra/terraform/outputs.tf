@@ -35,7 +35,7 @@ output "ecs_cluster_name" {
 
 output "ecr_repository_urls" {
   description = "ECR repositories to push service images into."
-  value       = module.ecr.repository_urls
+  value       = local.ecr_repository_urls
 }
 
 output "frontend_bucket_name" {
