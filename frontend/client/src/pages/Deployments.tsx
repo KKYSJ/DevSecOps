@@ -42,28 +42,32 @@ export default function Deployments() {
 
   useEffect(() => {
     Promise.all([
-      fetchJson<{ pipelines: PipelineRun[] }>('/pipelines').catch(() => ({ pipelines: [] })),
+      fetchJson<{ history: Array<any> }>('/cross/history').catch(() => ({ history: [] })),
       fetchJson<CrossReport>('/cross').catch(() => null),
-      fetchJson<{ scans: Array<{ branch: string }> }>('/scans?limit=1').catch(() => ({ scans: [] })),
-    ]).then(([pRes, cRes, sRes]) => {
-      const latestBranch = sRes.scans?.[0]?.branch || 'main';
-      let pipelineList = pRes.pipelines || [];
+    ]).then(([hRes, cRes]) => {
       setCrossReport(cRes);
 
-      // pipelines가 비어있지만 cross report가 있으면 가상 파이프라인 생성
-      if (pipelineList.length === 0 && cRes && cRes.gate_decision) {
-        pipelineList = [{
-          id: 0,
-          project_name: cRes.project_name || 'secureflow',
-          commit_hash: cRes.commit_hash || '',
-          branch: latestBranch,
-          status: cRes.gate_decision === 'BLOCK' ? 'blocked' : 'completed',
-          gate_result: cRes.gate_decision,
-          gate_score: cRes.total_score,
-          scan_ids: null,
-          created_at: cRes.generated_at || new Date().toISOString(),
-        }];
-      }
+      // history에서 커밋별로 중복 제거 (최신만)
+      const seen = new Set<string>();
+      const unique = (hRes.history || []).filter((h: any) => {
+        const key = h.commit_hash || h.id;
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const pipelineList: PipelineRun[] = unique.map((h: any) => ({
+        id: Number(h.id) || 0,
+        project_name: h.project_name || 'secureflow',
+        commit_hash: h.commit_hash || '',
+        branch: 'main',
+        status: h.gate_decision === 'BLOCK' ? 'blocked' : 'completed',
+        gate_result: h.gate_decision || 'ALLOW',
+        gate_score: h.total_score || 0,
+        scan_ids: null,
+        created_at: h.generated_at || new Date().toISOString(),
+      }));
+
       setPipelines(pipelineList);
     }).finally(() => setLoading(false));
   }, []);

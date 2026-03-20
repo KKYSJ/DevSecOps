@@ -597,6 +597,9 @@ jobs:
       - service-sca-depcheck
       - iac-tfsec
       - iac-checkov
+      - llm-iac-gate
+      - llm-sast-gate
+      - llm-sca-gate
     if: always()
     runs-on: ubuntu-latest
     env:
