@@ -1,0 +1,15 @@
+Review the following DAST findings and decide whether each item should be treated as TRUE_POSITIVE, REVIEW_NEEDED, or FALSE_POSITIVE.
+
+Focus on:
+- the strength of the evidence
+- whether the endpoint, parameter, and observed behavior support a real vulnerability
+- whether the reported severity still makes sense after cross-checking
+
+Write `title_ko`, `risk_summary`, `reason`, and `action_text` in Korean.
+Return JSON only, with no markdown.
+
+Pairs:
+{{MATCHED_PAIRS_TEXT}}
+
+Use this JSON schema exactly:
+{{OUTPUT_SCHEMA_JSON}}

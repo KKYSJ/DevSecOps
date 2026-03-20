@@ -1,12 +1,12 @@
 import json
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import GEMINI_MODEL, PROMPT_DIR
+from backend.app.core.config import GEMINI_MODEL
 from backend.app.core.llm_client import generate_with_gemini
 from backend.app.core.models import LLMCrosscheckResult, ScanResult
+from backend.app.core.prompt_loader import render_prompt_template
 
 
 CATEGORY_CONFIG = {
@@ -52,13 +52,6 @@ def parse_json_field(value: Any):
         except json.JSONDecodeError:
             return value
     return value
-
-
-def load_prompt(prompt_name: str) -> str:
-    prompt_path = Path(PROMPT_DIR) / prompt_name
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-    return prompt_path.read_text(encoding="utf-8")
 
 
 def normalize_tool_name(tool_name: str) -> str:
@@ -155,26 +148,17 @@ def build_tool_bundle(rows: list, fallback_tool_name: str, fallback_category: st
 
 
 def build_crosscheck_prompt(
-    prompt_template: str,
+    prompt_name: str,
     tool_category: str,
     tool_a_json: dict,
     tool_b_json: dict | None = None,
 ) -> str:
     config = CATEGORY_CONFIG[tool_category]
-    prompt = prompt_template
-
-    prompt = prompt.replace(
-        config["placeholder_a"],
-        json.dumps(tool_a_json, ensure_ascii=False, indent=2),
-    )
-
-    if config["placeholder_b"]:
-        prompt = prompt.replace(
-            config["placeholder_b"],
-            json.dumps(tool_b_json or {}, ensure_ascii=False, indent=2),
-        )
-
-    return prompt
+    replacements = {
+        config["placeholder_a"].strip("{}"): json.dumps(tool_a_json, ensure_ascii=False, indent=2),
+        config["placeholder_b"].strip("{}"): json.dumps(tool_b_json or {}, ensure_ascii=False, indent=2),
+    }
+    return render_prompt_template(prompt_name, replacements)
 
 
 def run_crosscheck(
@@ -214,9 +198,8 @@ def run_crosscheck(
     tool_a_json = build_tool_bundle(tool_a_rows, tool_a_name, category)
     tool_b_json = build_tool_bundle(tool_b_rows, tool_b_name, category)
 
-    prompt_template = load_prompt(prompt_name)
     final_prompt = build_crosscheck_prompt(
-        prompt_template=prompt_template,
+        prompt_name=prompt_name,
         tool_category=category,
         tool_a_json=tool_a_json,
         tool_b_json=tool_b_json,

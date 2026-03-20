@@ -24,11 +24,17 @@ from backend.app.services.parsers.zap_parser import ZapParser
 
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
-PROMPT_FILES = {
-    "iac": Path("engine/llm/iac_crosscheck_prompt.txt"),
-    "sast": Path("engine/llm/sast_crosscheck_prompt.txt"),
-    "sca": Path("engine/llm/sca_crosscheck_prompt.txt"),
-    "dast": Path("engine/llm/dast_crosscheck_prompt.txt"),
+GATE_PROMPT_FILES = {
+    "iac": Path("backend/app/prompts/iac_gate_prompt.txt"),
+    "sast": Path("backend/app/prompts/sast_gate_prompt.txt"),
+    "sca": Path("backend/app/prompts/sca_gate_prompt.txt"),
+    "dast": Path("backend/app/prompts/dast_gate_prompt.txt"),
+}
+MATCH_PROMPT_FILES = {
+    "iac": Path("backend/app/prompts/iac_match_adjudication_prompt.txt"),
+    "sast": Path("backend/app/prompts/sast_match_adjudication_prompt.txt"),
+    "sca": Path("backend/app/prompts/sca_match_adjudication_prompt.txt"),
+    "dast": Path("backend/app/prompts/dast_match_adjudication_prompt.txt"),
 }
 STAGE_CATEGORY = {
     "iac": "IaC",
@@ -108,7 +114,7 @@ TOOL_PARSERS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", required=True, choices=sorted(PROMPT_FILES))
+    parser.add_argument("--stage", required=True, choices=sorted(GATE_PROMPT_FILES))
     parser.add_argument(
         "--tool-input",
         action="append",
@@ -224,6 +230,15 @@ def normalize_package_name(name: Any) -> str | None:
     return re.sub(r"[^a-z0-9_.-]+", "", str(name).strip().lower()) or None
 
 
+def normalize_package_version(version: Any) -> str | None:
+    if not version:
+        return None
+    text = str(version).strip().lower()
+    if text.startswith("v") and len(text) > 1 and text[1].isdigit():
+        text = text[1:]
+    return text or None
+
+
 def normalize_identifier(value: Any) -> str | None:
     if not value:
         return None
@@ -287,8 +302,10 @@ def compact_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "parameter": finding.get("parameter"),
         "package_name": finding.get("package_name"),
         "package_version": finding.get("package_version"),
+        "fixed_version": finding.get("fixed_version"),
         "cve_id": finding.get("cve_id"),
         "cwe_id": finding.get("cwe_id"),
+        "cvss_score": finding.get("cvss_score"),
         "description": (finding.get("description") or "")[:240],
     }
     duplicate_count = safe_int(finding.get("duplicate_count")) or 0
@@ -340,6 +357,64 @@ def collapse_sast_near_duplicates(findings: list[dict[str, Any]]) -> tuple[list[
             group,
             key=lambda item: (
                 severity_rank(item.get("severity")),
+                -(len(item.get("description") or "")),
+                normalize_identifier(item.get("title")) or "",
+            ),
+        )
+        merged = dict(representative)
+        merged["severity"] = severity_max(*(item.get("severity") for item in group))
+        merged["duplicate_count"] = len(group)
+        merged["duplicate_rule_ids"] = sorted(
+            {
+                str(item.get("rule_id")).strip()
+                for item in group
+                if str(item.get("rule_id", "")).strip()
+            }
+        )
+        merged["duplicate_titles"] = sorted(
+            {
+                str(item.get("title")).strip()
+                for item in group
+                if str(item.get("title", "")).strip()
+            }
+        )[:5]
+        merged["source_finding_ids"] = [str(item.get("id")) for item in group if item.get("id")]
+        collapsed.append(merged)
+
+    return sort_findings_for_llm(collapsed), duplicate_count
+
+
+def collapse_sca_duplicates(findings: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+
+    for finding in findings:
+        package_name = normalize_package_name(finding.get("package_name")) or ""
+        package_version = normalize_package_version(finding.get("package_version")) or ""
+        cve_id = normalize_identifier(finding.get("cve_id")) or ""
+        rule_id = normalize_identifier(finding.get("rule_id")) or ""
+        duplicate_key = cve_id if cve_id else rule_id
+        group_key = (
+            normalize_identifier(finding.get("tool")) or "",
+            package_name,
+            package_version,
+            duplicate_key,
+        )
+        grouped.setdefault(group_key, []).append(finding)
+
+    collapsed: list[dict[str, Any]] = []
+    duplicate_count = 0
+
+    for group in grouped.values():
+        if len(group) == 1:
+            collapsed.append(group[0])
+            continue
+
+        duplicate_count += len(group) - 1
+        representative = min(
+            group,
+            key=lambda item: (
+                severity_rank(item.get("severity")),
+                -(float(item.get("cvss_score") or 0)),
                 -(len(item.get("description") or "")),
                 normalize_identifier(item.get("title")) or "",
             ),
@@ -456,12 +531,110 @@ def build_sast_candidate_pairs(
     return candidates[:MAX_LLM_MATCH_CANDIDATES]
 
 
-def apply_sast_llm_candidate_matching(
+def build_sca_candidate_pairs(
+    left_findings: list[dict[str, Any]],
+    right_findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+
+    for left in sort_findings_for_llm(left_findings):
+        left_pkg = normalize_package_name(left.get("package_name"))
+        left_ver = normalize_package_version(left.get("package_version"))
+        left_fixed = normalize_package_version(left.get("fixed_version"))
+        left_cve = normalize_identifier(left.get("cve_id"))
+
+        best: dict[str, Any] | None = None
+        for right in sort_findings_for_llm(right_findings):
+            right_pkg = normalize_package_name(right.get("package_name"))
+            right_ver = normalize_package_version(right.get("package_version"))
+            right_fixed = normalize_package_version(right.get("fixed_version"))
+            right_cve = normalize_identifier(right.get("cve_id"))
+            title_similarity = jaccard_similarity(
+                (
+                    left.get("title"),
+                    left.get("description"),
+                    left.get("package_name"),
+                    left.get("cve_id"),
+                ),
+                (
+                    right.get("title"),
+                    right.get("description"),
+                    right.get("package_name"),
+                    right.get("cve_id"),
+                ),
+            )
+
+            score = 0.0
+            basis_parts: list[str] = []
+
+            if left_pkg and right_pkg and left_pkg == right_pkg:
+                score += 0.42
+                basis_parts.append("package_name")
+
+            if left_cve and right_cve and left_cve == right_cve:
+                score += 0.40
+                basis_parts.append("cve_id")
+
+            if left_ver and right_ver and left_ver == right_ver:
+                score += 0.12
+                basis_parts.append("package_version")
+
+            if left_fixed and right_fixed and left_fixed == right_fixed:
+                score += 0.06
+                basis_parts.append("fixed_version")
+
+            if title_similarity >= 0.20:
+                score += min(0.14, title_similarity * 0.18)
+                basis_parts.append("title_similarity")
+
+            left_path = normalize_path(left.get("file_path"))
+            right_path = normalize_path(right.get("file_path"))
+            if left_path and right_path and left_path == right_path:
+                score += 0.08
+                basis_parts.append("file_path")
+
+            if score < 0.50:
+                continue
+
+            candidate = {
+                "left_id": left.get("id"),
+                "right_id": right.get("id"),
+                "left": left,
+                "right": right,
+                "heuristic_score": round(min(score, 0.95), 3),
+                "heuristic_basis": "+".join(basis_parts) or "weak_similarity",
+                "title_similarity": round(title_similarity, 3),
+            }
+            if best is None or candidate["heuristic_score"] > best["heuristic_score"]:
+                best = candidate
+
+        if best is not None:
+            best["candidate_id"] = f"sca-candidate-{len(candidates) + 1}"
+            candidates.append(best)
+
+    candidates.sort(key=lambda item: item["heuristic_score"], reverse=True)
+    return candidates[:MAX_LLM_MATCH_CANDIDATES]
+
+
+def build_match_candidates(
+    stage: str,
+    left_findings: list[dict[str, Any]],
+    right_findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if stage == "sast":
+        return build_sast_candidate_pairs(left_findings, right_findings)
+    if stage == "sca":
+        return build_sca_candidate_pairs(left_findings, right_findings)
+    return []
+
+
+def apply_llm_candidate_matching(
+    stage: str,
     prompt_file: Path,
     left_findings: list[dict[str, Any]],
     right_findings: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    candidates = build_sast_candidate_pairs(left_findings, right_findings)
+    candidates = build_match_candidates(stage, left_findings, right_findings)
     if not candidates:
         return {
             "accepted_pairs": [],
@@ -472,7 +645,7 @@ def apply_sast_llm_candidate_matching(
 
     payload = {
         "mode": "match_adjudication",
-        "stage": "sast",
+        "stage": stage,
         "prompt_file": str(prompt_file),
         "match_candidates": [
             {
@@ -482,7 +655,7 @@ def apply_sast_llm_candidate_matching(
                 "heuristics": {
                     "heuristic_score": candidate["heuristic_score"],
                     "heuristic_basis": candidate["heuristic_basis"],
-                    "line_diff": candidate["line_diff"],
+                    "line_diff": candidate.get("line_diff"),
                     "title_similarity": candidate["title_similarity"],
                 },
             }
@@ -637,7 +810,7 @@ def match_score(stage: str, left: dict[str, Any], right: dict[str, Any]) -> tupl
 def build_matching_output(
     stage: str,
     tool_items: list[dict[str, Any]],
-    prompt_file: Path | None = None,
+    match_prompt_file: Path | None = None,
 ) -> dict[str, Any]:
     if len(tool_items) != 2:
         confirmed = sum_summaries(*(item["summary"] for item in tool_items))
@@ -668,6 +841,10 @@ def build_matching_output(
     if stage == "sast":
         left_findings, left_duplicate_count = collapse_sast_near_duplicates(left_findings)
         right_findings, right_duplicate_count = collapse_sast_near_duplicates(right_findings)
+        duplicate_collapse_count = left_duplicate_count + right_duplicate_count
+    elif stage == "sca":
+        left_findings, left_duplicate_count = collapse_sca_duplicates(left_findings)
+        right_findings, right_duplicate_count = collapse_sca_duplicates(right_findings)
         duplicate_collapse_count = left_duplicate_count + right_duplicate_count
 
     right_pool = list(enumerate(right_findings))
@@ -708,8 +885,13 @@ def build_matching_output(
         "accepted_pairs": [],
         "candidate_decisions": [],
     }
-    if stage == "sast" and prompt_file is not None and left_only and right_only:
-        llm_candidate_matching = apply_sast_llm_candidate_matching(prompt_file, left_only, right_only)
+    if stage in {"sast", "sca"} and match_prompt_file is not None and left_only and right_only:
+        llm_candidate_matching = apply_llm_candidate_matching(
+            stage,
+            match_prompt_file,
+            left_only,
+            right_only,
+        )
         if llm_candidate_matching["accepted_pairs"]:
             matched_left_ids = {str(pair["left"].get("id")) for pair in llm_candidate_matching["accepted_pairs"]}
             matched_right_ids = {str(pair["right"].get("id")) for pair in llm_candidate_matching["accepted_pairs"]}
@@ -797,7 +979,7 @@ def build_decision(stage: str, confirmed: dict[str, int]) -> tuple[str, list[str
 
 def build_llm_payload(
     stage: str,
-    prompt_file: Path,
+    gate_prompt_file: Path,
     tool_items: list[dict[str, Any]],
     matching: dict[str, Any],
 ) -> dict[str, Any]:
@@ -806,7 +988,7 @@ def build_llm_payload(
 
     return {
         "stage": stage,
-        "prompt_file": str(prompt_file),
+        "prompt_file": str(gate_prompt_file),
         "tool_summaries": [
             {
                 "tool": item["tool"],
@@ -1088,7 +1270,7 @@ def write_step_summary(output: dict[str, Any]) -> None:
         lines.extend(
             [
                 "",
-                "**SAST LLM Candidate Decisions**",
+                f"**{output['stage'].upper()} LLM Candidate Decisions**",
                 "",
                 "| Candidate | Decision | Confidence | Reason |",
                 "| --- | --- | --- | --- |",
@@ -1129,9 +1311,10 @@ def main() -> int:
         tool, raw_path = item.split("=", 1)
         parsed_inputs.append((tool.strip(), Path(raw_path.strip())))
 
-    prompt_file = PROMPT_FILES[args.stage]
+    gate_prompt_file = GATE_PROMPT_FILES[args.stage]
+    match_prompt_file = MATCH_PROMPT_FILES[args.stage]
     tool_summaries = [normalize_tool_output(tool, path, args.stage) for tool, path in parsed_inputs]
-    matching = build_matching_output(args.stage, tool_summaries, prompt_file)
+    matching = build_matching_output(args.stage, tool_summaries, match_prompt_file)
     confirmed_summary = matching["confirmed_summary"]
     mismatch_summary = matching["mismatch_summary"]
     combined_summary = matching["combined_summary"]
@@ -1141,7 +1324,7 @@ def main() -> int:
         item["executed"] for item in tool_summaries
     )
     if llm_needed:
-        analyzer_payload = build_llm_payload(args.stage, prompt_file, tool_summaries, matching)
+        analyzer_payload = build_llm_payload(args.stage, gate_prompt_file, tool_summaries, matching)
         analyzer_result = run_llm_analyzer(analyzer_payload)
     else:
         skip_reason = "no unmatched findings required LLM adjudication"
@@ -1175,7 +1358,7 @@ def main() -> int:
 
     output = {
         "stage": args.stage,
-        "prompt_file": str(prompt_file),
+        "prompt_file": str(gate_prompt_file),
         "tool_summaries": [
             {
                 "tool": item["tool"],

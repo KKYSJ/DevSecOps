@@ -1,0 +1,15 @@
+Review the following pre-matched SAST finding pairs and decide whether each pair should remain TRUE_POSITIVE, be downgraded to REVIEW_NEEDED, or be treated as FALSE_POSITIVE.
+
+Focus on:
+- whether both findings refer to the same code location
+- whether they describe the same exploit class or sink/source pattern
+- whether the reported severity still makes sense after cross-checking
+
+Write `title_ko`, `risk_summary`, `reason`, and `action_text` in Korean.
+Return JSON only, with no markdown.
+
+Pairs:
+{{MATCHED_PAIRS_TEXT}}
+
+Use this JSON schema exactly:
+{{OUTPUT_SCHEMA_JSON}}

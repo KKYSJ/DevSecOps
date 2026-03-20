@@ -9,6 +9,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from backend.app.core.prompt_loader import load_prompt_text, render_prompt_template
+
 
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
@@ -16,23 +18,42 @@ DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 TIMEOUT_SECONDS = 60
 MAX_RETRIES = 2
 
-SYSTEM_PROMPT = (
-    "You are a DevSecOps security gate analyst. "
-    "Return only valid JSON with a recommended_decision of pass, review, or fail, "
-    "plus concise reasoning grounded in the supplied summaries."
-)
+SYSTEM_PROMPT_FILE = "gate_system_prompt.txt"
+DEFAULT_PROMPT_FILES = {
+    "gate": {
+        "sast": "sast_gate_prompt.txt",
+        "sca": "sca_gate_prompt.txt",
+        "iac": "iac_gate_prompt.txt",
+        "dast": "dast_gate_prompt.txt",
+    },
+    "match_adjudication": {
+        "sast": "sast_match_adjudication_prompt.txt",
+        "sca": "sca_match_adjudication_prompt.txt",
+        "iac": "iac_match_adjudication_prompt.txt",
+        "dast": "dast_match_adjudication_prompt.txt",
+    },
+}
 
 
 def run(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = payload or {}
-    prompt = build_prompt(payload)
-
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
     gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     openai_model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
     gemini_configured = bool(gemini_key)
     openai_configured = bool(openai_key)
+
+    try:
+        prompt = build_prompt(payload)
+    except Exception as exc:
+        return fallback_result(
+            reason=f"prompt_build_failed: {exc}",
+            prompt_preview="",
+            gemini_configured=gemini_configured,
+            openai_configured=openai_configured,
+            attempted_providers=[],
+        )
 
     if gemini_key:
         try:
@@ -108,6 +129,7 @@ def run(payload: dict[str, Any] | None = None) -> dict[str, Any]:
 
 def build_prompt(payload: dict[str, Any]) -> str:
     mode = str(payload.get("mode", "gate")).strip().lower() or "gate"
+    stage = str(payload.get("stage", "")).strip().lower()
     prompt_file = Path(str(payload.get("prompt_file", "")))
     prompt_hint = prompt_file.stem if prompt_file.name else f"{payload.get('stage', 'unknown')}_gate"
 
@@ -117,32 +139,13 @@ def build_prompt(payload: dict[str, Any]) -> str:
             "prompt_hint": prompt_hint,
             "match_candidates": payload.get("match_candidates", []),
         }
-        return (
-            f"{SYSTEM_PROMPT}\n\n"
-            "Evaluate whether each candidate pair from two security tools refers to the same underlying vulnerability.\n"
-            "Use these decision meanings exactly:\n"
-            "- same: the two findings describe the same underlying vulnerability in the same code location\n"
-            "- related: the findings are security-related and nearby, but not clearly the same vulnerability\n"
-            "- different: the findings describe different vulnerabilities or unrelated issues\n\n"
-            "Be conservative. Only return `same` when the file, location, and vulnerability meaning clearly align.\n"
-            "Use this JSON schema exactly:\n"
-            "{\n"
-            '  "recommended_decision": "pass | review | fail",\n'
-            '  "confidence": "low | medium | high",\n'
-            '  "summary": "short summary",\n'
-            '  "reasons": ["reason 1", "reason 2"],\n'
-            '  "candidate_decisions": [\n'
-            "    {\n"
-            '      "candidate_id": "candidate id",\n'
-            '      "decision": "same | related | different",\n'
-            '      "confidence": "low | medium | high",\n'
-            '      "reason": "short reason"\n'
-            "    }\n"
-            "  ],\n"
-            '  "provider_notes": "optional note"\n'
-            "}\n\n"
-            "Input:\n"
-            f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
+        return render_prompt_template(
+            resolve_prompt_template(mode, stage, prompt_file),
+            {
+                "STAGE": stage,
+                "PROMPT_HINT": prompt_hint,
+                "INPUT_JSON": json.dumps(compact_payload, ensure_ascii=False, indent=2),
+            },
         )
 
     tool_lines = []
@@ -182,30 +185,22 @@ def build_prompt(payload: dict[str, Any]) -> str:
     if payload.get("unmatched_truncated"):
         compact_payload["unmatched_truncated"] = payload.get("unmatched_truncated", {})
 
-    return (
-        f"{SYSTEM_PROMPT}\n\n"
-        "Evaluate the following CI/CD security gate context.\n"
-        "Be conservative: if tools disagree materially or important tools did not execute, prefer review.\n"
-        "If unmatched_findings are present, focus your verdict on whether those unmatched findings are likely true positives, likely tool-specific noise, or need manual review.\n"
-        "Do not re-judge matched findings unless the payload explicitly indicates confirmed criticality.\n"
-        "Use this JSON schema exactly:\n"
-        "{\n"
-        '  "recommended_decision": "pass | review | fail",\n'
-        '  "confidence": "low | medium | high",\n'
-        '  "summary": "short summary",\n'
-        '  "reasons": ["reason 1", "reason 2"],\n'
-        '  "provider_notes": "optional note"\n'
-        "}\n\n"
-        "Input:\n"
-        f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
+    return render_prompt_template(
+        resolve_prompt_template(mode, stage, prompt_file),
+        {
+            "STAGE": stage,
+            "PROMPT_HINT": prompt_hint,
+            "INPUT_JSON": json.dumps(compact_payload, ensure_ascii=False, indent=2),
+        },
     )
 
 
 def call_openai(prompt: str, api_key: str, model: str) -> str:
+    system_prompt = load_prompt_text(SYSTEM_PROMPT_FILE)
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.1,
@@ -225,8 +220,9 @@ def call_openai(prompt: str, api_key: str, model: str) -> str:
 
 
 def call_gemini(prompt: str, api_key: str, model: str) -> str:
+    system_prompt = load_prompt_text(SYSTEM_PROMPT_FILE)
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
+        "contents": [{"parts": [{"text": f"{system_prompt}\n\n{prompt}"}]}],
         "generationConfig": {
             "temperature": 0.1,
             "responseMimeType": "application/json",
@@ -265,6 +261,18 @@ def http_post(url: str, headers: dict[str, str], payload: dict[str, Any], provid
                 continue
 
     raise RuntimeError(f"{provider}_request_failed: {last_error}")
+
+
+def resolve_prompt_template(mode: str, stage: str, prompt_file: Path) -> str:
+    if prompt_file.name:
+        return str(prompt_file)
+
+    stage_prompts = DEFAULT_PROMPT_FILES.get(mode, {})
+    template_name = stage_prompts.get(stage)
+    if template_name:
+        return template_name
+
+    raise FileNotFoundError(f"Unsupported prompt template for mode={mode!r}, stage={stage!r}")
 
 
 def parse_json_object(raw_text: str) -> dict[str, Any]:

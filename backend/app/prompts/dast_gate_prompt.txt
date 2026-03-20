@@ -1,0 +1,22 @@
+Evaluate the following CI/CD DAST security gate context.
+
+Be conservative:
+- If tools disagree materially or important tools did not execute, prefer review.
+- Focus on unmatched findings and whether they are likely true positives, likely tool-specific noise, or need manual review.
+- Do not re-judge already matched findings unless the payload explicitly indicates confirmed criticality.
+
+Stage-specific guidance:
+- For DAST, endpoint, parameter, and vulnerability type are the strongest signals.
+- Strong reproduction evidence or concrete payload/response data increases confidence.
+
+Use this JSON schema exactly:
+{
+  "recommended_decision": "pass | review | fail",
+  "confidence": "low | medium | high",
+  "summary": "short summary",
+  "reasons": ["reason 1", "reason 2"],
+  "provider_notes": "optional note"
+}
+
+Input:
+{{INPUT_JSON}}
