@@ -2,7 +2,7 @@
 // Design: Clean Governance Dashboard | IBM Plex Sans + IBM Plex Mono
 // Layout: Fixed top nav + Scrollable main content
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Cloud, Code2, ShieldCheck, GitBranch, Image, Server, Bug, Monitor, ArrowLeft } from 'lucide-react';
 import { useLocation } from 'wouter';
@@ -28,9 +28,10 @@ import {
   mockTrendChartData,
   mockDeployments,
 } from '@/lib/mockData';
-import type { ScanSummary } from '@/lib/types';
+import type { ScanSummary, Vulnerability, CrossAnalysisItem } from '@/lib/types';
 import StageCrossAnalysis from '@/components/StageCrossAnalysis';
 import AwsResources from '@/components/AwsResources';
+import { fetchJson } from '@/lib/api';
 
 const PIPELINE_STAGES = [
   { id: 'iac', label: 'IaC 스캔', subtitle: 'tfsec + Checkov', icon: Cloud },
@@ -104,6 +105,91 @@ export default function Home({ params }: HomeProps) {
   }, [params?.id]);
 
   const [summary, setSummary] = useState<ScanSummary>(deployment?.scanSummary || mockScanSummary);
+  const [apiVulns, setApiVulns] = useState<Vulnerability[]>([]);
+  const [apiCross, setApiCross] = useState<CrossAnalysisItem[]>([]);
+  const [apiLoaded, setApiLoaded] = useState(false);
+
+  // 백엔드 API에서 실제 데이터 로드
+  useEffect(() => {
+    fetchJson<any>('/cross').then((report) => {
+      if (!report || !report.sections) return;
+
+      // cross report의 findings → Vulnerability 형식으로 변환
+      const vulns: Vulnerability[] = [];
+      const crossItems: CrossAnalysisItem[] = [];
+
+      const allFindings = [
+        ...(report.sections?.SAST || []),
+        ...(report.sections?.SCA || []),
+        ...(report.sections?.IaC || []),
+        ...(report.sections?.DAST || []),
+      ];
+
+      allFindings.forEach((f: any, i: number) => {
+        const finding_a = f.finding_a || {};
+        const finding_b = f.finding_b || {};
+        const tools = [finding_a.tool, finding_b?.tool].filter(Boolean);
+
+        // Vulnerability
+        vulns.push({
+          id: `v-${i}`,
+          severity: f.severity || 'MEDIUM',
+          category: f.finding_a?.category || f.finding_b?.category || 'SAST',
+          tool: tools[0] || 'unknown',
+          file: finding_a.file_path || finding_b.file_path || '',
+          line: finding_a.line_number || finding_b.line_number || 0,
+          cwe: finding_a.cwe_id || finding_b.cwe_id || '',
+          description: f.title_ko || finding_a.title || finding_b.title || '',
+          confidence: f.confidence || 'MED',
+          detectedAt: report.generated_at || new Date().toISOString(),
+        });
+
+        // CrossAnalysisItem
+        crossItems.push({
+          id: `c-${i}`,
+          severity: f.severity || 'MEDIUM',
+          category: finding_a.category || finding_b.category || 'SAST',
+          tools,
+          file: finding_a.file_path || finding_b.file_path || '',
+          line: finding_a.line_number || finding_b.line_number || 0,
+          cwe: finding_a.cwe_id || finding_b.cwe_id || '',
+          description: f.title_ko || finding_a.title || '',
+          confidence: f.confidence || 'MED',
+          detectionCount: tools.length,
+          llmJudgment: f.judgement_code ? {
+            id: `j-${i}`,
+            vulnerabilityId: `v-${i}`,
+            judgment: f.judgement_code === 'TRUE_POSITIVE' ? 'TRUE_POSITIVE' :
+                      f.judgement_code === 'FALSE_POSITIVE' ? 'FALSE_POSITIVE' : 'UNCERTAIN',
+            confidence: f.confidence === 'HIGH' ? 90 : f.confidence === 'MED' ? 60 : 30,
+            reasoning: f.reason || '',
+            recommendedAction: f.action_text || '',
+            riskAssessment: f.reassessed_severity || f.severity || 'MEDIUM',
+            judgedAt: report.generated_at || new Date().toISOString(),
+          } : undefined,
+        });
+      });
+
+      setApiVulns(vulns);
+      setApiCross(crossItems);
+      setApiLoaded(true);
+
+      // summary도 업데이트
+      if (report.summary) {
+        setSummary(prev => ({
+          ...prev,
+          totalVulnerabilities: report.summary.total_findings || 0,
+          highCount: (report.summary.by_severity?.CRITICAL || 0) + (report.summary.by_severity?.HIGH || 0),
+          mediumCount: report.summary.by_severity?.MEDIUM || 0,
+          lowCount: report.summary.by_severity?.LOW || 0,
+        }));
+      }
+    }).catch(() => {});
+  }, []);
+
+  // API 데이터가 있으면 사용, 없으면 mock fallback
+  const vulnerabilities = apiLoaded ? apiVulns : vulnerabilities;
+  const crossAnalysisItems = apiLoaded ? apiCross : crossAnalysisItems;
 
   const handleScanComplete = useCallback((type: 'security' | 'cross' | 'isms' | 'refresh') => {
     const messages = {
@@ -348,9 +434,9 @@ export default function Home({ params }: HomeProps) {
           {activeSection === 'iac' && (
             <div className="space-y-5">
               {/* 교차 검증 결과 테이블 */}
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={mockVulnerabilities} crossAnalysisItems={mockCrossAnalysis} />
+              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
               {(() => {
-                const stageCrossAnalysis = mockCrossAnalysis.filter(item =>
+                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['tfsec', 'Checkov'].includes(tool))
                 );
 
@@ -362,7 +448,7 @@ export default function Home({ params }: HomeProps) {
                   <h3 className="text-sm font-semibold text-foreground mb-2">IaC 스캔</h3>
                   <p className="text-xs text-muted-foreground mb-4">tfsec + Checkov 결과</p>
                   <div className="space-y-2">
-                    {mockVulnerabilities
+                    {vulnerabilities
                       .filter((v) => ['tfsec', 'Checkov'].includes(v.tool))
                       .map((v) => (
                         <div key={v.id} className="rounded-md border border-border p-3">
@@ -377,7 +463,7 @@ export default function Home({ params }: HomeProps) {
                 </div>
                 <div className="bg-card rounded-lg border border-border shadow-sm p-4">
                   <h3 className="text-sm font-semibold text-foreground mb-2">취약점 테이블</h3>
-                  <VulnerabilityTable vulnerabilities={mockVulnerabilities.filter((v) => ['tfsec', 'Checkov'].includes(v.tool))} />
+                  <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'Checkov'].includes(v.tool))} />
                 </div>
               </div>
             </div>
@@ -385,34 +471,34 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sast' && (
             <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={mockVulnerabilities} crossAnalysisItems={mockCrossAnalysis} />
+              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
               {/* 교차 검증 결과 테이블 */}
               {(() => {
-                const stageCrossAnalysis = mockCrossAnalysis.filter(item =>
+                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['Semgrep', 'SonarQube', 'Bandit', 'ESLint Security'].includes(tool))
                 );
 
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={mockVulnerabilities.filter((v) => ['Semgrep', 'SonarQube', 'Bandit'].includes(v.tool))}
+                vulnerabilities={vulnerabilities.filter((v) => ['Semgrep', 'SonarQube', 'Bandit'].includes(v.tool))}
               />
             </div>
           )}
 
           {activeSection === 'sca' && (
             <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={mockVulnerabilities} crossAnalysisItems={mockCrossAnalysis} />
+              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
               {/* 교차 검증 결과 테이블 */}
               {(() => {
-                const stageCrossAnalysis = mockCrossAnalysis.filter(item =>
+                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['Trivy', 'Dep-Check'].includes(tool))
                 );
 
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={mockVulnerabilities.filter((v) => ['Trivy', 'Dep-Check'].includes(v.tool))}
+                vulnerabilities={vulnerabilities.filter((v) => ['Trivy', 'Dep-Check'].includes(v.tool))}
               />
             </div>
           )}
@@ -422,11 +508,11 @@ export default function Home({ params }: HomeProps) {
               <SummaryCards
                 summary={currentSummary}
                 activeSection={activeSection}
-                vulnerabilities={mockVulnerabilities}
-                crossAnalysisItems={mockCrossAnalysis}
+                vulnerabilities={vulnerabilities}
+                crossAnalysisItems={crossAnalysisItems}
               />
 
-              <StageCrossAnalysis items={mockCrossAnalysis} />
+              <StageCrossAnalysis items={crossAnalysisItems} />
 
               <div className="bg-card rounded-lg border border-border shadow-sm p-4">
                 <h3 className="text-sm font-semibold text-foreground mb-2">스코어 트렌드</h3>
@@ -440,7 +526,7 @@ export default function Home({ params }: HomeProps) {
                 />
               </div>
 
-              <CrossAnalysis items={mockCrossAnalysis} />
+              <CrossAnalysis items={crossAnalysisItems} />
             </div>
           )}
 
@@ -448,27 +534,27 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'image' && (
             <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={mockVulnerabilities} crossAnalysisItems={mockCrossAnalysis} />
+              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
               {/* 교차 검증 결과 테이블 */}
               {(() => {
-                const stageCrossAnalysis = mockCrossAnalysis.filter(item =>
+                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['Semgrep', 'Bandit', 'ESLint Security', 'Gitleaks'].includes(tool))
                 );
 
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={mockVulnerabilities.filter((v) => v.tool === 'Trivy')}
+                vulnerabilities={vulnerabilities.filter((v) => v.tool === 'Trivy')}
               />
             </div>
           )}
 
           {activeSection === 'deploy' && (
             <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={mockVulnerabilities} crossAnalysisItems={mockCrossAnalysis} />
+              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
               {/* 교차 검증 결과 테이블 */}
               {(() => {
-                const stageCrossAnalysis = mockCrossAnalysis.filter(item =>
+                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['Semgrep', 'Bandit', 'ESLint Security'].includes(tool))
                 );
 
@@ -495,17 +581,17 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'dast' && (
             <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={mockVulnerabilities} crossAnalysisItems={mockCrossAnalysis} />
+              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
               {/* 교차 검증 결과 테이블 */}
               {(() => {
-                const stageCrossAnalysis = mockCrossAnalysis.filter(item =>
+                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['OWASP ZAP'].includes(tool))
                 );
 
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={mockVulnerabilities.filter((v) => v.tool === 'OWASP ZAP')}
+                vulnerabilities={vulnerabilities.filter((v) => v.tool === 'OWASP ZAP')}
               />
             </div>
           )}
