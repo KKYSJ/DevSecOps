@@ -278,7 +278,7 @@ def jaccard_similarity(*value_groups: tuple[Any, ...]) -> float:
 
 
 def compact_finding(finding: dict[str, Any]) -> dict[str, Any]:
-    return {
+    compact = {
         "tool": finding.get("tool"),
         "severity": normalize_severity(finding.get("severity")),
         "title": finding.get("title"),
@@ -293,6 +293,11 @@ def compact_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "cwe_id": finding.get("cwe_id"),
         "description": (finding.get("description") or "")[:240],
     }
+    duplicate_count = safe_int(finding.get("duplicate_count")) or 0
+    if duplicate_count > 1:
+        compact["duplicate_count"] = duplicate_count
+        compact["duplicate_rule_ids"] = list(finding.get("duplicate_rule_ids", []))[:5]
+    return compact
 
 
 def sort_findings_for_llm(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -304,6 +309,64 @@ def sort_findings_for_llm(findings: list[dict[str, Any]]) -> list[dict[str, Any]
             normalize_identifier(item.get("rule_id")) or "",
         ),
     )
+
+
+def collapse_sast_near_duplicates(findings: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    grouped: dict[tuple[str, str, int | None, str, str], list[dict[str, Any]]] = {}
+
+    for finding in findings:
+        path = normalize_path(finding.get("file_path")) or ""
+        line = safe_int(finding.get("line_number"))
+        cwe = normalize_identifier(finding.get("cwe_id")) or ""
+        rule = normalize_identifier(finding.get("rule_id")) or ""
+        duplicate_key = cwe if cwe else rule
+        group_key = (
+            normalize_identifier(finding.get("tool")) or "",
+            path,
+            line,
+            duplicate_key,
+            "cwe" if cwe else "rule",
+        )
+        grouped.setdefault(group_key, []).append(finding)
+
+    collapsed: list[dict[str, Any]] = []
+    duplicate_count = 0
+
+    for group in grouped.values():
+        if len(group) == 1:
+            collapsed.append(group[0])
+            continue
+
+        duplicate_count += len(group) - 1
+        representative = min(
+            group,
+            key=lambda item: (
+                severity_rank(item.get("severity")),
+                -(len(item.get("description") or "")),
+                normalize_identifier(item.get("title")) or "",
+            ),
+        )
+        merged = dict(representative)
+        merged["severity"] = severity_max(*(item.get("severity") for item in group))
+        merged["duplicate_count"] = len(group)
+        merged["duplicate_rule_ids"] = sorted(
+            {
+                str(item.get("rule_id")).strip()
+                for item in group
+                if str(item.get("rule_id", "")).strip()
+            }
+        )
+        merged["duplicate_titles"] = sorted(
+            {
+                str(item.get("title")).strip()
+                for item in group
+                if str(item.get("title", "")).strip()
+            }
+        )[:5]
+        merged["source_finding_ids"] = [str(item.get("id")) for item in group if item.get("id")]
+        collapsed.append(merged)
+
+    return sort_findings_for_llm(collapsed), duplicate_count
 
 
 def merge_matched_finding(
@@ -592,6 +655,7 @@ def build_matching_output(
             "mismatch_count": 0,
             "mismatch_ratio": 0.0,
             "match_threshold": None,
+            "collapsed_duplicate_count": 0,
             "llm_candidate_count": 0,
             "llm_assisted_match_count": 0,
             "llm_candidate_decisions": [],
@@ -599,12 +663,21 @@ def build_matching_output(
 
     left_item, right_item = tool_items
     threshold = MATCH_THRESHOLDS[stage]
-    right_pool = list(enumerate(right_item["findings"]))
+    left_findings = list(left_item["findings"])
+    right_findings = list(right_item["findings"])
+    duplicate_collapse_count = 0
+
+    if stage == "sast":
+        left_findings, left_duplicate_count = collapse_sast_near_duplicates(left_findings)
+        right_findings, right_duplicate_count = collapse_sast_near_duplicates(right_findings)
+        duplicate_collapse_count = left_duplicate_count + right_duplicate_count
+
+    right_pool = list(enumerate(right_findings))
     matched_pairs: list[dict[str, Any]] = []
     confirmed_findings: list[dict[str, Any]] = []
     left_only: list[dict[str, Any]] = []
 
-    for left in sort_findings_for_llm(left_item["findings"]):
+    for left in sort_findings_for_llm(left_findings):
         best_match: tuple[int, dict[str, Any], float, str] | None = None
         for index, candidate in right_pool:
             score, basis = match_score(stage, left, candidate)
@@ -689,6 +762,7 @@ def build_matching_output(
         "llm_candidate_count": llm_candidate_matching["candidate_count"],
         "llm_assisted_match_count": llm_candidate_matching["accepted_count"],
         "llm_candidate_decisions": llm_candidate_matching["candidate_decisions"][:25],
+        "collapsed_duplicate_count": duplicate_collapse_count,
     }
 
 
@@ -870,6 +944,7 @@ def emit_console_summary(output: dict[str, Any], output_path: Path) -> None:
         f"  matches: matched={matching.get('matched_count', 0)} "
         f"mismatch={matching.get('mismatch_count', 0)} "
         f"mismatch_ratio={matching.get('mismatch_ratio', 0)} "
+        f"collapsed_duplicates={matching.get('collapsed_duplicate_count', 0)} "
         f"llm_candidates={matching.get('llm_candidate_count', 0)} "
         f"llm_assisted_matches={matching.get('llm_assisted_match_count', 0)}"
     )
@@ -909,6 +984,7 @@ def emit_github_annotation(output: dict[str, Any]) -> None:
         f"openai_configured={llm.get('openai_configured')}; "
         f"matched={matching.get('matched_count', 0)}; "
         f"mismatch={matching.get('mismatch_count', 0)}; "
+        f"collapsed_duplicates={matching.get('collapsed_duplicate_count', 0)}; "
         f"llm_candidates={matching.get('llm_candidate_count', 0)}; "
         f"llm_assisted_matches={matching.get('llm_assisted_match_count', 0)}"
     )
@@ -949,6 +1025,7 @@ def write_step_summary(output: dict[str, Any]) -> None:
         f"- Mismatch ratio: `{matching.get('mismatch_ratio', 0)}`",
         f"- Matched findings: `{matching.get('matched_count', 0)}`",
         f"- Unmatched findings: `{matching.get('mismatch_count', 0)}`",
+        f"- Collapsed duplicate findings: `{matching.get('collapsed_duplicate_count', 0)}`",
         f"- LLM match candidates: `{matching.get('llm_candidate_count', 0)}`",
         f"- LLM assisted matches: `{matching.get('llm_assisted_match_count', 0)}`",
         "",
@@ -1121,6 +1198,7 @@ def main() -> int:
             "mismatch_count": mismatch_count,
             "mismatch_ratio": matching["mismatch_ratio"],
             "match_threshold": matching["match_threshold"],
+            "collapsed_duplicate_count": matching["collapsed_duplicate_count"],
             "llm_candidate_count": matching["llm_candidate_count"],
             "llm_assisted_match_count": matching["llm_assisted_match_count"],
             "llm_candidate_decisions": matching["llm_candidate_decisions"],
