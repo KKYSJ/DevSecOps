@@ -715,6 +715,16 @@ jobs:
           done
         continue-on-error: true
 
+      - name: 개별 취약점 LLM 판정 (한국어)
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          pip install -q httpx 2>/dev/null
+          python scripts/ci/run_llm_judgments.py || echo "개별 판정 실패 (무시)"
+        continue-on-error: true
+
       - name: BACKEND_URL 미설정 안내
         if: env.BACKEND_URL == ''
         run: |

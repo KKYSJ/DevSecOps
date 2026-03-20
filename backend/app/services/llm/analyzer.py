@@ -17,9 +17,11 @@ TIMEOUT_SECONDS = 60
 MAX_RETRIES = 2
 
 SYSTEM_PROMPT = (
-    "You are a DevSecOps security gate analyst. "
-    "Return only valid JSON with a recommended_decision of pass, review, or fail, "
-    "plus concise reasoning grounded in the supplied summaries."
+    "너는 DevSecOps 보안 게이트 분석 전문가다. "
+    "반드시 한국어로 응답하라. "
+    "recommended_decision은 pass, review, fail 중 하나로 판정하고, "
+    "summary, reasons, provider_notes를 모두 한국어로 작성하라. "
+    "유효한 JSON만 반환하라."
 )
 
 
@@ -184,19 +186,19 @@ def build_prompt(payload: dict[str, Any]) -> str:
 
     return (
         f"{SYSTEM_PROMPT}\n\n"
-        "Evaluate the following CI/CD security gate context.\n"
-        "Be conservative: if tools disagree materially or important tools did not execute, prefer review.\n"
-        "If unmatched_findings are present, focus your verdict on whether those unmatched findings are likely true positives, likely tool-specific noise, or need manual review.\n"
-        "Do not re-judge matched findings unless the payload explicitly indicates confirmed criticality.\n"
-        "Use this JSON schema exactly:\n"
+        "아래 CI/CD 보안 게이트 데이터를 분석하라.\n"
+        "보수적으로 판단: 도구 간 결과가 크게 다르거나 중요 도구가 미실행이면 review를 권장하라.\n"
+        "unmatched_findings가 있으면, 실제 취약점인지, 도구별 노이즈인지, 수동 검토가 필요한지 판단하라.\n"
+        "matched findings는 명시적 critical 확인이 없는 한 재판정하지 마라.\n"
+        "반드시 한국어로 응답하고, 아래 JSON 스키마를 정확히 따르라:\n"
         "{\n"
         '  "recommended_decision": "pass | review | fail",\n'
         '  "confidence": "low | medium | high",\n'
-        '  "summary": "short summary",\n'
-        '  "reasons": ["reason 1", "reason 2"],\n'
-        '  "provider_notes": "optional note"\n'
+        '  "summary": "한국어 요약 1~2문장",\n'
+        '  "reasons": ["한국어 근거 1", "한국어 근거 2"],\n'
+        '  "provider_notes": "한국어 추가 분석 노트"\n'
         "}\n\n"
-        "Input:\n"
+        "입력 데이터:\n"
         f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
     )
 

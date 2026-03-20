@@ -86,6 +86,130 @@ function getStepState(
   return 'pending';
 }
 
+// CI LLM Gate 분석 결과 표시 컴포넌트
+function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
+  if (!gate) return null;
+
+  const llm = gate.llm_analysis || {};
+  const matching = gate.matching || {};
+  const confirmed = gate.confirmed_summary || {};
+  const combined = gate.combined_summary || {};
+  const reasons = llm.reasons || [];
+  const decision = gate.decision || 'unknown';
+
+  const decisionColor = decision === 'pass' ? 'text-green-600 bg-green-50 border-green-200'
+    : decision === 'fail' ? 'text-red-600 bg-red-50 border-red-200'
+    : 'text-amber-600 bg-amber-50 border-amber-200';
+
+  const decisionLabel = decision === 'pass' ? '통과' : decision === 'fail' ? '차단' : '검토 필요';
+
+  return (
+    <div className="bg-card rounded-lg border border-border shadow-sm p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-bold bg-blue-600 text-white px-2 py-1 rounded">Gemini LLM</span>
+        <span className="text-sm font-semibold text-foreground">CI 교차검증 분석 결과</span>
+        <span className={`text-xs font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
+      </div>
+
+      {/* 매칭 통계 */}
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="bg-muted rounded-md p-2 text-center">
+          <div className="text-lg font-bold text-green-600">{matching.matched_count || 0}</div>
+          <div className="text-[10px] text-muted-foreground">동시 탐지</div>
+        </div>
+        <div className="bg-muted rounded-md p-2 text-center">
+          <div className="text-lg font-bold text-amber-600">{matching.mismatch_count || 0}</div>
+          <div className="text-[10px] text-muted-foreground">단독 탐지</div>
+        </div>
+        <div className="bg-muted rounded-md p-2 text-center">
+          <div className="text-lg font-bold text-foreground">{combined.total || 0}</div>
+          <div className="text-[10px] text-muted-foreground">전체</div>
+        </div>
+      </div>
+
+      {/* 심각도 요약 */}
+      <div className="flex gap-2 mb-3">
+        {confirmed.critical > 0 && <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">CRITICAL {confirmed.critical}</span>}
+        {confirmed.high > 0 && <span className="text-[10px] font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">HIGH {confirmed.high}</span>}
+        {confirmed.medium > 0 && <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">MEDIUM {confirmed.medium}</span>}
+        {confirmed.low > 0 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">LOW {confirmed.low}</span>}
+        {confirmed.total === 0 && <span className="text-[10px] text-muted-foreground">동시 탐지된 확정 취약점 없음</span>}
+      </div>
+
+      {/* LLM 분석 요약 */}
+      {llm.summary && (
+        <div className="bg-muted rounded-md p-3 mb-2">
+          <div className="text-xs font-semibold text-foreground mb-1">LLM 분석 요약</div>
+          <div className="text-xs text-muted-foreground">{llm.summary}</div>
+        </div>
+      )}
+
+      {/* LLM 판정 근거 */}
+      {reasons.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-xs font-semibold text-foreground">판정 근거</div>
+          {reasons.map((r: string, i: number) => (
+            <div key={i} className="text-[10px] text-muted-foreground flex gap-1">
+              <span className="text-foreground">•</span> {r}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Provider notes */}
+      {llm.provider_notes && (
+        <div className="mt-2 text-[10px] text-blue-600 bg-blue-50 rounded p-2">
+          {llm.provider_notes}
+        </div>
+      )}
+
+      {/* 개별 취약점 LLM 판정 (한국어) */}
+      {judgments && judgments.length > 0 && (
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="text-xs font-semibold text-foreground mb-2">개별 취약점 LLM 판정</div>
+          <div className="space-y-2">
+            {judgments.map((j: any, i: number) => {
+              const jColor = j.judgement_code === 'TRUE_POSITIVE' ? 'bg-red-50 border-red-200'
+                : j.judgement_code === 'FALSE_POSITIVE' ? 'bg-green-50 border-green-200'
+                : 'bg-amber-50 border-amber-200';
+              const jLabel = j.judgement_code === 'TRUE_POSITIVE' ? '실제 취약점'
+                : j.judgement_code === 'FALSE_POSITIVE' ? '오탐'
+                : '검토 필요';
+              return (
+                <div key={i} className={`rounded-md border p-3 ${jColor}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      j.judgement_code === 'TRUE_POSITIVE' ? 'bg-red-600 text-white' :
+                      j.judgement_code === 'FALSE_POSITIVE' ? 'bg-green-600 text-white' :
+                      'bg-amber-600 text-white'
+                    }`}>{jLabel}</span>
+                    <span className={`text-[10px] font-bold ${
+                      j.severity === 'CRITICAL' ? 'text-red-700' :
+                      j.severity === 'HIGH' ? 'text-orange-700' :
+                      'text-yellow-700'
+                    }`}>{j.severity}</span>
+                    <span className="text-[10px] text-muted-foreground">신뢰도 {j.confidence === 'HIGH' ? '90%' : j.confidence === 'MED' ? '60%' : '30%'}</span>
+                  </div>
+                  {j.title_ko && <div className="text-xs font-semibold text-foreground">{j.title_ko}</div>}
+                  {j.risk_summary && <div className="text-[10px] text-muted-foreground mt-1">{j.risk_summary}</div>}
+                  {j.reason && <div className="text-[10px] text-muted-foreground mt-1"><strong>근거:</strong> {j.reason}</div>}
+                  {j.action_text && <div className="text-[10px] text-blue-700 mt-1"><strong>수정 방법:</strong> {j.action_text}</div>}
+                  {j.finding_a?.file_path && (
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      📁 {j.finding_a.file_path}{j.finding_a.line_number ? `:${j.finding_a.line_number}` : ''}
+                      {j.finding_a.cwe_id && <span className="ml-2 text-blue-600">{j.finding_a.cwe_id}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface HomeProps {
   params: {
     id?: string;
@@ -108,6 +232,8 @@ export default function Home({ params }: HomeProps) {
   const [apiVulns, setApiVulns] = useState<Vulnerability[]>([]);
   const [apiCross, setApiCross] = useState<CrossAnalysisItem[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
+  const [llmGates, setLlmGates] = useState<Record<string, any>>({});
+  const [llmJudgments, setLlmJudgments] = useState<Record<string, any[]>>({});
 
   // 백엔드 API에서 실제 데이터 로드
   useEffect(() => {
@@ -184,6 +310,12 @@ export default function Home({ params }: HomeProps) {
           lowCount: report.summary.by_severity?.LOW || 0,
         }));
       }
+    }).catch(() => {});
+
+    // CI LLM Gate 결과 + 개별 판정 로드
+    fetchJson<{ gates: Record<string, any>; judgments: Record<string, any[]> }>('/cross/gates').then((res) => {
+      if (res?.gates) setLlmGates(res.gates);
+      if (res?.judgments) setLlmJudgments(res.judgments);
     }).catch(() => {});
   }, []);
 
@@ -433,7 +565,7 @@ export default function Home({ params }: HomeProps) {
           {/* Stage content */}
           {activeSection === 'iac' && (
             <div className="space-y-5">
-              {/* 교차 검증 결과 테이블 */}
+              <LlmGateSummary gate={llmGates['iac']} judgments={llmJudgments['iac']} />
               <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
               {(() => {
                 const stageCrossAnalysis = crossAnalysisItems.filter(item =>
@@ -471,8 +603,8 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sast' && (
             <div className="space-y-5">
+              <LlmGateSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} />
               <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {/* 교차 검증 결과 테이블 */}
               {(() => {
                 const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['Semgrep', 'SonarQube', 'Bandit', 'ESLint Security'].includes(tool))
@@ -488,8 +620,8 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sca' && (
             <div className="space-y-5">
+              <LlmGateSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
               <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {/* 교차 검증 결과 테이블 */}
               {(() => {
                 const stageCrossAnalysis = crossAnalysisItems.filter(item =>
                   item.tools.some(tool => ['Trivy', 'Dep-Check'].includes(tool))

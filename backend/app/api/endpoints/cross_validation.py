@@ -104,6 +104,20 @@ def get_llm_gates(db: Session = Depends(get_db)):
             stage = data.get("stage", "unknown")
             if stage not in gates:  # 카테고리별 최신 1건만
                 gates[stage] = data
-        return {"gates": gates}
+
+        # 개별 판정 결과 (judgments)
+        judgments = {}
+        j_records = (
+            db.query(ToolResult)
+            .filter(ToolResult.name == "llm-gate-judgments")
+            .order_by(ToolResult.id.desc())
+            .limit(1)
+            .all()
+        )
+        if j_records:
+            j_data = j_records[0].data or {}
+            judgments = j_data.get("judgments", {})
+
+        return {"gates": gates, "judgments": judgments}
     except Exception:
-        return {"gates": {}}
+        return {"gates": {}, "judgments": {}}
