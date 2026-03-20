@@ -1,6 +1,6 @@
 resource "random_password" "db_password" {
-  length           = 24
-  special          = false
+  length  = 24
+  special = false
 }
 
 resource "random_id" "db_snapshot_suffix" {
