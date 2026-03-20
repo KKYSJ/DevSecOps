@@ -300,33 +300,48 @@ def trigger_analysis(body: AnalyzeRequest = None, db: Session = Depends(get_db))
             analyzed_pairs = list(matched_pairs)
             categories = list(dict.fromkeys(p["category"] for p in matched_pairs))
 
-            BATCH_SIZE = 8  # Gemini가 처리 가능한 최대 쌍 수
+            MAX_LLM_PAIRS = 10  # 카테고리당 LLM에 보낼 최대 쌍 수 (쿼터 절약)
+            _SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
             for category in categories:
                 cat_indices = [i for i, p in enumerate(matched_pairs) if p["category"] == category]
                 cat_pairs = [matched_pairs[i] for i in cat_indices]
 
-                # 배치 단위로 LLM 호출
-                for batch_start in range(0, len(cat_pairs), BATCH_SIZE):
-                    batch_pairs = cat_pairs[batch_start:batch_start + BATCH_SIZE]
-                    batch_indices = cat_indices[batch_start:batch_start + BATCH_SIZE]
+                # 심각도 기준 정렬 → 상위 MAX_LLM_PAIRS만 LLM, 나머지 룰 기반
+                sorted_sub = sorted(
+                    range(len(cat_pairs)),
+                    key=lambda j: _SEV_ORDER.get(cat_pairs[j].get("severity", "LOW"), 9)
+                )
+                llm_sub = sorted_sub[:MAX_LLM_PAIRS]
+                fallback_sub = sorted_sub[MAX_LLM_PAIRS:]
 
+                # 룰 기반 처리 (LLM 호출 없이)
+                if fallback_sub:
+                    from engine.llm.prompts import _rule_based_fallback
+                    fb_pairs = [cat_pairs[j] for j in fallback_sub]
+                    fb_results = _rule_based_fallback(fb_pairs)
+                    for sub_j, fb_pair in zip(fallback_sub, fb_results):
+                        analyzed_pairs[cat_indices[sub_j]] = fb_pair
+
+                # LLM 호출 (카테고리당 1번만)
+                if llm_sub:
+                    llm_pairs = [cat_pairs[j] for j in llm_sub]
                     try:
-                        prompt = build_cross_validation_prompt(category, batch_pairs)
+                        prompt = build_cross_validation_prompt(category, llm_pairs)
                         response = call_llm(prompt)
-                        batch_analyzed = parse_llm_response(response, batch_pairs)
+                        llm_analyzed = parse_llm_response(response, llm_pairs)
 
-                        for list_idx, analyzed_pair in zip(batch_indices, batch_analyzed):
+                        for sub_j, analyzed_pair in zip(llm_sub, llm_analyzed):
                             if analyzed_pair.get("confidence_level"):
                                 analyzed_pair["confidence"] = analyzed_pair["confidence_level"]
-                            analyzed_pairs[list_idx] = analyzed_pair
+                            analyzed_pairs[cat_indices[sub_j]] = analyzed_pair
                     except Exception:
                         import logging
-                        logging.getLogger(__name__).warning("LLM 배치 호출 실패, 규칙 기반 fallback 사용")
+                        logging.getLogger(__name__).warning("LLM 호출 실패 (%s), 규칙 기반 fallback", category)
                         from engine.llm.prompts import _rule_based_fallback
-                        batch_fallback = _rule_based_fallback(batch_pairs)
-                        for list_idx, fb_pair in zip(batch_indices, batch_fallback):
-                            analyzed_pairs[list_idx] = fb_pair
+                        fb_results = _rule_based_fallback(llm_pairs)
+                        for sub_j, fb_pair in zip(llm_sub, fb_results):
+                            analyzed_pairs[cat_indices[sub_j]] = fb_pair
 
         except Exception:
             analyzed_pairs = scan_service.analyze_with_llm(matched_pairs)
