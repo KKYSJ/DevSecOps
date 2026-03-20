@@ -12,6 +12,10 @@ Stage-specific guidance:
 - Different rule wording can still be the same vulnerability when both tools describe the same sink/source pattern at the same location.
 - If one finding is broader and another is a narrower variant on the same line, prefer `related` unless they clearly describe the same exploit class.
 
+Language requirements:
+- Keep enum values such as `recommended_decision`, `confidence`, and `candidate_decisions[].decision` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, each `candidate_decisions[].reason`, and `provider_notes` in natural Korean.
+
 Use this JSON schema exactly:
 {
   "recommended_decision": "pass | review | fail",

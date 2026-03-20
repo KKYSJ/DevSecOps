@@ -11,6 +11,10 @@ Stage-specific guidance:
 - Resource identity, file path, and nearby line numbers are the strongest signals.
 - Similar policy wording can still describe the same misconfiguration when both tools point to the same resource.
 
+Language requirements:
+- Keep enum values such as `recommended_decision`, `confidence`, and `candidate_decisions[].decision` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, each `candidate_decisions[].reason`, and `provider_notes` in natural Korean.
+
 Use this JSON schema exactly:
 {
   "recommended_decision": "pass | review | fail",

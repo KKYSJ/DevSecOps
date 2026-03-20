@@ -13,6 +13,10 @@ Stage-specific guidance:
 - The same package with different CVEs, or different packages with the same weakness class, should usually be `different` or at most `related`.
 - Version differences can still be `same` when the package and CVE clearly align.
 
+Language requirements:
+- Keep enum values such as `recommended_decision`, `confidence`, and `candidate_decisions[].decision` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, each `candidate_decisions[].reason`, and `provider_notes` in natural Korean.
+
 Use this JSON schema exactly:
 {
   "recommended_decision": "pass | review | fail",

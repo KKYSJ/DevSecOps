@@ -10,6 +10,10 @@ Stage-specific guidance:
 - The same package and same CVE should usually be treated as the same underlying issue even when wording differs.
 - The same package with different CVEs, or different packages with the same weakness class, should usually stay unmatched.
 
+Language requirements:
+- Keep enum values such as `recommended_decision` and `confidence` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, and `provider_notes` in natural Korean.
+
 Use this JSON schema exactly:
 {
   "recommended_decision": "pass | review | fail",

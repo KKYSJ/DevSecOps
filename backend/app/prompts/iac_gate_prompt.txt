@@ -9,6 +9,10 @@ Stage-specific guidance:
 - For IaC, resource identity, file path, and misconfiguration type are the strongest signals.
 - Similar wording can still refer to the same issue when both tools point to the same resource block.
 
+Language requirements:
+- Keep enum values such as `recommended_decision` and `confidence` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, and `provider_notes` in natural Korean.
+
 Use this JSON schema exactly:
 {
   "recommended_decision": "pass | review | fail",

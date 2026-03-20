@@ -10,6 +10,10 @@ Stage-specific guidance:
 - Same file and same or nearby line numbers are strong evidence.
 - Different rule wording can still describe the same vulnerability when the code location and exploit class align.
 
+Language requirements:
+- Keep enum values such as `recommended_decision` and `confidence` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, and `provider_notes` in natural Korean.
+
 Use this JSON schema exactly:
 {
   "recommended_decision": "pass | review | fail",

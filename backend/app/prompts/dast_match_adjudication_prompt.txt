@@ -11,6 +11,10 @@ Stage-specific guidance:
 - Endpoint, parameter, and vulnerability type are the strongest signals.
 - Similar payload or evidence paths increase confidence, but weak evidence should stay `related` or `different`.
 
+Language requirements:
+- Keep enum values such as `recommended_decision`, `confidence`, and `candidate_decisions[].decision` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, each `candidate_decisions[].reason`, and `provider_notes` in natural Korean.
+
 Use this JSON schema exactly:
 {
   "recommended_decision": "pass | review | fail",
