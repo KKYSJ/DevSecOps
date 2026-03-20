@@ -71,3 +71,4 @@ reports/
 .mypy_cache/
 .ruff_cache/
 secureflow-key.pem
+*.pem
