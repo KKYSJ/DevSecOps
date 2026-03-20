@@ -10,6 +10,7 @@ Be conservative. Only return `same` when the primary identity signals clearly al
 Stage-specific guidance:
 - Package name and CVE are the strongest signals.
 - The same package and same CVE should usually be `same` even if descriptions differ.
+- Advisory identifiers such as `GHSA` or matching `rule_id` values are also strong signals when CVE is missing on one side.
 - The same package with different CVEs, or different packages with the same weakness class, should usually be `different` or at most `related`.
 - Version differences can still be `same` when the package and CVE clearly align.
 

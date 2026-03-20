@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from backend.app.services.llm.analyzer import run as run_llm_analyzer
 from backend.app.services.parsers.checkov_parser import CheckovParser
@@ -239,11 +239,149 @@ def normalize_package_version(version: Any) -> str | None:
     return text or None
 
 
+def version_aliases(version: Any) -> set[str]:
+    aliases: set[str] = set()
+    normalized = normalize_package_version(version)
+    if normalized:
+        aliases.add(normalized)
+    if not version:
+        return aliases
+    for match in re.findall(r"\d+(?:\.\d+){1,}(?:[-._][a-z0-9]+)?", str(version).lower()):
+        token = match.lstrip("v")
+        if token:
+            aliases.add(token)
+    return aliases
+
+
+def versions_overlap(left: Any, right: Any) -> bool:
+    left_aliases = version_aliases(left)
+    right_aliases = version_aliases(right)
+    if not left_aliases or not right_aliases:
+        return False
+    return bool(left_aliases & right_aliases)
+
+
 def normalize_identifier(value: Any) -> str | None:
     if not value:
         return None
     text = str(value).strip().lower()
     return text or None
+
+
+SCA_PACKAGE_NOISE_TOKENS = {
+    "apk",
+    "archive",
+    "composer",
+    "deb",
+    "gem",
+    "github",
+    "golang",
+    "jar",
+    "js",
+    "lib",
+    "library",
+    "maven",
+    "npm",
+    "nuget",
+    "pkg",
+    "pypi",
+    "py",
+    "rpm",
+    "tar",
+    "war",
+    "wheel",
+    "zip",
+}
+SCA_WEAK_PACKAGE_ALIASES = {"api", "app", "cli", "common", "core", "sdk"}
+
+
+def package_aliases(name: Any) -> set[str]:
+    if not name:
+        return set()
+
+    raw = str(name).strip().lower()
+    if not raw:
+        return set()
+
+    canonical = re.sub(r"[^a-z0-9]+", "", raw)
+    aliases = {canonical} if canonical else set()
+
+    text = raw
+    if text.startswith("pkg:"):
+        text = text[4:]
+        if "/" in text:
+            text = text.split("/", 1)[1]
+    text = unquote(text)
+
+    if "@" in text and not text.startswith("@") and re.search(r"@\d", text):
+        text = text.rsplit("@", 1)[0]
+
+    parts = []
+    for part in re.split(r"[:/@]", text):
+        cleaned = re.sub(r"[^a-z0-9]+", "", part)
+        if not cleaned or cleaned in SCA_PACKAGE_NOISE_TOKENS:
+            continue
+        parts.append(cleaned)
+
+    if not parts:
+        return aliases
+
+    aliases.add("".join(parts))
+
+    tail = parts[-1]
+    if len(tail) >= 5 and tail not in SCA_WEAK_PACKAGE_ALIASES:
+        aliases.add(tail)
+
+    if len(parts) >= 2:
+        tail_pair = "".join(parts[-2:])
+        if len(tail_pair) >= 8:
+            aliases.add(tail_pair)
+
+    return {alias for alias in aliases if alias}
+
+
+def package_match_strength(left_name: Any, right_name: Any) -> tuple[float, str]:
+    left_normalized = normalize_package_name(left_name)
+    right_normalized = normalize_package_name(right_name)
+    if left_normalized and right_normalized and left_normalized == right_normalized:
+        return 1.0, "package_name"
+
+    overlap = package_aliases(left_name) & package_aliases(right_name)
+    if overlap:
+        longest = max(len(alias) for alias in overlap)
+        if longest >= 12:
+            return 0.92, "package_alias"
+        if longest >= 8:
+            return 0.84, "package_alias"
+
+    similarity = jaccard_similarity((left_name,), (right_name,))
+    if similarity >= 0.72:
+        return 0.80, "package_name_similarity"
+    if similarity >= 0.50:
+        return 0.68, "package_name_similarity"
+
+    return 0.0, "no_package_match"
+
+
+def shared_vulnerability_identifier(left: dict[str, Any], right: dict[str, Any]) -> tuple[str | None, str | None]:
+    left_ids = {
+        "cve_id": normalize_identifier(left.get("cve_id")),
+        "rule_id": normalize_identifier(left.get("rule_id")),
+    }
+    right_ids = {
+        "cve_id": normalize_identifier(right.get("cve_id")),
+        "rule_id": normalize_identifier(right.get("rule_id")),
+    }
+
+    for left_key, left_value in left_ids.items():
+        if not left_value:
+            continue
+        for right_key, right_value in right_ids.items():
+            if left_value and right_value and left_value == right_value:
+                basis = "cve_id" if "cve_id" in {left_key, right_key} else "rule_id"
+                return left_value, basis
+
+    return None, None
 
 
 def normalize_url_path(url: Any) -> str | None:
@@ -538,49 +676,53 @@ def build_sca_candidate_pairs(
     candidates: list[dict[str, Any]] = []
 
     for left in sort_findings_for_llm(left_findings):
-        left_pkg = normalize_package_name(left.get("package_name"))
-        left_ver = normalize_package_version(left.get("package_version"))
-        left_fixed = normalize_package_version(left.get("fixed_version"))
-        left_cve = normalize_identifier(left.get("cve_id"))
-
         best: dict[str, Any] | None = None
         for right in sort_findings_for_llm(right_findings):
-            right_pkg = normalize_package_name(right.get("package_name"))
-            right_ver = normalize_package_version(right.get("package_version"))
-            right_fixed = normalize_package_version(right.get("fixed_version"))
-            right_cve = normalize_identifier(right.get("cve_id"))
+            package_score, package_basis = package_match_strength(
+                left.get("package_name"),
+                right.get("package_name"),
+            )
+            shared_vuln_id, vuln_basis = shared_vulnerability_identifier(left, right)
             title_similarity = jaccard_similarity(
                 (
                     left.get("title"),
                     left.get("description"),
                     left.get("package_name"),
                     left.get("cve_id"),
+                    left.get("rule_id"),
                 ),
                 (
                     right.get("title"),
                     right.get("description"),
                     right.get("package_name"),
                     right.get("cve_id"),
+                    right.get("rule_id"),
                 ),
             )
 
             score = 0.0
             basis_parts: list[str] = []
 
-            if left_pkg and right_pkg and left_pkg == right_pkg:
+            if package_score >= 1.0:
                 score += 0.42
-                basis_parts.append("package_name")
+                basis_parts.append(package_basis)
+            elif package_score >= 0.90:
+                score += 0.34
+                basis_parts.append(package_basis)
+            elif package_score >= 0.80:
+                score += 0.28
+                basis_parts.append(package_basis)
 
-            if left_cve and right_cve and left_cve == right_cve:
+            if shared_vuln_id:
                 score += 0.40
-                basis_parts.append("cve_id")
+                basis_parts.append(vuln_basis or "vulnerability_id")
 
-            if left_ver and right_ver and left_ver == right_ver:
+            if versions_overlap(left.get("package_version"), right.get("package_version")):
                 score += 0.12
                 basis_parts.append("package_version")
 
-            if left_fixed and right_fixed and left_fixed == right_fixed:
-                score += 0.06
+            if versions_overlap(left.get("fixed_version"), right.get("fixed_version")):
+                score += 0.08
                 basis_parts.append("fixed_version")
 
             if title_similarity >= 0.20:
@@ -593,7 +735,7 @@ def build_sca_candidate_pairs(
                 score += 0.08
                 basis_parts.append("file_path")
 
-            if score < 0.50:
+            if score < 0.44:
                 continue
 
             candidate = {
@@ -708,21 +850,25 @@ def apply_llm_candidate_matching(
 
 
 def match_score_sca(left: dict[str, Any], right: dict[str, Any]) -> tuple[float, str]:
-    left_pkg = normalize_package_name(left.get("package_name"))
-    right_pkg = normalize_package_name(right.get("package_name"))
-    left_cve = normalize_identifier(left.get("cve_id"))
-    right_cve = normalize_identifier(right.get("cve_id"))
+    package_score, package_basis = package_match_strength(left.get("package_name"), right.get("package_name"))
+    shared_vuln_id, vuln_basis = shared_vulnerability_identifier(left, right)
     title_similarity = jaccard_similarity(
         (left.get("title"), left.get("description")),
         (right.get("title"), right.get("description")),
     )
+    same_package_version = versions_overlap(left.get("package_version"), right.get("package_version"))
+    same_fixed_version = versions_overlap(left.get("fixed_version"), right.get("fixed_version"))
 
-    if left_pkg and right_pkg and left_cve and right_cve and left_pkg == right_pkg and left_cve == right_cve:
-        return 1.0, "package_name+cve_id"
-    if left_pkg and right_pkg and left_pkg == right_pkg and title_similarity >= 0.70:
-        return 0.80, "package_name+title_similarity"
-    if left_cve and right_cve and left_cve == right_cve:
-        return 0.78, "cve_id"
+    if shared_vuln_id and package_score >= 0.80:
+        return 1.0, f"{package_basis}+{vuln_basis or 'vulnerability_id'}"
+    if shared_vuln_id and same_package_version and title_similarity >= 0.45:
+        return 0.84, f"{vuln_basis or 'vulnerability_id'}+package_version+title_similarity"
+    if package_score >= 0.90 and same_fixed_version:
+        return 0.82, f"{package_basis}+fixed_version"
+    if package_score >= 0.80 and title_similarity >= 0.68:
+        return 0.80, f"{package_basis}+title_similarity"
+    if package_score >= 0.80 and same_package_version:
+        return 0.78, f"{package_basis}+package_version"
     return 0.0, "no_strong_sca_match"
 
 
