@@ -31,13 +31,17 @@ on:
         required: false
         default: ""
         type: string
+      concurrency_suffix:
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: deploy-${{ inputs.ecs_service }}
+  group: ${{ inputs.concurrency_suffix != '' && format('deploy-{0}-{1}', inputs.ecs_service, inputs.concurrency_suffix) || format('deploy-{0}', inputs.ecs_service) }}
   cancel-in-progress: true
 
 jobs:
