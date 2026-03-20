@@ -30,6 +30,8 @@ interface CrossReport {
     phase: number;
   };
   commit_hash: string;
+  project_name?: string;
+  generated_at?: string;
 }
 
 export default function Deployments() {
@@ -43,8 +45,24 @@ export default function Deployments() {
       fetchJson<{ pipelines: PipelineRun[] }>('/pipelines').catch(() => ({ pipelines: [] })),
       fetchJson<CrossReport>('/cross').catch(() => null),
     ]).then(([pRes, cRes]) => {
-      setPipelines(pRes.pipelines || []);
+      let pipelineList = pRes.pipelines || [];
       setCrossReport(cRes);
+
+      // pipelines가 비어있지만 cross report가 있으면 가상 파이프라인 생성
+      if (pipelineList.length === 0 && cRes && cRes.gate_decision) {
+        pipelineList = [{
+          id: 0,
+          project_name: cRes.project_name || 'secureflow',
+          commit_hash: cRes.commit_hash || '',
+          branch: 'main',
+          status: cRes.gate_decision === 'BLOCK' ? 'blocked' : 'completed',
+          gate_result: cRes.gate_decision,
+          gate_score: cRes.total_score,
+          scan_ids: null,
+          created_at: cRes.generated_at || new Date().toISOString(),
+        }];
+      }
+      setPipelines(pipelineList);
     }).finally(() => setLoading(false));
   }, []);
 
