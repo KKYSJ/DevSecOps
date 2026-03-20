@@ -107,8 +107,43 @@ def run(payload: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def build_prompt(payload: dict[str, Any]) -> str:
+    mode = str(payload.get("mode", "gate")).strip().lower() or "gate"
     prompt_file = Path(str(payload.get("prompt_file", "")))
     prompt_hint = prompt_file.stem if prompt_file.name else f"{payload.get('stage', 'unknown')}_gate"
+
+    if mode == "match_adjudication":
+        compact_payload = {
+            "stage": payload.get("stage"),
+            "prompt_hint": prompt_hint,
+            "match_candidates": payload.get("match_candidates", []),
+        }
+        return (
+            f"{SYSTEM_PROMPT}\n\n"
+            "Evaluate whether each candidate pair from two security tools refers to the same underlying vulnerability.\n"
+            "Use these decision meanings exactly:\n"
+            "- same: the two findings describe the same underlying vulnerability in the same code location\n"
+            "- related: the findings are security-related and nearby, but not clearly the same vulnerability\n"
+            "- different: the findings describe different vulnerabilities or unrelated issues\n\n"
+            "Be conservative. Only return `same` when the file, location, and vulnerability meaning clearly align.\n"
+            "Use this JSON schema exactly:\n"
+            "{\n"
+            '  "recommended_decision": "pass | review | fail",\n'
+            '  "confidence": "low | medium | high",\n'
+            '  "summary": "short summary",\n'
+            '  "reasons": ["reason 1", "reason 2"],\n'
+            '  "candidate_decisions": [\n'
+            "    {\n"
+            '      "candidate_id": "candidate id",\n'
+            '      "decision": "same | related | different",\n'
+            '      "confidence": "low | medium | high",\n'
+            '      "reason": "short reason"\n'
+            "    }\n"
+            "  ],\n"
+            '  "provider_notes": "optional note"\n'
+            "}\n\n"
+            "Input:\n"
+            f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
+        )
 
     tool_lines = []
     for item in payload.get("tool_summaries", []):
@@ -273,6 +308,27 @@ def normalize_result(
     if not isinstance(reasons, list):
         reasons = [str(reasons)] if reasons else []
 
+    candidate_decisions = []
+    raw_candidate_decisions = data.get("candidate_decisions")
+    if isinstance(raw_candidate_decisions, list):
+        for item in raw_candidate_decisions:
+            if not isinstance(item, dict):
+                continue
+            decision = str(item.get("decision", "related")).strip().lower()
+            if decision not in {"same", "related", "different"}:
+                decision = "related"
+            item_confidence = str(item.get("confidence", "medium")).strip().lower()
+            if item_confidence not in {"low", "medium", "high"}:
+                item_confidence = "medium"
+            candidate_decisions.append(
+                {
+                    "candidate_id": str(item.get("candidate_id", "")).strip(),
+                    "decision": decision,
+                    "confidence": item_confidence,
+                    "reason": str(item.get("reason", "")).strip(),
+                }
+            )
+
     result = {
         "component": "analyzer",
         "provider": provider,
@@ -286,6 +342,8 @@ def normalize_result(
         "openai_configured": openai_configured,
         "attempted_providers": attempted_providers or [],
     }
+    if candidate_decisions:
+        result["candidate_decisions"] = candidate_decisions
     if fallback_reason:
         result["fallback_reason"] = fallback_reason
     return result
