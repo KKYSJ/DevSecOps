@@ -120,6 +120,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_json(path: Path) -> Any:
+    if not path.exists():
+        return {}
     content = path.read_text(encoding="utf-8-sig").strip()
     if not content:
         return {}
