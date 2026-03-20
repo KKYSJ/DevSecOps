@@ -223,6 +223,7 @@ jobs:
         with:
           name: iac-llm-gate
           path: artifacts/iac/iac-llm-gate.json
+        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
 
   service-sast-semgrep:
     needs:
@@ -451,6 +452,7 @@ jobs:
         with:
           name: sast-llm-gate
           path: artifacts/sast/sast-llm-gate.json
+        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
 
   service-sca-depcheck:
     needs:
@@ -576,6 +578,7 @@ jobs:
         with:
           name: sca-llm-gate
           path: artifacts/sca/sca-llm-gate.json
+        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
 
   ci-release-gate:
     needs:
@@ -617,6 +620,7 @@ jobs:
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          # Upload raw scanner outputs only. LLM gate JSON remains in GitHub artifacts.
           upload() {
             local tool=$1 file=$2
             if [ -f "$file" ]; then
@@ -656,40 +660,6 @@ jobs:
           upload "depcheck" "scan-results/depcheck-service-results/dependency-check-report.json"
           upload "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
           upload "checkov"  "scan-results/checkov-results/checkov-results.json"
-        continue-on-error: true
-
-      - name: Worker 파싱 완료 대기
-        if: env.BACKEND_URL != ''
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          echo "Worker 파싱 완료 대기 중..."
-          for i in $(seq 1 30); do
-            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
-              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
-              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
-            echo "  완료: ${DONE}건, 대기: ${WAIT}건 (${i}/30)"
-            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
-              echo "✅ 모든 스캔 파싱 완료"
-              break
-            fi
-            sleep 5
-          done
-
-      - name: Phase 1 분석 실행 (교차검증 + 게이트 결정)
-        if: env.BACKEND_URL != ''
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          echo "Phase 1 분석 요청..."
-          RESULT=$(curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
-            -H "Content-Type: application/json" \
-            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
-            --max-time 120 || echo "{}")
-          echo "$RESULT" | head -500
-          GATE=$(echo "$RESULT" | grep -o '"gate_decision":"[^"]*"' | head -1 || echo "")
-          echo "게이트 결정: $GATE"
         continue-on-error: true
 
       - name: BACKEND_URL 미설정 안내

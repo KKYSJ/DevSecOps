@@ -390,27 +390,44 @@ jobs:
         with:
           name: dast-llm-gate
           path: artifacts/dast/dast-llm-gate.json
+        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
 
-      - name: SecureFlow에 DAST 결과 업로드
+      - name: Upload DAST results to SecureFlow
         if: always() && env.BACKEND_URL != ''
         env:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+          BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
-          ZAP_FILE="artifacts/dast/zap-service-results/zap-results.json"
-          if [ -f "$ZAP_FILE" ]; then
-            echo "ZAP 결과 업로드..."
-            curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
-              -H "Content-Type: application/json" \
-              -d "{\"tool\":\"zap\",\"raw_result\":$(cat "$ZAP_FILE"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\"}" \
-              --max-time 30 || true
+          # Upload raw DAST outputs only. LLM gate JSON remains in GitHub artifacts.
+          upload() {
+            local tool=$1 file=$2
+            if [ ! -f "$file" ]; then
+              echo "Skip upload: $tool (file missing)"
+              return
+            fi
 
-            echo "Phase 2 분석 요청..."
-            curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
-              -H "Content-Type: application/json" \
-              -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
-              --max-time 120 || true
-          fi
+            echo "Uploading $tool results..."
+            if jq -n --arg tool "$tool" \
+                  --arg commit "$COMMIT_SHA" \
+                  --arg project "secureflow" \
+                  --arg branch "$BRANCH_NAME" \
+                  --slurpfile raw "$file" \
+                  '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch}' \
+                  > /tmp/payload.json 2>/dev/null; then
+              curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
+                -H "Content-Type: application/json" \
+                -d @/tmp/payload.json \
+                --max-time 60 || true
+            else
+              echo "Skip upload: failed to build JSON payload for $tool"
+            fi
+
+            rm -f /tmp/payload.json
+          }
+
+          upload "zap" "artifacts/dast/zap-service-results/zap-results.json"
+          upload "nuclei" "artifacts/dast/nuclei-service-results/nuclei-results.json"
         continue-on-error: true
 
   isms-preprod-gate:
