@@ -449,7 +449,7 @@ export default function Home({ params }: HomeProps) {
                   <p className="text-xs text-muted-foreground mb-4">tfsec + Checkov 결과</p>
                   <div className="space-y-2">
                     {vulnerabilities
-                      .filter((v) => ['tfsec', 'Checkov'].includes(v.tool))
+                      .filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()))
                       .map((v) => (
                         <div key={v.id} className="rounded-md border border-border p-3">
                           <div className="flex items-center justify-between">
@@ -463,7 +463,7 @@ export default function Home({ params }: HomeProps) {
                 </div>
                 <div className="bg-card rounded-lg border border-border shadow-sm p-4">
                   <h3 className="text-sm font-semibold text-foreground mb-2">취약점 테이블</h3>
-                  <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'Checkov'].includes(v.tool))} />
+                  <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()))} />
                 </div>
               </div>
             </div>
@@ -481,7 +481,7 @@ export default function Home({ params }: HomeProps) {
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => ['Semgrep', 'SonarQube', 'Bandit'].includes(v.tool))}
+                vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))}
               />
             </div>
           )}
@@ -498,7 +498,7 @@ export default function Home({ params }: HomeProps) {
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => ['Trivy', 'Dep-Check'].includes(v.tool))}
+                vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))}
               />
             </div>
           )}
@@ -544,7 +544,7 @@ export default function Home({ params }: HomeProps) {
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => v.tool === 'Trivy')}
+                vulnerabilities={vulnerabilities.filter((v) => v.tool?.toLowerCase() === 'trivy')}
               />
             </div>
           )}
@@ -591,7 +591,7 @@ export default function Home({ params }: HomeProps) {
                 return <StageCrossAnalysis items={stageCrossAnalysis} />;
               })()}
               <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => v.tool === 'OWASP ZAP')}
+                vulnerabilities={vulnerabilities.filter((v) => ['zap', 'owasp zap'].includes(v.tool?.toLowerCase()))}
               />
             </div>
           )}
