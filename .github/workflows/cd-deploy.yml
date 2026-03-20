@@ -390,7 +390,34 @@ jobs:
         with:
           name: dast-llm-gate
           path: artifacts/dast/dast-llm-gate.json
-        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+
+      - name: Upload DAST gate result to SecureFlow
+        if: always()
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+          BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
+            exit 0
+          fi
+
+          jq -n \
+            --arg stage "dast" \
+            --arg commit "$COMMIT_SHA" \
+            --arg project "secureflow" \
+            --arg branch "$BRANCH_NAME" \
+            --arg run_id "$RUN_ID" \
+            --slurpfile raw artifacts/dast/dast-llm-gate.json \
+            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            > /tmp/gate-payload.json
+
+          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gate-payload.json \
+            --max-time 60 || true
 
       - name: Upload DAST results to SecureFlow
         if: always() && env.BACKEND_URL != ''
@@ -399,7 +426,7 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
-          # Upload raw DAST outputs only. LLM gate JSON remains in GitHub artifacts.
+          # Upload raw DAST outputs only. LLM gate JSON is uploaded separately to /api/v1/gates.
           upload() {
             local tool=$1 file=$2
             if [ ! -f "$file" ]; then

@@ -223,7 +223,34 @@ jobs:
         with:
           name: iac-llm-gate
           path: artifacts/iac/iac-llm-gate.json
-        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+
+      - name: Upload IaC gate result to SecureFlow
+        if: always()
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/iac/iac-llm-gate.json ]; then
+            exit 0
+          fi
+
+          jq -n \
+            --arg stage "iac" \
+            --arg commit "$COMMIT_SHA" \
+            --arg project "secureflow" \
+            --arg branch "$BRANCH_NAME" \
+            --arg run_id "$RUN_ID" \
+            --slurpfile raw artifacts/iac/iac-llm-gate.json \
+            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            > /tmp/gate-payload.json
+
+          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gate-payload.json \
+            --max-time 60 || true
 
   service-sast-semgrep:
     needs:
@@ -452,7 +479,34 @@ jobs:
         with:
           name: sast-llm-gate
           path: artifacts/sast/sast-llm-gate.json
-        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+
+      - name: Upload SAST gate result to SecureFlow
+        if: always()
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/sast/sast-llm-gate.json ]; then
+            exit 0
+          fi
+
+          jq -n \
+            --arg stage "sast" \
+            --arg commit "$COMMIT_SHA" \
+            --arg project "secureflow" \
+            --arg branch "$BRANCH_NAME" \
+            --arg run_id "$RUN_ID" \
+            --slurpfile raw artifacts/sast/sast-llm-gate.json \
+            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            > /tmp/gate-payload.json
+
+          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gate-payload.json \
+            --max-time 60 || true
 
   service-sca-depcheck:
     needs:
@@ -578,7 +632,34 @@ jobs:
         with:
           name: sca-llm-gate
           path: artifacts/sca/sca-llm-gate.json
-        # CI gate output stays in GitHub artifacts/summary and is not uploaded to BACKEND_URL.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+
+      - name: Upload SCA gate result to SecureFlow
+        if: always()
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/sca/sca-llm-gate.json ]; then
+            exit 0
+          fi
+
+          jq -n \
+            --arg stage "sca" \
+            --arg commit "$COMMIT_SHA" \
+            --arg project "secureflow" \
+            --arg branch "$BRANCH_NAME" \
+            --arg run_id "$RUN_ID" \
+            --slurpfile raw artifacts/sca/sca-llm-gate.json \
+            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            > /tmp/gate-payload.json
+
+          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gate-payload.json \
+            --max-time 60 || true
 
   ci-release-gate:
     needs:
@@ -620,7 +701,7 @@ jobs:
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          # Upload raw scanner outputs only. LLM gate JSON remains in GitHub artifacts.
+          # Upload raw scanner outputs only. LLM gate JSON is uploaded separately to /api/v1/gates.
           upload() {
             local tool=$1 file=$2
             if [ -f "$file" ]; then
