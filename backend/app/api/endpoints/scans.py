@@ -369,7 +369,7 @@ class GateResultRequest(BaseModel):
 @router.post("/gate-result")
 def receive_gate_result(body: GateResultRequest, db: Session = Depends(get_db)):
     """CI의 run_llm_gate.py 결과를 저장합니다."""
-    from backend.app.models.scan import ToolResult
+    from backend.app.models.tool_result import ToolResult
 
     record = ToolResult(
         name=f"llm-gate-{body.stage}",
