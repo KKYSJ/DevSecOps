@@ -115,25 +115,25 @@ function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
       <div className="grid grid-cols-3 gap-3 mb-3">
         <div className="bg-muted rounded-md p-2 text-center">
           <div className="text-lg font-bold text-green-600">{matching.matched_count || 0}</div>
-          <div className="text-[10px] text-muted-foreground">동시 탐지</div>
+          <div className="text-xs text-muted-foreground">동시 탐지</div>
         </div>
         <div className="bg-muted rounded-md p-2 text-center">
           <div className="text-lg font-bold text-amber-600">{matching.mismatch_count || 0}</div>
-          <div className="text-[10px] text-muted-foreground">단독 탐지</div>
+          <div className="text-xs text-muted-foreground">단독 탐지</div>
         </div>
         <div className="bg-muted rounded-md p-2 text-center">
           <div className="text-lg font-bold text-foreground">{combined.total || 0}</div>
-          <div className="text-[10px] text-muted-foreground">전체</div>
+          <div className="text-xs text-muted-foreground">전체</div>
         </div>
       </div>
 
       {/* 심각도 요약 */}
       <div className="flex gap-2 mb-3">
-        {confirmed.critical > 0 && <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">CRITICAL {confirmed.critical}</span>}
-        {confirmed.high > 0 && <span className="text-[10px] font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">HIGH {confirmed.high}</span>}
-        {confirmed.medium > 0 && <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">MEDIUM {confirmed.medium}</span>}
-        {confirmed.low > 0 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">LOW {confirmed.low}</span>}
-        {confirmed.total === 0 && <span className="text-[10px] text-muted-foreground">동시 탐지된 확정 취약점 없음</span>}
+        {confirmed.critical > 0 && <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">CRITICAL {confirmed.critical}</span>}
+        {confirmed.high > 0 && <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">HIGH {confirmed.high}</span>}
+        {confirmed.medium > 0 && <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">MEDIUM {confirmed.medium}</span>}
+        {confirmed.low > 0 && <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">LOW {confirmed.low}</span>}
+        {confirmed.total === 0 && <span className="text-xs text-muted-foreground">동시 탐지된 확정 취약점 없음</span>}
       </div>
 
       {/* LLM 분석 요약 */}
@@ -149,7 +149,7 @@ function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
         <div className="space-y-1">
           <div className="text-xs font-semibold text-foreground">판정 근거</div>
           {reasons.map((r: string, i: number) => (
-            <div key={i} className="text-[10px] text-muted-foreground flex gap-1">
+            <div key={i} className="text-xs text-muted-foreground flex gap-1">
               <span className="text-foreground">•</span> {r}
             </div>
           ))}
@@ -158,7 +158,7 @@ function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
 
       {/* Provider notes */}
       {llm.provider_notes && (
-        <div className="mt-2 text-[10px] text-blue-600 bg-blue-50 rounded p-2">
+        <div className="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">
           {llm.provider_notes}
         </div>
       )}
@@ -178,24 +178,24 @@ function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
               return (
                 <div key={i} className={`rounded-md border p-3 ${jColor}`}>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                       j.judgement_code === 'TRUE_POSITIVE' ? 'bg-red-600 text-white' :
                       j.judgement_code === 'FALSE_POSITIVE' ? 'bg-green-600 text-white' :
                       'bg-amber-600 text-white'
                     }`}>{jLabel}</span>
-                    <span className={`text-[10px] font-bold ${
+                    <span className={`text-xs font-bold ${
                       j.severity === 'CRITICAL' ? 'text-red-700' :
                       j.severity === 'HIGH' ? 'text-orange-700' :
                       'text-yellow-700'
                     }`}>{j.severity}</span>
-                    <span className="text-[10px] text-muted-foreground">신뢰도 {j.confidence === 'HIGH' ? '90%' : j.confidence === 'MED' ? '60%' : '30%'}</span>
+                    <span className="text-xs text-muted-foreground">신뢰도 {j.confidence === 'HIGH' ? '90%' : j.confidence === 'MED' ? '60%' : '30%'}</span>
                   </div>
                   {j.title_ko && <div className="text-xs font-semibold text-foreground">{j.title_ko}</div>}
-                  {j.risk_summary && <div className="text-[10px] text-muted-foreground mt-1">{j.risk_summary}</div>}
-                  {j.reason && <div className="text-[10px] text-muted-foreground mt-1"><strong>근거:</strong> {j.reason}</div>}
-                  {j.action_text && <div className="text-[10px] text-blue-700 mt-1"><strong>수정 방법:</strong> {j.action_text}</div>}
+                  {j.risk_summary && <div className="text-xs text-muted-foreground mt-1">{j.risk_summary}</div>}
+                  {j.reason && <div className="text-xs text-muted-foreground mt-1"><strong>근거:</strong> {j.reason}</div>}
+                  {j.action_text && <div className="text-xs text-blue-700 mt-1"><strong>수정 방법:</strong> {j.action_text}</div>}
                   {j.finding_a?.file_path && (
-                    <div className="text-[10px] text-muted-foreground mt-1">
+                    <div className="text-xs text-muted-foreground mt-1">
                       📁 {j.finding_a.file_path}{j.finding_a.line_number ? `:${j.finding_a.line_number}` : ''}
                       {j.finding_a.cwe_id && <span className="ml-2 text-blue-600">{j.finding_a.cwe_id}</span>}
                     </div>
@@ -206,6 +206,223 @@ function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Gate 기반 교차검증 비교 카드
+// CWE 한국어 매핑
+const CWE_KO: Record<string, string> = {
+  'CWE-89': 'SQL 인젝션',
+  'CWE-78': 'OS 명령어 삽입',
+  'CWE-22': '경로 조작 (Path Traversal)',
+  'CWE-79': '크로스 사이트 스크립팅 (XSS)',
+  'CWE-798': '하드코딩된 비밀번호',
+  'CWE-327': '취약한 암호화 알고리즘',
+  'CWE-502': '안전하지 않은 역직렬화',
+  'CWE-918': '서버 측 요청 위조 (SSRF)',
+  'CWE-776': 'XML 엔티티 확장 공격',
+  'CWE-400': '서비스 거부 (DoS)',
+  'CWE-401': '메모리 누수',
+  'CWE-248': '예외 처리 미흡',
+  'CWE-770': 'HTTP/2 DDoS',
+  'CWE-942': 'CORS 설정 오류',
+  'CWE-353': '무결성 검증 누락',
+};
+
+function cweKo(cwe: string | null | undefined): string {
+  if (!cwe) return '';
+  return CWE_KO[cwe] || cwe;
+}
+
+function GateCrossValidation({ gate }: { gate: any }) {
+  if (!gate) return null;
+  const matching = gate.matching || {};
+  const pairs = matching.matched_pairs_sample || [];
+  const unmatched = gate.unmatched_findings || {};
+
+  // 도구별로 단독 탐지 분리 (Critical/High, 각 5건)
+  const toolAFindings: any[] = [];
+  const toolBFindings: any[] = [];
+  const tools = gate.tool_summaries || [];
+  const toolAName = tools[0]?.tool || '도구A';
+  const toolBName = tools[1]?.tool || '도구B';
+
+  Object.entries(unmatched).forEach(([tool, findings]: [string, any]) => {
+    if (!Array.isArray(findings)) return;
+    const filtered = findings
+      .filter((f: any) => ['critical', 'high'].includes((f.severity || '').toLowerCase()))
+      .slice(0, 5);
+    if (tool.toLowerCase() === toolAName.toLowerCase()) {
+      toolAFindings.push(...filtered);
+    } else {
+      toolBFindings.push(...filtered);
+    }
+  });
+
+  const renderFinding = (f: any, i: number) => {
+    const sev = (f.severity || 'medium').toUpperCase();
+    const sevColor = sev === 'CRITICAL' ? 'bg-red-600' : 'bg-orange-600';
+    return (
+      <div key={i} className="bg-white rounded border border-amber-100 p-3">
+        <div className="flex items-center gap-2 mb-1">
+          <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sevColor}`}>{sev}</span>
+          {f.cwe_id && <span className="text-xs text-blue-600 font-semibold">{f.cwe_id}</span>}
+        </div>
+        <div className="text-sm text-foreground font-medium">{cweKo(f.cwe_id) || (f.title || '').slice(0, 60)}</div>
+        <div className="text-xs text-muted-foreground mt-1">{(f.title || '').slice(0, 80)}</div>
+        {f.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {f.file_path}{f.line_number ? `:${f.line_number}` : ''}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 동시 탐지 */}
+      {pairs.length > 0 && (
+        <div className="bg-card rounded-lg border-2 border-red-200 shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-sm font-bold bg-red-600 text-white px-3 py-1 rounded">동시 탐지</span>
+            <span className="text-base font-semibold text-foreground">두 도구가 동시에 발견 — 실제 취약점</span>
+            <span className="text-sm text-red-600 font-bold">({pairs.length}건)</span>
+          </div>
+          <div className="space-y-4">
+            {pairs.map((p: any, i: number) => {
+              const left = p.left || {};
+              const right = p.right || {};
+              const sev = (left.severity || right.severity || 'medium').toUpperCase();
+              const sevColor = sev === 'CRITICAL' ? 'bg-red-600' : sev === 'HIGH' ? 'bg-orange-600' : 'bg-yellow-600';
+              const cwe = left.cwe_id || right.cwe_id;
+              return (
+                <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`text-sm font-bold text-white px-2 py-0.5 rounded ${sevColor}`}>{sev}</span>
+                    {cwe && <span className="text-sm font-bold text-blue-700">{cwe}</span>}
+                    <span className="text-sm font-semibold text-foreground">{cweKo(cwe)}</span>
+                  </div>
+                  {left.file_path && (
+                    <div className="text-sm text-muted-foreground mb-3">📁 {left.file_path}{left.line_number ? `:${left.line_number}` : ''}</div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white rounded-lg border border-red-100 p-3">
+                      <div className="text-sm font-bold text-red-700 mb-1">✓ {left.tool}</div>
+                      <div className="text-sm text-foreground">{(left.title || '').slice(0, 100)}</div>
+                    </div>
+                    <div className="bg-white rounded-lg border border-red-100 p-3">
+                      <div className="text-sm font-bold text-red-700 mb-1">✓ {right.tool}</div>
+                      <div className="text-sm text-foreground">{(right.title || '').slice(0, 100)}</div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-red-700 mt-3 font-semibold bg-red-100 rounded p-2">
+                    → 두 도구 모두 동일 위치에서 탐지 — 즉시 수정 필요
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 단독 탐지 — 도구별 좌/우 분리 */}
+      {(toolAFindings.length > 0 || toolBFindings.length > 0) && (
+        <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span>
+            <span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span>
+            <span className="text-sm text-amber-600">(Critical/High만)</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 왼쪽 도구 */}
+            <div>
+              <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">{toolAName} ({toolAFindings.length}건)</div>
+              <div className="space-y-2">
+                {toolAFindings.length > 0
+                  ? toolAFindings.map(renderFinding)
+                  : <div className="text-sm text-muted-foreground p-3">Critical/High 단독 탐지 없음</div>
+                }
+              </div>
+            </div>
+            {/* 오른쪽 도구 */}
+            <div>
+              <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">{toolBName} ({toolBFindings.length}건)</div>
+              <div className="space-y-2">
+                {toolBFindings.length > 0
+                  ? toolBFindings.map(renderFinding)
+                  : <div className="text-sm text-muted-foreground p-3">Critical/High 단독 탐지 없음</div>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pairs.length === 0 && toolAFindings.length === 0 && toolBFindings.length === 0 && (
+        <div className="bg-card rounded-lg border border-border p-6 text-center text-muted-foreground text-sm">
+          교차검증 데이터가 없습니다
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Gate 기반 Severity 카드
+function GateSeverityCards({ gate }: { gate: any }) {
+  if (!gate) return null;
+  const combined = gate.combined_summary || {};
+  const confirmed = gate.confirmed_summary || {};
+
+  const cards = [
+    { label: 'CRITICAL', count: combined.critical || 0, confirmed: confirmed.critical || 0, color: 'text-red-600', bg: 'bg-red-50', desc: '긴급 조치 필요' },
+    { label: 'HIGH', count: combined.high || 0, confirmed: confirmed.high || 0, color: 'text-orange-600', bg: 'bg-orange-50', desc: '즉시 조치 필요' },
+    { label: 'MEDIUM', count: combined.medium || 0, confirmed: confirmed.medium || 0, color: 'text-amber-600', bg: 'bg-amber-50', desc: '우선 검토 필요' },
+    { label: 'LOW', count: combined.low || 0, confirmed: confirmed.low || 0, color: 'text-blue-600', bg: 'bg-blue-50', desc: '모니터링 권장' },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {cards.map((c) => (
+        <div key={c.label} className={`${c.bg} rounded-lg border border-border p-4`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-bold text-muted-foreground">{c.label}</span>
+            {c.confirmed > 0 && <span className="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded">동시탐지 {c.confirmed}</span>}
+          </div>
+          <div className={`text-2xl font-bold ${c.color}`}>{c.count}</div>
+          <div className="text-xs text-muted-foreground">{c.desc}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Gate 기반 도구별 요약
+function GateToolSummary({ gate }: { gate: any }) {
+  if (!gate) return null;
+  const tools = gate.tool_summaries || [];
+  if (tools.length === 0) return null;
+
+  return (
+    <div className="bg-card rounded-lg border border-border shadow-sm p-4">
+      <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {tools.map((t: any, i: number) => {
+          const s = t.summary || {};
+          return (
+            <div key={i} className="bg-muted rounded-md p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-foreground">{t.tool}</span>
+                <span className="text-xs text-muted-foreground">총 {s.total || 0}건</span>
+              </div>
+              <div className="flex gap-2">
+                {s.critical > 0 && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">C:{s.critical}</span>}
+                {s.high > 0 && <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">H:{s.high}</span>}
+                {s.medium > 0 && <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold">M:{s.medium}</span>}
+                {s.low > 0 && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">L:{s.low}</span>}
+                {(s.total || 0) === 0 && <span className="text-xs text-muted-foreground">탐지 없음</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -518,12 +735,12 @@ export default function Home({ params }: HomeProps) {
                                     <div className="text-xs lg:text-[11px] font-semibold text-foreground leading-tight whitespace-nowrap">
                                       {stage.label}
                                     </div>
-                                    <div className="text-[10px] lg:text-[9px] text-muted-foreground leading-snug whitespace-normal lg:whitespace-nowrap lg:truncate">
+                                    <div className="text-xs lg:text-xs text-muted-foreground leading-snug whitespace-normal lg:whitespace-nowrap lg:truncate">
                                       {stage.subtitle || (index < currentIdx ? '완료' : index === currentIdx ? (stepState === 'failed' ? '실패' : '진행/대기') : '대기')}
                                     </div>
                                   </div>
                                   {badge && (
-                                    <span className={`text-[10px] lg:text-[9px] font-mono px-2 lg:px-1.5 py-0.5 rounded-md border ${badge.className}`}>
+                                    <span className={`text-xs lg:text-xs font-mono px-2 lg:px-1.5 py-0.5 rounded-md border ${badge.className}`}>
                                       {badge.label}
                                     </span>
                                   )}
@@ -566,72 +783,30 @@ export default function Home({ params }: HomeProps) {
           {activeSection === 'iac' && (
             <div className="space-y-5">
               <LlmGateSummary gate={llmGates['iac']} judgments={llmJudgments['iac']} />
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {(() => {
-                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
-                  item.tools.some(tool => ['tfsec', 'Checkov'].includes(tool))
-                );
-
-                return <StageCrossAnalysis items={stageCrossAnalysis} />;
-              })()}
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-                  <h3 className="text-sm font-semibold text-foreground mb-2">IaC 스캔</h3>
-                  <p className="text-xs text-muted-foreground mb-4">tfsec + Checkov 결과</p>
-                  <div className="space-y-2">
-                    {vulnerabilities
-                      .filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()))
-                      .map((v) => (
-                        <div key={v.id} className="rounded-md border border-border p-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-foreground">{v.category}</span>
-                            <span className="text-[10px] text-muted-foreground">{v.tool}</span>
-                          </div>
-                          <div className="text-[10px] text-muted-foreground mt-1">{v.description}</div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-                <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-                  <h3 className="text-sm font-semibold text-foreground mb-2">취약점 테이블</h3>
-                  <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()))} />
-                </div>
-              </div>
+              <GateCrossValidation gate={llmGates['iac']} />
+              <GateSeverityCards gate={llmGates['iac']} />
+              <GateToolSummary gate={llmGates['iac']} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase())).slice(0, 20)} />
             </div>
           )}
 
           {activeSection === 'sast' && (
             <div className="space-y-5">
               <LlmGateSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} />
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {(() => {
-                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
-                  item.tools.some(tool => ['Semgrep', 'SonarQube', 'Bandit', 'ESLint Security'].includes(tool))
-                );
-
-                return <StageCrossAnalysis items={stageCrossAnalysis} />;
-              })()}
-              <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))}
-              />
+              <GateCrossValidation gate={llmGates['sast']} />
+              <GateSeverityCards gate={llmGates['sast']} />
+              <GateToolSummary gate={llmGates['sast']} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 20)} />
             </div>
           )}
 
           {activeSection === 'sca' && (
             <div className="space-y-5">
               <LlmGateSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {(() => {
-                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
-                  item.tools.some(tool => ['Trivy', 'Dep-Check'].includes(tool))
-                );
-
-                return <StageCrossAnalysis items={stageCrossAnalysis} />;
-              })()}
-              <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))}
-              />
+              <GateCrossValidation gate={llmGates['sca']} />
+              <GateSeverityCards gate={llmGates['sca']} />
+              <GateToolSummary gate={llmGates['sca']} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 20)} />
             </div>
           )}
 
@@ -699,12 +874,12 @@ export default function Home({ params }: HomeProps) {
                   <div className="rounded-md border border-border p-4">
                     <div className="text-xs text-muted-foreground mb-2">서비스 상태</div>
                     <div className="text-sm font-semibold">Running</div>
-                    <div className="text-[10px] text-muted-foreground mt-1">모든 태스크가 정상 실행 중입니다.</div>
+                    <div className="text-xs text-muted-foreground mt-1">모든 태스크가 정상 실행 중입니다.</div>
                   </div>
                   <div className="rounded-md border border-border p-4">
                     <div className="text-xs text-muted-foreground mb-2">최근 배포</div>
                     <div className="text-sm font-semibold">v2.4.1</div>
-                    <div className="text-[10px] text-muted-foreground mt-1">약 5분 전 완료</div>
+                    <div className="text-xs text-muted-foreground mt-1">약 5분 전 완료</div>
                   </div>
                 </div>
               </div>

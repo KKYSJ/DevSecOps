@@ -12,7 +12,7 @@ from typing import Any
 
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
 TIMEOUT_SECONDS = 60
 MAX_RETRIES = 2
 
