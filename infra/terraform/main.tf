@@ -2,6 +2,8 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   availability_zones = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, 2)
   name_prefix        = "${var.project_name}-${var.environment}"
@@ -51,10 +53,18 @@ locals {
     }
   }
 
-  node_image_uri     = "${module.ecr.repository_urls["api-server-node"]}:${var.node_image_tag}"
-  fastapi_image_uri  = "${module.ecr.repository_urls["api-server-fastapi"]}:${var.fastapi_image_tag}"
-  spring_image_uri   = "${module.ecr.repository_urls["api-server-spring"]}:${var.spring_image_tag}"
-  frontend_image_uri = "${module.ecr.repository_urls["frontend"]}:${var.frontend_image_tag}"
+  ecr_registry = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
+  ecr_repository_urls = var.create_ecr_repositories ? module.ecr[0].repository_urls : {
+    for name in local.workload_names : name => "${local.ecr_registry}/${name}"
+  }
+  ecr_repository_arns = var.create_ecr_repositories ? module.ecr[0].repository_arns : {
+    for name in local.workload_names : name => "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${name}"
+  }
+
+  node_image_uri     = "${local.ecr_repository_urls["api-server-node"]}:${var.node_image_tag}"
+  fastapi_image_uri  = "${local.ecr_repository_urls["api-server-fastapi"]}:${var.fastapi_image_tag}"
+  spring_image_uri   = "${local.ecr_repository_urls["api-server-spring"]}:${var.spring_image_tag}"
+  frontend_image_uri = "${local.ecr_repository_urls["frontend"]}:${var.frontend_image_tag}"
 
   node_database_environment = local.node_uses_rds ? {
     DB_TYPE = "mysql"
@@ -124,10 +134,20 @@ locals {
     var.spring_environment_overrides
   )
 
+  shared_jwt_secret_arn = try(aws_secretsmanager_secret.shared_jwt[0].arn, null)
+
   node_secret_environment_variables = merge(
-    { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn },
+    local.shared_jwt_secret_arn != null ? { JWT_SECRET = local.shared_jwt_secret_arn } : {},
     local.node_uses_rds ? { DB_PASSWORD = "${module.rds[0].secret_arn}:password::" } : {}
   )
+
+  spring_secret_environment_variables = local.shared_jwt_secret_arn != null ? {
+    APP_JWT_SECRET = local.shared_jwt_secret_arn
+  } : {}
+
+  fastapi_secret_environment_variables = local.shared_jwt_secret_arn != null ? {
+    JWT_SECRET = local.shared_jwt_secret_arn
+  } : {}
 }
 
 module "vpc" {
@@ -146,6 +166,7 @@ module "vpc" {
 }
 
 module "ecr" {
+  count  = var.create_ecr_repositories ? 1 : 0
   source = "./modules/ecr"
 
   repositories = local.ecr_repositories
@@ -258,21 +279,22 @@ module "rds" {
 module "iam_kms" {
   source = "./modules/iam-kms"
 
-  project_name            = var.project_name
-  environment             = var.environment
-  create_github_oidc_role = var.create_github_oidc_role
-  github_org              = var.github_org
-  github_repo             = var.github_repo
-  github_branch           = var.github_branch
-  github_oidc_subjects    = var.github_oidc_subjects
-  github_oidc_thumbprints = var.github_oidc_thumbprints
-  ecr_repository_arns     = values(module.ecr.repository_arns)
-  frontend_bucket_arn     = module.s3.frontend_bucket_arn
-  uploads_bucket_arn      = module.s3.uploads_bucket_arn
-  dynamodb_table_arn      = aws_dynamodb_table.reviews.arn
-  sqs_queue_arn           = aws_sqs_queue.orders.arn
-  sns_topic_arn           = aws_sns_topic.orders.arn
-  tags                    = local.common_tags
+  project_name                = var.project_name
+  environment                 = var.environment
+  create_github_oidc_role     = var.create_github_oidc_role
+  create_github_oidc_provider = var.create_github_oidc_provider
+  github_org                  = var.github_org
+  github_repo                 = var.github_repo
+  github_branch               = var.github_branch
+  github_oidc_subjects        = var.github_oidc_subjects
+  github_oidc_thumbprints     = var.github_oidc_thumbprints
+  ecr_repository_arns         = values(local.ecr_repository_arns)
+  frontend_bucket_arn         = module.s3.frontend_bucket_arn
+  uploads_bucket_arn          = module.s3.uploads_bucket_arn
+  dynamodb_table_arn          = aws_dynamodb_table.reviews.arn
+  sqs_queue_arn               = aws_sqs_queue.orders.arn
+  sns_topic_arn               = aws_sns_topic.orders.arn
+  tags                        = local.common_tags
 }
 
 resource "random_password" "shared_jwt_secret" {
@@ -343,7 +365,7 @@ module "spring_service" {
   log_group_name               = module.monitoring.log_group_names["api-server-spring"]
   aws_region                   = var.aws_region
   environment_variables        = local.spring_environment
-  secret_environment_variables = { APP_JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
+  secret_environment_variables = local.spring_secret_environment_variables
   tags                         = local.common_tags
 }
 
@@ -369,20 +391,7 @@ module "frontend_service" {
   aws_region                   = var.aws_region
   environment_variables        = {}
   secret_environment_variables = {}
-  readonly_root_filesystem     = true
-  volumes = [
-    {
-      name = "nginx-tmp"
-    }
-  ]
-  mount_points = [
-    {
-      source_volume  = "nginx-tmp"
-      container_path = "/tmp"
-      read_only      = false
-    }
-  ]
-  tags = local.common_tags
+  tags                         = local.common_tags
 }
 
 module "fastapi_service" {
@@ -406,7 +415,7 @@ module "fastapi_service" {
   log_group_name               = module.monitoring.log_group_names["api-server-fastapi"]
   aws_region                   = var.aws_region
   environment_variables        = local.fastapi_environment
-  secret_environment_variables = { JWT_SECRET = aws_secretsmanager_secret.shared_jwt[0].arn }
+  secret_environment_variables = local.fastapi_secret_environment_variables
   tags                         = local.common_tags
 }
 
