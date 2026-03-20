@@ -188,8 +188,8 @@ export default function Home({ params }: HomeProps) {
   }, []);
 
   // API 데이터가 있으면 사용, 없으면 mock fallback
-  const vulnerabilities = apiLoaded ? apiVulns : vulnerabilities;
-  const crossAnalysisItems = apiLoaded ? apiCross : crossAnalysisItems;
+  const vulnerabilities = apiLoaded ? apiVulns : mockVulnerabilities;
+  const crossAnalysisItems = apiLoaded ? apiCross : mockCrossAnalysis;
 
   const handleScanComplete = useCallback((type: 'security' | 'cross' | 'isms' | 'refresh') => {
     const messages = {
