@@ -63,6 +63,8 @@ MATCH_THRESHOLDS = {
     "dast": 0.80,
 }
 MAX_LLM_FINDINGS_PER_TOOL = 15
+MAX_LLM_MATCH_CANDIDATES = 20
+SAST_LLM_CANDIDATE_LINE_DISTANCE = 5
 TEXT_STOP_WORDS = {
     "a",
     "an",
@@ -320,6 +322,155 @@ def merge_matched_finding(
     return merged
 
 
+def build_sast_candidate_pairs(
+    left_findings: list[dict[str, Any]],
+    right_findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+
+    for left in sort_findings_for_llm(left_findings):
+        left_path = normalize_path(left.get("file_path"))
+        left_line = safe_int(left.get("line_number"))
+        left_cwe = normalize_identifier(left.get("cwe_id"))
+        left_rule = normalize_identifier(left.get("rule_id"))
+
+        best: dict[str, Any] | None = None
+        for right in sort_findings_for_llm(right_findings):
+            right_path = normalize_path(right.get("file_path"))
+            if not left_path or not right_path or left_path != right_path:
+                continue
+
+            right_line = safe_int(right.get("line_number"))
+            right_cwe = normalize_identifier(right.get("cwe_id"))
+            right_rule = normalize_identifier(right.get("rule_id"))
+            title_similarity = jaccard_similarity(
+                (left.get("title"), left.get("description"), left.get("rule_id")),
+                (right.get("title"), right.get("description"), right.get("rule_id")),
+            )
+            line_diff = None
+            score = 0.0
+            basis_parts: list[str] = ["file_path"]
+
+            if left_line is not None and right_line is not None:
+                line_diff = abs(left_line - right_line)
+                if line_diff <= SAST_LLM_CANDIDATE_LINE_DISTANCE:
+                    score += 0.62 if line_diff <= 2 else 0.56
+                    basis_parts.append("nearby_line")
+
+            if left_cwe and right_cwe and left_cwe == right_cwe:
+                score += 0.22
+                basis_parts.append("cwe")
+
+            if left_rule and right_rule and left_rule == right_rule:
+                score += 0.18
+                basis_parts.append("rule_id")
+
+            if title_similarity >= 0.22:
+                score += min(0.18, title_similarity * 0.22)
+                basis_parts.append("title_similarity")
+
+            if score < 0.56:
+                continue
+
+            candidate = {
+                "left_id": left.get("id"),
+                "right_id": right.get("id"),
+                "left": left,
+                "right": right,
+                "heuristic_score": round(min(score, 0.95), 3),
+                "heuristic_basis": "+".join(basis_parts),
+                "line_diff": line_diff,
+                "title_similarity": round(title_similarity, 3),
+            }
+            if best is None or candidate["heuristic_score"] > best["heuristic_score"]:
+                best = candidate
+
+        if best is not None:
+            best["candidate_id"] = f"sast-candidate-{len(candidates) + 1}"
+            candidates.append(best)
+
+    candidates.sort(key=lambda item: item["heuristic_score"], reverse=True)
+    return candidates[:MAX_LLM_MATCH_CANDIDATES]
+
+
+def apply_sast_llm_candidate_matching(
+    prompt_file: Path,
+    left_findings: list[dict[str, Any]],
+    right_findings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    candidates = build_sast_candidate_pairs(left_findings, right_findings)
+    if not candidates:
+        return {
+            "accepted_pairs": [],
+            "candidate_decisions": [],
+            "candidate_count": 0,
+            "accepted_count": 0,
+        }
+
+    payload = {
+        "mode": "match_adjudication",
+        "stage": "sast",
+        "prompt_file": str(prompt_file),
+        "match_candidates": [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "left": compact_finding(candidate["left"]),
+                "right": compact_finding(candidate["right"]),
+                "heuristics": {
+                    "heuristic_score": candidate["heuristic_score"],
+                    "heuristic_basis": candidate["heuristic_basis"],
+                    "line_diff": candidate["line_diff"],
+                    "title_similarity": candidate["title_similarity"],
+                },
+            }
+            for candidate in candidates
+        ],
+    }
+    analyzer_result = run_llm_analyzer(payload)
+    candidate_decisions = analyzer_result.get("candidate_decisions", [])
+    decision_map = {
+        item.get("candidate_id"): item
+        for item in candidate_decisions
+        if isinstance(item, dict) and item.get("candidate_id")
+    }
+
+    accepted_pairs: list[dict[str, Any]] = []
+    used_left_ids: set[str] = set()
+    used_right_ids: set[str] = set()
+    for candidate in sorted(candidates, key=lambda item: item["heuristic_score"], reverse=True):
+        decision = decision_map.get(candidate["candidate_id"], {})
+        if decision.get("decision") != "same":
+            continue
+
+        left_id = str(candidate["left_id"])
+        right_id = str(candidate["right_id"])
+        if left_id in used_left_ids or right_id in used_right_ids:
+            continue
+
+        used_left_ids.add(left_id)
+        used_right_ids.add(right_id)
+        accepted_pairs.append(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "left": candidate["left"],
+                "right": candidate["right"],
+                "heuristic_score": candidate["heuristic_score"],
+                "heuristic_basis": candidate["heuristic_basis"],
+                "decision": decision,
+            }
+        )
+
+    return {
+        "accepted_pairs": accepted_pairs,
+        "candidate_decisions": candidate_decisions,
+        "candidate_count": len(candidates),
+        "accepted_count": len(accepted_pairs),
+        "provider": analyzer_result.get("provider"),
+        "model": analyzer_result.get("model"),
+        "summary": analyzer_result.get("summary"),
+    }
+
+
 def match_score_sca(left: dict[str, Any], right: dict[str, Any]) -> tuple[float, str]:
     left_pkg = normalize_package_name(left.get("package_name"))
     right_pkg = normalize_package_name(right.get("package_name"))
@@ -423,6 +574,7 @@ def match_score(stage: str, left: dict[str, Any], right: dict[str, Any]) -> tupl
 def build_matching_output(
     stage: str,
     tool_items: list[dict[str, Any]],
+    prompt_file: Path | None = None,
 ) -> dict[str, Any]:
     if len(tool_items) != 2:
         confirmed = sum_summaries(*(item["summary"] for item in tool_items))
@@ -438,6 +590,9 @@ def build_matching_output(
             "mismatch_count": 0,
             "mismatch_ratio": 0.0,
             "match_threshold": None,
+            "llm_candidate_count": 0,
+            "llm_assisted_match_count": 0,
+            "llm_candidate_decisions": [],
         }
 
     left_item, right_item = tool_items
@@ -473,6 +628,44 @@ def build_matching_output(
         confirmed_findings.append(merge_matched_finding(stage, left, right, score, basis))
 
     right_only = [finding for _, finding in right_pool]
+
+    llm_candidate_matching = {
+        "candidate_count": 0,
+        "accepted_count": 0,
+        "accepted_pairs": [],
+        "candidate_decisions": [],
+    }
+    if stage == "sast" and prompt_file is not None and left_only and right_only:
+        llm_candidate_matching = apply_sast_llm_candidate_matching(prompt_file, left_only, right_only)
+        if llm_candidate_matching["accepted_pairs"]:
+            matched_left_ids = {str(pair["left"].get("id")) for pair in llm_candidate_matching["accepted_pairs"]}
+            matched_right_ids = {str(pair["right"].get("id")) for pair in llm_candidate_matching["accepted_pairs"]}
+            left_only = [finding for finding in left_only if str(finding.get("id")) not in matched_left_ids]
+            right_only = [finding for finding in right_only if str(finding.get("id")) not in matched_right_ids]
+
+            for pair in llm_candidate_matching["accepted_pairs"]:
+                left = pair["left"]
+                right = pair["right"]
+                matched_pairs.append(
+                    {
+                        "match_score": pair["heuristic_score"],
+                        "match_basis": f"llm:{pair['heuristic_basis']}",
+                        "left": compact_finding(left),
+                        "right": compact_finding(right),
+                        "llm_decision": pair["decision"],
+                    }
+                )
+                merged = merge_matched_finding(
+                    stage,
+                    left,
+                    right,
+                    pair["heuristic_score"],
+                    f"llm:{pair['heuristic_basis']}",
+                )
+                merged["llm_match"] = True
+                merged["llm_reason"] = pair["decision"].get("reason")
+                confirmed_findings.append(merged)
+
     confirmed_summary = summarize_findings(confirmed_findings)
     mismatch_summary = summarize_findings(left_only + right_only)
     combined_summary = sum_summaries(confirmed_summary, mismatch_summary)
@@ -491,6 +684,9 @@ def build_matching_output(
         "mismatch_count": mismatch_count,
         "mismatch_ratio": round(mismatch_count / max(1, combined_total), 4),
         "match_threshold": threshold,
+        "llm_candidate_count": llm_candidate_matching["candidate_count"],
+        "llm_assisted_match_count": llm_candidate_matching["accepted_count"],
+        "llm_candidate_decisions": llm_candidate_matching["candidate_decisions"][:25],
     }
 
 
@@ -671,7 +867,9 @@ def emit_console_summary(output: dict[str, Any], output_path: Path) -> None:
     print(
         f"  matches: matched={matching.get('matched_count', 0)} "
         f"mismatch={matching.get('mismatch_count', 0)} "
-        f"mismatch_ratio={matching.get('mismatch_ratio', 0)}"
+        f"mismatch_ratio={matching.get('mismatch_ratio', 0)} "
+        f"llm_candidates={matching.get('llm_candidate_count', 0)} "
+        f"llm_assisted_matches={matching.get('llm_assisted_match_count', 0)}"
     )
 
     for item in output.get("tool_summaries", []):
@@ -708,7 +906,9 @@ def emit_github_annotation(output: dict[str, Any]) -> None:
         f"gemini_configured={llm.get('gemini_configured')}; "
         f"openai_configured={llm.get('openai_configured')}; "
         f"matched={matching.get('matched_count', 0)}; "
-        f"mismatch={matching.get('mismatch_count', 0)}"
+        f"mismatch={matching.get('mismatch_count', 0)}; "
+        f"llm_candidates={matching.get('llm_candidate_count', 0)}; "
+        f"llm_assisted_matches={matching.get('llm_assisted_match_count', 0)}"
     )
     reasons = output.get("reasons", [])
     if reasons:
@@ -747,6 +947,8 @@ def write_step_summary(output: dict[str, Any]) -> None:
         f"- Mismatch ratio: `{matching.get('mismatch_ratio', 0)}`",
         f"- Matched findings: `{matching.get('matched_count', 0)}`",
         f"- Unmatched findings: `{matching.get('mismatch_count', 0)}`",
+        f"- LLM match candidates: `{matching.get('llm_candidate_count', 0)}`",
+        f"- LLM assisted matches: `{matching.get('llm_assisted_match_count', 0)}`",
         "",
         "**Confirmed Summary**",
         "",
@@ -804,6 +1006,25 @@ def write_step_summary(output: dict[str, Any]) -> None:
         for tool, findings in unmatched.items():
             lines.append(f"- `{tool}`: {len(findings)} findings")
 
+    candidate_decisions = matching.get("llm_candidate_decisions", [])
+    if candidate_decisions:
+        lines.extend(
+            [
+                "",
+                "**SAST LLM Candidate Decisions**",
+                "",
+                "| Candidate | Decision | Confidence | Reason |",
+                "| --- | --- | --- | --- |",
+            ]
+        )
+        for item in candidate_decisions[:10]:
+            lines.append(
+                f"| {item.get('candidate_id') or '-'} | "
+                f"{item.get('decision') or '-'} | "
+                f"{item.get('confidence') or '-'} | "
+                f"{(item.get('reason') or '-').replace('|', '&#124;')} |"
+            )
+
     reasons = output.get("reasons", [])
     if reasons:
         lines.extend(["", "**Reasons**", ""])
@@ -831,14 +1052,14 @@ def main() -> int:
         tool, raw_path = item.split("=", 1)
         parsed_inputs.append((tool.strip(), Path(raw_path.strip())))
 
+    prompt_file = PROMPT_FILES[args.stage]
     tool_summaries = [normalize_tool_output(tool, path, args.stage) for tool, path in parsed_inputs]
-    matching = build_matching_output(args.stage, tool_summaries)
+    matching = build_matching_output(args.stage, tool_summaries, prompt_file)
     confirmed_summary = matching["confirmed_summary"]
     mismatch_summary = matching["mismatch_summary"]
     combined_summary = matching["combined_summary"]
     mismatch_count = matching["mismatch_count"]
 
-    prompt_file = PROMPT_FILES[args.stage]
     llm_needed = len(tool_summaries) == 2 and mismatch_count > 0 and all(
         item["executed"] for item in tool_summaries
     )
@@ -898,6 +1119,9 @@ def main() -> int:
             "mismatch_count": mismatch_count,
             "mismatch_ratio": matching["mismatch_ratio"],
             "match_threshold": matching["match_threshold"],
+            "llm_candidate_count": matching["llm_candidate_count"],
+            "llm_assisted_match_count": matching["llm_assisted_match_count"],
+            "llm_candidate_decisions": matching["llm_candidate_decisions"],
             "matched_pairs_sample": matching["matched_findings"][:25],
         },
         "unmatched_findings": unmatched_findings,
