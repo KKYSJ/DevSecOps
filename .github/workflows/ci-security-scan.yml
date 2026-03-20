@@ -692,6 +692,26 @@ jobs:
           echo "게이트 결정: $GATE"
         continue-on-error: true
 
+      - name: CI LLM Gate 결과를 백엔드에 전송
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          for stage in iac sast sca; do
+            FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
+            if [ -f "$FILE" ]; then
+              echo "LLM gate 전송: $stage"
+              jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
+                '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
+              | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+                -H "Content-Type: application/json" \
+                -d @- || echo "  전송 실패 (무시)"
+            else
+              echo "  $FILE 없음 (스킵)"
+            fi
+          done
+        continue-on-error: true
+
       - name: BACKEND_URL 미설정 안내
         if: env.BACKEND_URL == ''
         run: |

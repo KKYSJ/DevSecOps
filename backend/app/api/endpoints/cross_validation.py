@@ -83,3 +83,27 @@ def get_cross_validation_history(db: Session = Depends(get_db)):
         return {"history": history, "total": len(history)}
     except Exception:
         return {"history": [], "total": 0}
+
+
+@router.get("/gates")
+def get_llm_gates(db: Session = Depends(get_db)):
+    """CI의 LLM gate 결과를 반환합니다."""
+    from backend.app.models.tool_result import ToolResult
+
+    try:
+        records = (
+            db.query(ToolResult)
+            .filter(ToolResult.name.like("llm-gate-%"))
+            .order_by(ToolResult.id.desc())
+            .limit(10)
+            .all()
+        )
+        gates = {}
+        for rec in records:
+            data = rec.data or {}
+            stage = data.get("stage", "unknown")
+            if stage not in gates:  # 카테고리별 최신 1건만
+                gates[stage] = data
+        return {"gates": gates}
+    except Exception:
+        return {"gates": {}}

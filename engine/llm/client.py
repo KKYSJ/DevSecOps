@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 _OPENAI_MODEL = "gpt-4o-mini"
-_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite").strip() or "gemini-2.0-flash-lite"
 _TIMEOUT = 60.0
 _MAX_RETRIES = 2
 
@@ -54,22 +54,13 @@ def call_llm(prompt: str) -> str:
 
     if has_openai:
         logger.info("단일 LLM 모드: GPT")
-        try:
-            return _call_openai(prompt, openai_key)
-        except Exception as e:
-            logger.error("OpenAI 호출 실패 (%s). mock 사용", e)
-            return _mock_response(prompt)
+        return _call_openai(prompt, openai_key)
 
     if has_gemini:
         logger.info("단일 LLM 모드: Gemini")
-        try:
-            return _call_gemini(prompt, gemini_key)
-        except Exception as e:
-            logger.error("Gemini 호출 실패 (%s). mock 사용", e)
-            return _mock_response(prompt)
+        return _call_gemini(prompt, gemini_key)
 
-    logger.info("API 키 없음. mock 응답 사용")
-    return _mock_response(prompt)
+    raise RuntimeError("LLM API 키 없음. GEMINI_API_KEY 또는 OPENAI_API_KEY를 설정하세요.")
 
 
 # ── 이중 LLM 교차 검증 ────────────────────────────────────────────────────
@@ -104,8 +95,7 @@ def _dual_llm(prompt: str, openai_key: str, gemini_key: str) -> str:
     gemini_result = results["gemini"]
 
     if not openai_result and not gemini_result:
-        logger.error("두 LLM 모두 실패. mock 사용")
-        return _mock_response(prompt)
+        raise RuntimeError("두 LLM 모두 실패 — 룰 기반 폴백 사용")
 
     if not openai_result:
         logger.warning("GPT 실패, Gemini 결과만 사용")
@@ -265,12 +255,8 @@ def _http_post(url: str, headers: dict, payload: dict, provider: str) -> str:
                 return resp.text
 
             elif resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", "5"))
-                logger.warning("%s rate limit. %d초 후 재시도", provider, retry_after)
-                if attempt < _MAX_RETRIES:
-                    time.sleep(retry_after)
-                    continue
-                raise RuntimeError(f"{provider} rate limit: {resp.text[:200]}")
+                logger.warning("%s rate limit (429). 룰 기반 폴백으로 전환", provider)
+                raise RuntimeError(f"{provider} rate limit — 룰 기반 폴백 사용")
 
             elif resp.status_code in (500, 502, 503, 504):
                 if attempt < _MAX_RETRIES:

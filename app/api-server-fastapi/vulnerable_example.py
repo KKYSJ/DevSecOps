@@ -1,6 +1,6 @@
 """
-보안 취약점 테스트용 코드 (SAST 탐지 대상)
-- 실제 서비스에서 사용 금지
+보안 취약점 테스트용 코드 (SAST 동시탐지 대상)
+- SonarQube + Semgrep 양쪽에서 탐지되도록 설계
 - SecureFlow 파이프라인 검증 목적
 """
 
@@ -12,80 +12,41 @@ from fastapi import APIRouter, Request
 
 router = APIRouter()
 
-# [SAST] 하드코딩된 시크릿 키
-SECRET_KEY = "super_secret_key_12345"
-AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
-DB_PASSWORD = "admin123!"
-
-
-# [SAST] SQL Injection
+# ── 1. SQL Injection (CWE-89) ──────────────────────────
+# SonarQube: pythonsecurity:S3649 / Semgrep: python.lang.security.audit.sqli
 @router.get("/users/search")
 def search_user(username: str):
-    conn = sqlite3.connect("data/ecommerce.db")
+    conn = sqlite3.connect("data/app.db")
     cursor = conn.cursor()
     query = "SELECT * FROM users WHERE username = '" + username + "'"
     cursor.execute(query)
-    results = cursor.fetchall()
-    conn.close()
-    return {"users": results}
+    return {"users": cursor.fetchall()}
 
 
-# [SAST] OS Command Injection
+# ── 2. OS Command Injection (CWE-78) ──────────────────
+# SonarQube: python:S5131 / Semgrep: python.lang.security.audit.dangerous-system-call
 @router.get("/system/ping")
 def ping_host(host: str):
-    result = os.popen("ping -c 1 " + host).read()
-    return {"output": result}
+    output = subprocess.check_output("ping -c 1 " + host, shell=True)
+    return {"output": output.decode()}
 
 
-# [SAST] Command Injection via subprocess
-@router.post("/system/exec")
-def exec_command(cmd: str):
-    output = subprocess.check_output(cmd, shell=True)
-    return {"result": output.decode()}
-
-
-# [SAST] Path Traversal
+# ── 3. Path Traversal (CWE-22) ────────────────────────
+# SonarQube: python:S5144 / Semgrep: python.lang.security.audit.path-traversal
 @router.get("/files/read")
 def read_file(filepath: str):
     with open(filepath, "r") as f:
-        content = f.read()
-    return {"content": content}
+        return {"content": f.read()}
 
 
-# [SAST] XSS (reflected)
-@router.get("/greet")
-def greet(name: str):
-    html = f"<h1>Hello {name}</h1>"
-    return {"html": html}
+# ── 4. Hardcoded Secret (CWE-798) ─────────────────────
+# SonarQube: python:S2068 / Semgrep: python.lang.security.audit.hardcoded-password
+DB_PASSWORD = "admin123!"
+SECRET_KEY = "super_secret_key_12345"
 
 
-# [SAST] 취약한 해시 알고리즘 (MD5)
+# ── 5. Weak Hash - MD5 (CWE-327) ─────────────────────
+# SonarQube: python:S4790 / Semgrep: python.lang.security.insecure-hash-algorithms
 @router.post("/auth/hash")
 def hash_password(password: str):
-    hashed = hashlib.md5(password.encode()).hexdigest()
-    return {"hash": hashed}
-
-
-# [SAST] 취약한 랜덤 생성
-import random
-@router.get("/token/generate")
-def generate_token():
-    token = str(random.randint(100000, 999999))
-    return {"token": token}
-
-
-# [SAST] SSRF
-import urllib.request
-@router.get("/fetch")
-def fetch_url(url: str):
-    response = urllib.request.urlopen(url)
-    return {"data": response.read().decode()[:500]}
-
-
-# [SAST] 안전하지 않은 역직렬화
-import pickle
-import base64
-@router.post("/deserialize")
-def deserialize_data(data: str):
-    obj = pickle.loads(base64.b64decode(data))
-    return {"result": str(obj)}
+    return {"hash": hashlib.md5(password.encode()).hexdigest()}

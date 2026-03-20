@@ -287,64 +287,14 @@ def trigger_analysis(body: AnalyzeRequest = None, db: Session = Depends(get_db))
             detail="분석할 스캔 결과가 없습니다. 먼저 POST /api/v1/scans 로 스캔 결과를 제출하세요.",
         )
 
-    # 새 카테고리 매칭 + Gemini LLM 교차 검증
+    # 교차 매칭 + 룰 기반 판정 (LLM은 CI에서 처리, 여기서는 호출 안 함)
     new_scored_pairs: list[dict] = []
     if latest_by_tool:
         tool_results = list(latest_by_tool.values())
         matched_pairs = scan_service.match_findings(tool_results)
 
-        try:
-            from engine.llm.prompts import build_cross_validation_prompt, parse_llm_response
-            from engine.llm.client import call_llm
-
-            analyzed_pairs = list(matched_pairs)
-            categories = list(dict.fromkeys(p["category"] for p in matched_pairs))
-
-            MAX_LLM_PAIRS = 10  # 카테고리당 LLM에 보낼 최대 쌍 수 (쿼터 절약)
-            _SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
-
-            for category in categories:
-                cat_indices = [i for i, p in enumerate(matched_pairs) if p["category"] == category]
-                cat_pairs = [matched_pairs[i] for i in cat_indices]
-
-                # 심각도 기준 정렬 → 상위 MAX_LLM_PAIRS만 LLM, 나머지 룰 기반
-                sorted_sub = sorted(
-                    range(len(cat_pairs)),
-                    key=lambda j: _SEV_ORDER.get(cat_pairs[j].get("severity", "LOW"), 9)
-                )
-                llm_sub = sorted_sub[:MAX_LLM_PAIRS]
-                fallback_sub = sorted_sub[MAX_LLM_PAIRS:]
-
-                # 룰 기반 처리 (LLM 호출 없이)
-                if fallback_sub:
-                    from engine.llm.prompts import _rule_based_fallback
-                    fb_pairs = [cat_pairs[j] for j in fallback_sub]
-                    fb_results = _rule_based_fallback(fb_pairs)
-                    for sub_j, fb_pair in zip(fallback_sub, fb_results):
-                        analyzed_pairs[cat_indices[sub_j]] = fb_pair
-
-                # LLM 호출 (카테고리당 1번만)
-                if llm_sub:
-                    llm_pairs = [cat_pairs[j] for j in llm_sub]
-                    try:
-                        prompt = build_cross_validation_prompt(category, llm_pairs)
-                        response = call_llm(prompt)
-                        llm_analyzed = parse_llm_response(response, llm_pairs)
-
-                        for sub_j, analyzed_pair in zip(llm_sub, llm_analyzed):
-                            if analyzed_pair.get("confidence_level"):
-                                analyzed_pair["confidence"] = analyzed_pair["confidence_level"]
-                            analyzed_pairs[cat_indices[sub_j]] = analyzed_pair
-                    except Exception:
-                        import logging
-                        logging.getLogger(__name__).warning("LLM 호출 실패 (%s), 규칙 기반 fallback", category)
-                        from engine.llm.prompts import _rule_based_fallback
-                        fb_results = _rule_based_fallback(llm_pairs)
-                        for sub_j, fb_pair in zip(llm_sub, fb_results):
-                            analyzed_pairs[cat_indices[sub_j]] = fb_pair
-
-        except Exception:
-            analyzed_pairs = scan_service.analyze_with_llm(matched_pairs)
+        from engine.llm.prompts import _rule_based_fallback
+        analyzed_pairs = _rule_based_fallback(matched_pairs)
 
         new_scored_pairs = scan_service.score_findings(analyzed_pairs)
 
@@ -407,3 +357,30 @@ def trigger_analysis(body: AnalyzeRequest = None, db: Session = Depends(get_db))
     db.commit()
 
     return dashboard
+
+
+# ── CI LLM Gate 결과 수신 ──────────────────────────────────────────────
+
+class GateResultRequest(BaseModel):
+    stage: str  # sast | sca | iac | dast
+    commit_hash: str
+    gate_result: dict  # run_llm_gate.py의 전체 JSON 출력
+
+@router.post("/gate-result")
+def receive_gate_result(body: GateResultRequest, db: Session = Depends(get_db)):
+    """CI의 run_llm_gate.py 결과를 저장합니다."""
+    from backend.app.models.scan import ToolResult
+
+    record = ToolResult(
+        name=f"llm-gate-{body.stage}",
+        status="ok",
+        data={
+            "stage": body.stage,
+            "commit_hash": body.commit_hash,
+            **body.gate_result,
+        },
+    )
+    db.add(record)
+    db.commit()
+
+    return {"status": "ok", "stage": body.stage, "id": record.id}
