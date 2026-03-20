@@ -1,6 +1,6 @@
 resource "aws_ecr_repository" "frontend" {
   name                 = "${local.name}/frontend"
-  image_tag_mutability = "IMMUTABLE"
+  image_tag_mutability = "MUTABLE"
 
   encryption_configuration {
     encryption_type = "KMS"
@@ -14,7 +14,7 @@ resource "aws_ecr_repository" "frontend" {
 
 resource "aws_ecr_repository" "backend" {
   name                 = "${local.name}/backend"
-  image_tag_mutability = "IMMUTABLE"
+  image_tag_mutability = "MUTABLE"
 
   encryption_configuration {
     encryption_type = "KMS"
@@ -28,7 +28,7 @@ resource "aws_ecr_repository" "backend" {
 
 resource "aws_ecr_repository" "worker" {
   name                 = "${local.name}/worker"
-  image_tag_mutability = "IMMUTABLE"
+  image_tag_mutability = "MUTABLE"
 
   encryption_configuration {
     encryption_type = "KMS"

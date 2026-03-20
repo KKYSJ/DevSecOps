@@ -369,7 +369,20 @@ module "frontend_service" {
   aws_region                   = var.aws_region
   environment_variables        = {}
   secret_environment_variables = {}
-  tags                         = local.common_tags
+  readonly_root_filesystem     = true
+  volumes = [
+    {
+      name = "nginx-tmp"
+    }
+  ]
+  mount_points = [
+    {
+      source_volume  = "nginx-tmp"
+      container_path = "/tmp"
+      read_only      = false
+    }
+  ]
+  tags = local.common_tags
 }
 
 module "fastapi_service" {

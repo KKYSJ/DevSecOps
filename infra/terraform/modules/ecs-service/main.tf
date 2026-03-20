@@ -23,11 +23,20 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = var.task_role_arn
 
+  dynamic "volume" {
+    for_each = var.volumes
+
+    content {
+      name = volume.value.name
+    }
+  }
+
   container_definitions = jsonencode([
     {
-      name      = var.container_name
-      image     = var.container_image
-      essential = true
+      name                   = var.container_name
+      image                  = var.container_image
+      essential              = true
+      readonlyRootFilesystem = var.readonly_root_filesystem
 
       portMappings = [
         {
@@ -39,6 +48,13 @@ resource "aws_ecs_task_definition" "this" {
 
       environment = local.environment
       secrets     = local.secrets
+      mountPoints = [
+        for mount_point in var.mount_points : {
+          sourceVolume  = mount_point.source_volume
+          containerPath = mount_point.container_path
+          readOnly      = mount_point.read_only
+        }
+      ]
 
       logConfiguration = {
         logDriver = "awslogs"

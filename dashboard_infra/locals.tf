@@ -1,5 +1,5 @@
 locals {
-  name = lower(replace("${var.project_name}-${var.environment}", "_", "-"))
+  name = "${lower(replace("${var.project_name}-${var.environment}", "_", "-"))}-dashboard"
   azs  = slice(data.aws_availability_zones.available.names, 0, 2)
 
   common_tags = merge(

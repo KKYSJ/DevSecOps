@@ -1,10 +1,155 @@
 name: CD Deploy
+
 on:
   push:
-    branches: ["main"]
+    branches: ["SUN"]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "infra/docker/**"
+      - "dashboard_infra/**"
+      - ".github/workflows/cd-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+  FRONTEND_IMAGE_TAG: frontend-v2
+  BACKEND_IMAGE_TAG: backend-v2
+  WORKER_IMAGE_TAG: worker-v2
+  FRONTEND_REPOSITORY: secureflow-prod-dashboard/frontend
+  BACKEND_REPOSITORY: secureflow-prod-dashboard/backend
+  WORKER_REPOSITORY: secureflow-prod-dashboard/worker
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - run: echo 'TODO - ECR push, ECS deploy, ZAP'
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate GitHub configuration
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        run: |
+          required_vars=(AWS_REGION AWS_ACCOUNT_ID AWS_ROLE_TO_ASSUME GEMINI_MODEL SONAR_HOST_URL)
+          for name in "${required_vars[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required repository variable: $name"
+              exit 1
+            fi
+          done
+
+          required_secrets=(GEMINI_API_KEY SONAR_TOKEN)
+          for name in "${required_secrets[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required repository secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Validate ECR registry
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          EXPECTED_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          if [ "${REGISTRY}" != "${EXPECTED_REGISTRY}" ]; then
+            echo "Unexpected ECR registry: ${REGISTRY}"
+            echo "Expected registry: ${EXPECTED_REGISTRY}"
+            exit 1
+          fi
+
+      - name: Build and push frontend image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI="${REGISTRY}/${FRONTEND_REPOSITORY}:${FRONTEND_IMAGE_TAG}"
+          docker build -t "${IMAGE_URI}" frontend
+          docker push "${IMAGE_URI}"
+
+      - name: Build and push backend image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI="${REGISTRY}/${BACKEND_REPOSITORY}:${BACKEND_IMAGE_TAG}"
+          docker build -f backend/Dockerfile -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+
+      - name: Build and push worker image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI="${REGISTRY}/${WORKER_REPOSITORY}:${WORKER_IMAGE_TAG}"
+          docker build -f infra/docker/Dockerfile.worker -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+
+      - name: Write GitHub-backed Terraform variables
+        working-directory: dashboard_infra
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = {
+              "frontend_image_tag": os.environ["FRONTEND_IMAGE_TAG"],
+              "backend_image_tag": os.environ["BACKEND_IMAGE_TAG"],
+              "worker_image_tag": os.environ["WORKER_IMAGE_TAG"],
+              "gemini_api_key": os.environ["GEMINI_API_KEY"],
+              "gemini_model": os.environ["GEMINI_MODEL"],
+              "sonarqube_url": os.environ["SONAR_HOST_URL"],
+              "sonarqube_token": os.environ["SONAR_TOKEN"],
+          }
+
+          Path("github.auto.tfvars.json").write_text(
+              json.dumps(payload, indent=2),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Terraform init
+        working-directory: dashboard_infra
+        run: terraform init
+
+      - name: Terraform fmt check
+        working-directory: dashboard_infra
+        run: terraform fmt -check
+
+      - name: Terraform validate
+        working-directory: dashboard_infra
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: dashboard_infra
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply
+        working-directory: dashboard_infra
+        run: terraform apply -auto-approve tfplan

@@ -1,7 +1,6 @@
 resource "random_password" "redis_auth_token" {
   length           = 32
-  special          = true
-  override_special = "!&#$^<>-"
+  special          = false
 }
 
 resource "aws_elasticache_subnet_group" "main" {

@@ -154,6 +154,10 @@ resource "aws_ecs_task_definition" "frontend" {
     cpu_architecture        = "X86_64"
   }
 
+  volume {
+    name = "nginx-tmp"
+  }
+
   container_definitions = jsonencode([
     {
       name      = "frontend"
@@ -167,6 +171,13 @@ resource "aws_ecs_task_definition" "frontend" {
         }
       ]
       readonlyRootFilesystem = true
+      mountPoints = [
+        {
+          sourceVolume  = "nginx-tmp"
+          containerPath = "/tmp"
+          readOnly      = false
+        }
+      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -251,10 +262,10 @@ resource "aws_ecs_task_definition" "worker" {
 
   container_definitions = jsonencode([
     {
-      name      = "worker"
-      image     = local.worker_image
-      essential = true
-      command   = ["celery", "-A", "backend.app.core.celery_app.celery_app", "worker", "--loglevel=info"]
+      name                   = "worker"
+      image                  = local.worker_image
+      essential              = true
+      command                = ["celery", "-A", "backend.app.core.celery_app.celery_app", "worker", "--loglevel=info"]
       readonlyRootFilesystem = true
       environment = [
         { name = "APP_ENV", value = var.environment },

@@ -100,6 +100,30 @@ variable "secret_environment_variables" {
   default     = {}
 }
 
+variable "readonly_root_filesystem" {
+  description = "Whether the container root filesystem should be mounted read-only."
+  type        = bool
+  default     = false
+}
+
+variable "mount_points" {
+  description = "Writable mount points attached to the container."
+  type = list(object({
+    source_volume  = string
+    container_path = string
+    read_only      = optional(bool, false)
+  }))
+  default = []
+}
+
+variable "volumes" {
+  description = "Task-level ephemeral volumes that can be mounted by containers."
+  type = list(object({
+    name = string
+  }))
+  default = []
+}
+
 variable "tags" {
   description = "Tags applied to the ECS service resources."
   type        = map(string)
