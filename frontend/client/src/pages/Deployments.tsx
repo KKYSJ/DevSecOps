@@ -44,7 +44,9 @@ export default function Deployments() {
     Promise.all([
       fetchJson<{ pipelines: PipelineRun[] }>('/pipelines').catch(() => ({ pipelines: [] })),
       fetchJson<CrossReport>('/cross').catch(() => null),
-    ]).then(([pRes, cRes]) => {
+      fetchJson<{ scans: Array<{ branch: string }> }>('/scans?limit=1').catch(() => ({ scans: [] })),
+    ]).then(([pRes, cRes, sRes]) => {
+      const latestBranch = sRes.scans?.[0]?.branch || 'main';
       let pipelineList = pRes.pipelines || [];
       setCrossReport(cRes);
 
@@ -54,7 +56,7 @@ export default function Deployments() {
           id: 0,
           project_name: cRes.project_name || 'secureflow',
           commit_hash: cRes.commit_hash || '',
-          branch: 'main',
+          branch: latestBranch,
           status: cRes.gate_decision === 'BLOCK' ? 'blocked' : 'completed',
           gate_result: cRes.gate_decision,
           gate_score: cRes.total_score,
