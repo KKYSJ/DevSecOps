@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
-from backend.app.core.config import PROMPT_DIR
-
-
 def get_prompt_dir() -> Path:
-    return Path(PROMPT_DIR)
+    env_prompt_dir = os.getenv("PROMPT_DIR", "").strip()
+    if env_prompt_dir:
+        return Path(env_prompt_dir)
+    return Path(__file__).resolve().parent.parent / "prompts"
 
 
 def resolve_prompt_path(prompt_ref: str | Path) -> Path:

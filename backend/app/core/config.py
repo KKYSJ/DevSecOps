@@ -1,6 +1,12 @@
-from dotenv import load_dotenv
 from pathlib import Path
 import os
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in CI scripts
+    def load_dotenv(*_args, **_kwargs) -> bool:
+        return False
+
 
 load_dotenv()
 
