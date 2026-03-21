@@ -3,7 +3,7 @@ name: CD Deploy
 on:
   push:
     branches:
-      - dev
+      - SUN
     paths:
       - "secureflow_dashboard_infra/**"
       - ".github/workflows/cd-deploy.yml"

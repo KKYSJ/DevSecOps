@@ -30,13 +30,18 @@ jobs:
       ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
+      ARTIFACT_DIR: ${{ github.workspace }}/artifacts/terraform
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Prepare log directory
+        run: mkdir -p "${ARTIFACT_DIR}"
+
       - name: Check repository configuration
         run: |
+          set -euo pipefail
           missing=0
 
           for name in AWS_REGION AWS_ACCOUNT_ID AWS_ROLE_TO_ASSUME; do
@@ -49,6 +54,17 @@ jobs:
           if [ "${missing}" -ne 0 ]; then
             exit 1
           fi
+
+      - name: Start deployment summary
+        run: |
+          {
+            echo "## SecureFlow Dashboard deployment started"
+            echo ""
+            echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Requested environment: \`${{ inputs.environment || 'dev' }}\`"
+            echo "- Mode: \`terraform infrastructure only\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -64,6 +80,7 @@ jobs:
       - name: Resolve deploy context
         id: context
         run: |
+          set -euo pipefail
           deploy_environment="${{ inputs.environment }}"
 
           if [ -z "${deploy_environment}" ]; then
@@ -80,6 +97,7 @@ jobs:
       - name: Resolve backend names
         id: backend
         run: |
+          set -euo pipefail
           actual_account_id="$(aws sts get-caller-identity --query Account --output text)"
 
           if [ "${AWS_ACCOUNT_ID}" != "${actual_account_id}" ]; then
@@ -99,6 +117,7 @@ jobs:
           STATE_BUCKET: ${{ steps.backend.outputs.state_bucket }}
           LOCK_TABLE: ${{ steps.backend.outputs.lock_table }}
         run: |
+          set -euo pipefail
           cat > backend.hcl <<EOF
           bucket         = "${STATE_BUCKET}"
           key            = "secureflow_dashboard_infra/bootstrap/terraform.tfstate"
@@ -119,24 +138,26 @@ jobs:
           fi
 
           if [ "${bucket_exists}" -eq 1 ] && [ "${table_exists}" -eq 1 ]; then
-            terraform init -reconfigure -backend-config=backend.hcl
+            terraform init -no-color -reconfigure -backend-config=backend.hcl 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-init.log"
           elif [ "${bucket_exists}" -eq 0 ] && [ "${table_exists}" -eq 0 ]; then
-            terraform init -backend=false
-            terraform apply -auto-approve \
+            terraform init -no-color -backend=false 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-init.log"
+            terraform apply -no-color -auto-approve \
               -var="project_name=${PROJECT_NAME}" \
               -var="environment=shared" \
               -var="managed_by=${MANAGED_BY}" \
               -var="aws_region=${AWS_REGION}" \
               -var="state_bucket_name=${STATE_BUCKET}" \
-              -var="lock_table_name=${LOCK_TABLE}"
-            terraform init -reconfigure -migrate-state -force-copy -backend-config=backend.hcl
-            terraform apply -auto-approve \
+              -var="lock_table_name=${LOCK_TABLE}" \
+              2>&1 | tee "${ARTIFACT_DIR}/bootstrap-apply.log"
+            terraform init -no-color -reconfigure -migrate-state -force-copy -backend-config=backend.hcl 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-init.log"
+            terraform apply -no-color -auto-approve \
               -var="project_name=${PROJECT_NAME}" \
               -var="environment=shared" \
               -var="managed_by=${MANAGED_BY}" \
               -var="aws_region=${AWS_REGION}" \
               -var="state_bucket_name=${STATE_BUCKET}" \
-              -var="lock_table_name=${LOCK_TABLE}"
+              -var="lock_table_name=${LOCK_TABLE}" \
+              2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-apply.log"
           else
             echo "Partial bootstrap backend detected. Check the state bucket and lock table before retrying."
             exit 1
@@ -149,6 +170,7 @@ jobs:
           STATE_BUCKET: ${{ steps.backend.outputs.state_bucket }}
           LOCK_TABLE: ${{ steps.backend.outputs.lock_table }}
         run: |
+          set -euo pipefail
           cat > backend.hcl <<EOF
           bucket         = "${STATE_BUCKET}"
           key            = "secureflow_dashboard_infra/terraform.tfstate"
@@ -182,21 +204,68 @@ jobs:
 
       - name: Initialize dashboard terraform
         working-directory: secureflow_dashboard_infra
-        run: terraform init -reconfigure -backend-config=backend.hcl
+        run: |
+          set -euo pipefail
+          terraform init -no-color -reconfigure -backend-config=backend.hcl 2>&1 | tee "${ARTIFACT_DIR}/dashboard-init.log"
+
+      - name: Validate dashboard terraform
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          terraform validate -no-color 2>&1 | tee "${ARTIFACT_DIR}/dashboard-validate.log"
+
+      - name: Plan dashboard infrastructure
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          terraform plan -no-color -out=tfplan 2>&1 | tee "${ARTIFACT_DIR}/dashboard-plan.log"
+          terraform show -no-color tfplan > "${ARTIFACT_DIR}/dashboard-plan.txt"
 
       - name: Apply dashboard infrastructure
         working-directory: secureflow_dashboard_infra
-        run: terraform apply -auto-approve
+        run: |
+          set -euo pipefail
+          terraform apply -no-color -auto-approve tfplan 2>&1 | tee "${ARTIFACT_DIR}/dashboard-apply.log"
 
       - name: Collect deployment outputs
         id: deploy_outputs
         working-directory: secureflow_dashboard_infra
         run: |
+          set -euo pipefail
           terraform output -json > outputs.json
           echo "alb_dns_name=$(jq -r '.alb_dns_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
           echo "frontend_url=$(jq -r '.frontend_url.value' outputs.json)" >> "$GITHUB_OUTPUT"
           echo "backend_api_url=$(jq -r '.backend_api_url.value' outputs.json)" >> "$GITHUB_OUTPUT"
           echo "ecs_cluster_name=$(jq -r '.ecs_cluster_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload terraform artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secureflow-dashboard-terraform-${{ github.run_id }}
+          path: artifacts/terraform/
+          if-no-files-found: warn
+
+      - name: Summarize failure diagnostics
+        if: failure()
+        run: |
+          {
+            echo "## Deployment failed"
+            echo ""
+            echo "Check the failed step in the Actions log first."
+            echo ""
+            echo "Uploaded artifact:"
+            echo "- \`secureflow-dashboard-terraform-${{ github.run_id }}\`"
+            echo ""
+            echo "Useful files inside the artifact:"
+            echo "- \`bootstrap-init.log\`"
+            echo "- \`bootstrap-apply.log\`"
+            echo "- \`dashboard-init.log\`"
+            echo "- \`dashboard-validate.log\`"
+            echo "- \`dashboard-plan.log\`"
+            echo "- \`dashboard-plan.txt\`"
+            echo "- \`dashboard-apply.log\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarize deployment
         run: |
