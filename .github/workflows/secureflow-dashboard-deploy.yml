@@ -140,7 +140,17 @@ jobs:
           if [ "${bucket_exists}" -eq 1 ] && [ "${table_exists}" -eq 1 ]; then
             terraform init -no-color -reconfigure -backend-config=backend.hcl 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-init.log"
           elif [ "${bucket_exists}" -eq 0 ] && [ "${table_exists}" -eq 0 ]; then
-            terraform init -no-color -backend=false 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-init.log"
+            cp providers.tf providers.tf.remote-backend.bak
+            restore_backend() {
+              if [ -f providers.tf.remote-backend.bak ]; then
+                mv providers.tf.remote-backend.bak providers.tf
+              fi
+            }
+            trap restore_backend EXIT
+
+            grep -Fv 'backend "s3" {}' providers.tf.remote-backend.bak > providers.tf
+
+            terraform init -no-color 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-init.log"
             terraform apply -no-color -auto-approve \
               -var="project_name=${PROJECT_NAME}" \
               -var="environment=shared" \
@@ -149,6 +159,10 @@ jobs:
               -var="state_bucket_name=${STATE_BUCKET}" \
               -var="lock_table_name=${LOCK_TABLE}" \
               2>&1 | tee "${ARTIFACT_DIR}/bootstrap-apply.log"
+
+            restore_backend
+            trap - EXIT
+
             terraform init -no-color -reconfigure -migrate-state -force-copy -backend-config=backend.hcl 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-init.log"
             terraform apply -no-color -auto-approve \
               -var="project_name=${PROJECT_NAME}" \
