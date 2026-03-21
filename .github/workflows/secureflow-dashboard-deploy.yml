@@ -635,6 +635,49 @@ jobs:
             fi
           done
 
+      - name: Capture ECS diagnostics on failure
+        if: failure() && steps.context.outputs.deployment_mode == 'service'
+        env:
+          ECS_CLUSTER_NAME: ${{ steps.deploy_outputs.outputs.ecs_cluster_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
+          WORKER_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.worker_service_name }}
+        run: |
+          set -euo pipefail
+
+          aws ecs describe-services \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" "${WORKER_SERVICE_NAME}" \
+            > "${ARTIFACT_DIR}/ecs-service-diagnostics.json" || true
+
+          capture_tasks() {
+            local service_name="$1"
+            local prefix="$2"
+            local running_tasks
+            local stopped_tasks
+
+            running_tasks="$(aws ecs list-tasks --cluster "${ECS_CLUSTER_NAME}" --service-name "${service_name}" --desired-status RUNNING --query 'taskArns' --output text 2>/dev/null || true)"
+            stopped_tasks="$(aws ecs list-tasks --cluster "${ECS_CLUSTER_NAME}" --service-name "${service_name}" --desired-status STOPPED --query 'taskArns' --output text 2>/dev/null || true)"
+
+            if [ -n "${running_tasks}" ] && [ "${running_tasks}" != "None" ]; then
+              aws ecs describe-tasks \
+                --cluster "${ECS_CLUSTER_NAME}" \
+                --tasks ${running_tasks} \
+                > "${ARTIFACT_DIR}/${prefix}-running-tasks.json" || true
+            fi
+
+            if [ -n "${stopped_tasks}" ] && [ "${stopped_tasks}" != "None" ]; then
+              aws ecs describe-tasks \
+                --cluster "${ECS_CLUSTER_NAME}" \
+                --tasks ${stopped_tasks} \
+                > "${ARTIFACT_DIR}/${prefix}-stopped-tasks.json" || true
+            fi
+          }
+
+          capture_tasks "${FRONTEND_SERVICE_NAME}" "frontend"
+          capture_tasks "${BACKEND_SERVICE_NAME}" "backend"
+          capture_tasks "${WORKER_SERVICE_NAME}" "worker"
+
       - name: Upload terraform artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -672,6 +715,13 @@ jobs:
             echo "- \`service-apply.log\`"
             echo "- \`ecs-services.json\`"
             echo "- \`ecs-services-stable.json\`"
+            echo "- \`ecs-service-diagnostics.json\`"
+            echo "- \`frontend-running-tasks.json\`"
+            echo "- \`frontend-stopped-tasks.json\`"
+            echo "- \`backend-running-tasks.json\`"
+            echo "- \`backend-stopped-tasks.json\`"
+            echo "- \`worker-running-tasks.json\`"
+            echo "- \`worker-stopped-tasks.json\`"
             echo "- \`target-health.log\`"
             echo "- \`frontend-target-health.json\`"
             echo "- \`backend-target-health.json\`"

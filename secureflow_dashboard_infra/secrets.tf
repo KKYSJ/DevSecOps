@@ -32,9 +32,9 @@ resource "aws_secretsmanager_secret_version" "redis" {
   secret_id = aws_secretsmanager_secret.redis.id
 
   secret_string = jsonencode({
-    REDIS_URL             = "rediss://:${random_password.redis_auth_token.result}@${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}/0"
-    CELERY_BROKER_URL     = "rediss://:${random_password.redis_auth_token.result}@${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}/0"
-    CELERY_RESULT_BACKEND = "rediss://:${random_password.redis_auth_token.result}@${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}/1"
+    REDIS_URL             = "rediss://:${random_password.redis_auth_token.result}@${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}/0?ssl_cert_reqs=required"
+    CELERY_BROKER_URL     = "rediss://:${random_password.redis_auth_token.result}@${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}/0?ssl_cert_reqs=required"
+    CELERY_RESULT_BACKEND = "rediss://:${random_password.redis_auth_token.result}@${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}/1?ssl_cert_reqs=required"
   })
 
   depends_on = [aws_elasticache_replication_group.redis]
