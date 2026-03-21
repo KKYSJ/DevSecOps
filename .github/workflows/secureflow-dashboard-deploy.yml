@@ -280,6 +280,8 @@ jobs:
             --arg managed_by "${MANAGED_BY}" \
             --arg aws_region "${AWS_REGION}" \
             --arg vpc_cidr "${VPC_CIDR}" \
+            --arg alarm_email "${ALARM_EMAIL}" \
+            --arg acm_certificate_arn "${ACM_CERTIFICATE_ARN}" \
             --argjson frontend_desired_count 0 \
             --argjson backend_desired_count 0 \
             --argjson worker_desired_count 0 \
@@ -293,8 +295,8 @@ jobs:
               backend_desired_count: $backend_desired_count,
               worker_desired_count: $worker_desired_count
             }
-            + (env.ALARM_EMAIL != "" ? {alarm_email: env.ALARM_EMAIL} : {})
-            + (env.ACM_CERTIFICATE_ARN != "" ? {acm_certificate_arn: env.ACM_CERTIFICATE_ARN} : {})' \
+            + (if $alarm_email != "" then {alarm_email: $alarm_email} else {} end)
+            + (if $acm_certificate_arn != "" then {acm_certificate_arn: $acm_certificate_arn} else {} end)' \
             > ci.auto.tfvars.json
 
       - name: Initialize dashboard terraform
