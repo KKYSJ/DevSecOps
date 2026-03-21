@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - SUN
-    paths:
-      - "secureflow_dashboard_infra/**"
-      - ".github/workflows/cd-deploy.yml"
-      - ".github/workflows/secureflow-dashboard-deploy.yml"
   workflow_dispatch:
     inputs:
       environment:

@@ -118,9 +118,12 @@ jobs:
           LOCK_TABLE: ${{ steps.backend.outputs.lock_table }}
         run: |
           set -euo pipefail
+          STATE_KEY="secureflow_dashboard_infra/bootstrap/terraform.tfstate"
+          KMS_ALIAS_NAME="alias/${PROJECT_NAME}-shared-terraform-state"
+
           cat > backend.hcl <<EOF
           bucket         = "${STATE_BUCKET}"
-          key            = "secureflow_dashboard_infra/bootstrap/terraform.tfstate"
+          key            = "${STATE_KEY}"
           region         = "${AWS_REGION}"
           dynamodb_table = "${LOCK_TABLE}"
           encrypt        = true
@@ -128,6 +131,7 @@ jobs:
 
           bucket_exists=0
           table_exists=0
+          state_exists=0
 
           if aws s3api head-bucket --bucket "${STATE_BUCKET}" >/dev/null 2>&1; then
             bucket_exists=1
@@ -137,9 +141,25 @@ jobs:
             table_exists=1
           fi
 
-          if [ "${bucket_exists}" -eq 1 ] && [ "${table_exists}" -eq 1 ]; then
+          if [ "${bucket_exists}" -eq 1 ] && aws s3api head-object --bucket "${STATE_BUCKET}" --key "${STATE_KEY}" >/dev/null 2>&1; then
+            state_exists=1
+          fi
+
+          echo "bucket_exists=${bucket_exists}" | tee "${ARTIFACT_DIR}/bootstrap-state-check.log"
+          echo "table_exists=${table_exists}" | tee -a "${ARTIFACT_DIR}/bootstrap-state-check.log"
+          echo "state_exists=${state_exists}" | tee -a "${ARTIFACT_DIR}/bootstrap-state-check.log"
+
+          if [ "${bucket_exists}" -eq 1 ] && [ "${table_exists}" -eq 1 ] && [ "${state_exists}" -eq 1 ]; then
             terraform init -no-color -reconfigure -backend-config=backend.hcl 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-init.log"
-          elif [ "${bucket_exists}" -eq 0 ] && [ "${table_exists}" -eq 0 ]; then
+            terraform apply -no-color -auto-approve \
+              -var="project_name=${PROJECT_NAME}" \
+              -var="environment=shared" \
+              -var="managed_by=${MANAGED_BY}" \
+              -var="aws_region=${AWS_REGION}" \
+              -var="state_bucket_name=${STATE_BUCKET}" \
+              -var="lock_table_name=${LOCK_TABLE}" \
+              2>&1 | tee "${ARTIFACT_DIR}/bootstrap-apply.log"
+          elif [ "${bucket_exists}" -eq 0 ] && [ "${table_exists}" -eq 0 ] && [ "${state_exists}" -eq 0 ]; then
             cp providers.tf providers.tf.remote-backend.bak
             restore_backend() {
               if [ -f providers.tf.remote-backend.bak ]; then
@@ -163,7 +183,7 @@ jobs:
             restore_backend
             trap - EXIT
 
-            terraform init -no-color -reconfigure -migrate-state -force-copy -backend-config=backend.hcl 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-init.log"
+            terraform init -no-color -migrate-state -force-copy -backend-config=backend.hcl 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-init.log"
             terraform apply -no-color -auto-approve \
               -var="project_name=${PROJECT_NAME}" \
               -var="environment=shared" \
@@ -172,8 +192,69 @@ jobs:
               -var="state_bucket_name=${STATE_BUCKET}" \
               -var="lock_table_name=${LOCK_TABLE}" \
               2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-apply.log"
+          elif [ "${bucket_exists}" -eq 1 ] && [ "${table_exists}" -eq 1 ] && [ "${state_exists}" -eq 0 ]; then
+            kms_key_id="$(aws kms describe-key --key-id "${KMS_ALIAS_NAME}" --query 'KeyMetadata.KeyId' --output text 2>/dev/null || true)"
+
+            if [ -z "${kms_key_id}" ] || [ "${kms_key_id}" = "None" ]; then
+              {
+                echo "Bootstrap recovery could not continue because the KMS alias was not found."
+                echo "Expected alias: ${KMS_ALIAS_NAME}"
+              } | tee -a "${ARTIFACT_DIR}/bootstrap-state-check.log"
+              exit 1
+            fi
+
+            cp providers.tf providers.tf.remote-backend.bak
+            restore_backend() {
+              if [ -f providers.tf.remote-backend.bak ]; then
+                mv providers.tf.remote-backend.bak providers.tf
+              fi
+            }
+            trap restore_backend EXIT
+
+            grep -Fv 'backend "s3" {}' providers.tf.remote-backend.bak > providers.tf
+
+            terraform init -no-color 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-init.log"
+            terraform import -no-color aws_s3_bucket.terraform_state "${STATE_BUCKET}" 2>&1 | tee "${ARTIFACT_DIR}/bootstrap-import.log"
+            terraform import -no-color aws_dynamodb_table.terraform_lock "${LOCK_TABLE}" 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-import.log"
+            terraform import -no-color aws_kms_key.terraform_state "${kms_key_id}" 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-import.log"
+            terraform import -no-color aws_kms_alias.terraform_state "${KMS_ALIAS_NAME}" 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-import.log"
+            terraform apply -no-color -auto-approve \
+              -var="project_name=${PROJECT_NAME}" \
+              -var="environment=shared" \
+              -var="managed_by=${MANAGED_BY}" \
+              -var="aws_region=${AWS_REGION}" \
+              -var="state_bucket_name=${STATE_BUCKET}" \
+              -var="lock_table_name=${LOCK_TABLE}" \
+              2>&1 | tee "${ARTIFACT_DIR}/bootstrap-apply.log"
+
+            restore_backend
+            trap - EXIT
+
+            terraform init -no-color -migrate-state -force-copy -backend-config=backend.hcl 2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-init.log"
+            terraform apply -no-color -auto-approve \
+              -var="project_name=${PROJECT_NAME}" \
+              -var="environment=shared" \
+              -var="managed_by=${MANAGED_BY}" \
+              -var="aws_region=${AWS_REGION}" \
+              -var="state_bucket_name=${STATE_BUCKET}" \
+              -var="lock_table_name=${LOCK_TABLE}" \
+              2>&1 | tee -a "${ARTIFACT_DIR}/bootstrap-apply.log"
+
+            {
+              echo "## Bootstrap state recovered"
+              echo ""
+              echo "- State bucket: \`${STATE_BUCKET}\`"
+              echo "- Lock table: \`${LOCK_TABLE}\`"
+              echo "- KMS alias: \`${KMS_ALIAS_NAME}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Partial bootstrap backend detected. Check the state bucket and lock table before retrying."
+            {
+              echo "Bootstrap backend is in a partial state."
+              echo "bucket_exists=${bucket_exists}"
+              echo "table_exists=${table_exists}"
+              echo "state_exists=${state_exists}"
+              echo "Expected state key: ${STATE_KEY}"
+            } | tee -a "${ARTIFACT_DIR}/bootstrap-state-check.log"
             exit 1
           fi
 
@@ -272,7 +353,9 @@ jobs:
             echo "- \`secureflow-dashboard-terraform-${{ github.run_id }}\`"
             echo ""
             echo "Useful files inside the artifact:"
+            echo "- \`bootstrap-state-check.log\`"
             echo "- \`bootstrap-init.log\`"
+            echo "- \`bootstrap-import.log\`"
             echo "- \`bootstrap-apply.log\`"
             echo "- \`dashboard-init.log\`"
             echo "- \`dashboard-validate.log\`"

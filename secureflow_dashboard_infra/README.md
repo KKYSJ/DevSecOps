@@ -65,11 +65,7 @@ Optional repository variables:
 - `ALARM_EMAIL`
 - `ACM_CERTIFICATE_ARN`
 
-The deployment workflow runs automatically on pushes to the `dev` branch when these files change:
-
-- `secureflow_dashboard_infra/**`
-- `.github/workflows/cd-deploy.yml`
-- `.github/workflows/secureflow-dashboard-deploy.yml`
+The deployment workflow runs automatically on every push to the `SUN` branch.
 
 You can also run it manually with `workflow_dispatch`.
 
@@ -78,6 +74,7 @@ Important behavior:
 - `frontend`, `backend`, and `worker` ECS services are created with desired count `0`
 - URLs such as `frontend_url` and `backend_api_url` are infrastructure endpoints only
 - The application itself will not respond until you later build and deploy containers on top of this infrastructure
+- If bootstrap resources already exist but the bootstrap state file is missing, the workflow attempts an automatic bootstrap state recovery and uploads detailed recovery logs as artifacts
 
 ## HTTPS without a domain
 
