@@ -223,7 +223,7 @@ jobs:
         with:
           name: iac-llm-gate
           path: artifacts/iac/iac-llm-gate.json
-        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/scans/gate-result.
 
       - name: Upload IaC gate result to SecureFlow
         if: always()
@@ -240,14 +240,11 @@ jobs:
           jq -n \
             --arg stage "iac" \
             --arg commit "$COMMIT_SHA" \
-            --arg project "secureflow" \
-            --arg branch "$BRANCH_NAME" \
-            --arg run_id "$RUN_ID" \
             --slurpfile raw artifacts/iac/iac-llm-gate.json \
-            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -479,7 +476,7 @@ jobs:
         with:
           name: sast-llm-gate
           path: artifacts/sast/sast-llm-gate.json
-        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/scans/gate-result.
 
       - name: Upload SAST gate result to SecureFlow
         if: always()
@@ -496,14 +493,11 @@ jobs:
           jq -n \
             --arg stage "sast" \
             --arg commit "$COMMIT_SHA" \
-            --arg project "secureflow" \
-            --arg branch "$BRANCH_NAME" \
-            --arg run_id "$RUN_ID" \
             --slurpfile raw artifacts/sast/sast-llm-gate.json \
-            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -632,7 +626,7 @@ jobs:
         with:
           name: sca-llm-gate
           path: artifacts/sca/sca-llm-gate.json
-        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/scans/gate-result.
 
       - name: Upload SCA gate result to SecureFlow
         if: always()
@@ -649,14 +643,11 @@ jobs:
           jq -n \
             --arg stage "sca" \
             --arg commit "$COMMIT_SHA" \
-            --arg project "secureflow" \
-            --arg branch "$BRANCH_NAME" \
-            --arg run_id "$RUN_ID" \
             --slurpfile raw artifacts/sca/sca-llm-gate.json \
-            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -701,7 +692,7 @@ jobs:
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          # Upload raw scanner outputs only. LLM gate JSON is uploaded separately to /api/v1/gates.
+          # Upload raw scanner outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
           upload() {
             local tool=$1 file=$2
             if [ -f "$file" ]; then

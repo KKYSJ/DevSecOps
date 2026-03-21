@@ -390,15 +390,13 @@ jobs:
         with:
           name: dast-llm-gate
           path: artifacts/dast/dast-llm-gate.json
-        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/gates.
+        # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/scans/gate-result.
 
       - name: Upload DAST gate result to SecureFlow
         if: always()
         env:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
-          BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
-          RUN_ID: ${{ github.run_id }}
         run: |
           if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
             exit 0
@@ -407,14 +405,11 @@ jobs:
           jq -n \
             --arg stage "dast" \
             --arg commit "$COMMIT_SHA" \
-            --arg project "secureflow" \
-            --arg branch "$BRANCH_NAME" \
-            --arg run_id "$RUN_ID" \
             --slurpfile raw artifacts/dast/dast-llm-gate.json \
-            '{stage:$stage, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, workflow_run_id:$run_id}' \
+            '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/gates" \
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -426,7 +421,7 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
-          # Upload raw DAST outputs only. LLM gate JSON is uploaded separately to /api/v1/gates.
+          # Upload raw DAST outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
           upload() {
             local tool=$1 file=$2
             if [ ! -f "$file" ]; then
@@ -463,6 +458,9 @@ jobs:
       - llm-dast-gate
     if: needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Check out source
@@ -472,6 +470,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Install ISMS-P dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r ismsp/requirements.txt
+
+      - name: Configure AWS credentials for ISMS-P gate
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: ${{ needs.resolve-context.outputs.run_production == 'true' && (vars.AWS_ROLE_TO_ASSUME_PROD || vars.AWS_ROLE_TO_ASSUME) || vars.AWS_ROLE_TO_ASSUME }}
 
       - name: Download DAST gate artifact
         uses: actions/download-artifact@v4
