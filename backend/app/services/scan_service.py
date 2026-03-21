@@ -20,6 +20,7 @@ from engine.normalizer.parsers import (
     checkov   as _p_checkov,
     zap       as _p_zap,
 )
+from backend.app.services.parsers.nuclei_parser import NucleiParser
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ PARSERS = {
     "tfsec":     _Adapter(_p_tfsec),
     "checkov":   _Adapter(_p_checkov),
     "zap":       _Adapter(_p_zap),
+    "nuclei":    NucleiParser(),
 }
 
 # ── 스코어링 상수 ─────────────────────────────────────────────────────────────

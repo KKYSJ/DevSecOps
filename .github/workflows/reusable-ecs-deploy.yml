@@ -35,6 +35,13 @@ on:
         required: false
         default: ""
         type: string
+    outputs:
+      image_uri:
+        description: "Built container image URI"
+        value: ${{ jobs.deploy.outputs.image_uri }}
+      service_url:
+        description: "Discovered load balancer URL for the deployed ECS service"
+        value: ${{ jobs.deploy.outputs.service_url }}
 
 permissions:
   contents: read
@@ -47,6 +54,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
+      service_url: ${{ steps.discover-service-url.outputs.service_url }}
 
     steps:
       - name: Check out source
@@ -106,3 +116,50 @@ jobs:
           cluster: ${{ inputs.ecs_cluster }}
           service: ${{ inputs.ecs_service }}
           wait-for-service-stability: true
+
+      - name: Discover service URL
+        id: discover-service-url
+        shell: bash
+        run: |
+          TG_ARN="$(aws ecs describe-services \
+            --cluster "${{ inputs.ecs_cluster }}" \
+            --services "${{ inputs.ecs_service }}" \
+            --query 'services[0].loadBalancers[0].targetGroupArn' \
+            --output text 2>/dev/null || true)"
+
+          if [ -z "$TG_ARN" ] || [ "$TG_ARN" = "None" ]; then
+            echo "service_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LB_ARN="$(aws elbv2 describe-target-groups \
+            --target-group-arns "$TG_ARN" \
+            --query 'TargetGroups[0].LoadBalancerArns[0]' \
+            --output text 2>/dev/null || true)"
+
+          if [ -z "$LB_ARN" ] || [ "$LB_ARN" = "None" ]; then
+            echo "service_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DNS_NAME="$(aws elbv2 describe-load-balancers \
+            --load-balancer-arns "$LB_ARN" \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text 2>/dev/null || true)"
+
+          if [ -z "$DNS_NAME" ] || [ "$DNS_NAME" = "None" ]; then
+            echo "service_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LISTENER_PORTS="$(aws elbv2 describe-listeners \
+            --load-balancer-arn "$LB_ARN" \
+            --query 'Listeners[].Port' \
+            --output text 2>/dev/null || true)"
+
+          PROTOCOL="http"
+          if echo " $LISTENER_PORTS " | grep -q " 443 "; then
+            PROTOCOL="https"
+          fi
+
+          echo "service_url=${PROTOCOL}://${DNS_NAME}" >> "$GITHUB_OUTPUT"

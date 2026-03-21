@@ -9,7 +9,16 @@ import os
 import sys
 from pathlib import Path
 
-from backend.app.services.ismsp.checker import has_aws_credentials, run_isms_checks
+import boto3
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ISMSP_ROOT = REPO_ROOT / "ismsp"
+if str(ISMSP_ROOT) not in sys.path:
+    sys.path.insert(0, str(ISMSP_ROOT))
+
+from ismsp.config import DEFAULT_PROFILE, DEFAULT_REGION
+from ismsp.checker.aws_checker import AWSChecker
+from ismsp.checker.evaluator import Evaluator
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,6 +60,23 @@ def build_evaluator_result(report: dict | None) -> dict | None:
         "manual_items_count": len(report.get("manual_items", [])),
         "non_compliant_items": non_compliant[:20],
     }
+
+
+def has_aws_credentials() -> bool:
+    return bool(
+        os.getenv("AWS_ACCESS_KEY_ID")
+        or os.getenv("AWS_PROFILE")
+        or os.getenv("AWS_ROLE_ARN")
+        or os.getenv("AWS_WEB_IDENTITY_TOKEN_FILE")
+    )
+
+
+def run_isms_checks(region: str, profile: str | None = None) -> dict:
+    session = boto3.Session(profile_name=profile, region_name=region)
+    checker = AWSChecker(session, region=region)
+    evaluator = Evaluator(checker)
+    evaluator.load_mappings()
+    return evaluator.run()
 
 
 def emit_console_summary(output: dict, output_path: Path) -> None:
@@ -142,8 +168,8 @@ def main() -> int:
     args = parse_args()
     gate_summaries = [load_json(Path(item)) for item in args.gate_input]
     gate_decisions = [item.get("decision", "review") for item in gate_summaries]
-    aws_region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-northeast-2"
-    aws_profile = os.getenv("AWS_PROFILE") or None
+    aws_region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or DEFAULT_REGION
+    aws_profile = os.getenv("AWS_PROFILE") or DEFAULT_PROFILE
     checker_error = None
     checker_result = None
 

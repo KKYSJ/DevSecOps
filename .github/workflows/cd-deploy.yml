@@ -243,7 +243,19 @@ jobs:
       - name: Resolve DAST target URL
         id: target
         run: |
-          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-node.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.DAST_TARGET_URL }}"
           fi
@@ -259,12 +271,17 @@ jobs:
             echo '{"site":[],"tool_disabled":true,"reason":"missing_dast_target_url"}' > zap-results.json
           fi
 
+      - name: Prepare ZAP writable files
+        if: steps.target.outputs.enabled == 'true'
+        run: |
+          touch zap.yaml zap-results.json report_json.json report_md.md report_html.html
+          chmod a+w zap.yaml zap-results.json report_json.json report_md.md report_html.html
+
       - name: Run ZAP baseline scan
         if: steps.target.outputs.enabled == 'true'
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: ${{ steps.target.outputs.target_url }}
-          rules_file_name: security-tools/owasp-zap/zap-config.yaml
           cmd_options: "-J zap-results.json"
           fail_action: false
 
@@ -309,7 +326,19 @@ jobs:
       - name: Resolve DAST target URL
         id: target
         run: |
-          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-node.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.DAST_TARGET_URL }}"
           fi
@@ -455,6 +484,10 @@ jobs:
   isms-preprod-gate:
     needs:
       - resolve-context
+      - deploy-staging-fastapi
+      - deploy-staging-node
+      - deploy-staging-spring
+      - deploy-staging-frontend
       - llm-dast-gate
     if: needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
@@ -490,7 +523,19 @@ jobs:
       - name: Resolve staging target URL
         id: target
         run: |
-          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-node.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ vars.DAST_TARGET_URL }}"
           fi
@@ -514,6 +559,33 @@ jobs:
         with:
           name: ismsp-gate
           path: artifacts/isms/ismsp-gate.json
+
+      - name: Upload ISMS-P result to SecureFlow
+        if: always()
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+          BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
+          DEPLOY_ENV: ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
+            exit 0
+          fi
+
+          jq -n \
+            --arg name "isms-gate-${DEPLOY_ENV}" \
+            --arg status "completed" \
+            --arg environment "$DEPLOY_ENV" \
+            --arg commit "$COMMIT_SHA" \
+            --arg branch "$BRANCH_NAME" \
+            --slurpfile raw artifacts/isms/ismsp-gate.json \
+            '{name:$name,status:$status,environment:$environment,commit_hash:$commit,branch:$branch,data:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
+            > /tmp/isms-payload.json
+
+          curl -s -X POST "${BACKEND_URL}/api/v1/isms" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/isms-payload.json \
+            --max-time 60 || true
 
   deploy-production-fastapi:
     needs:
