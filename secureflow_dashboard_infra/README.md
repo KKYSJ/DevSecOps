@@ -54,26 +54,44 @@ This deployment flow is infrastructure-only:
 - It does not populate LLM or scanner secrets
 - It does not run IaC, SAST, SCA, or DAST jobs
 
+There is also a service deployment mode:
+
+- It builds the current `backend`, `frontend`, and `infra/docker/Dockerfile.worker` images
+- It pushes those images to the ECR repositories created by Terraform
+- It stores `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `SONAR_TOKEN` in the runtime Secrets Manager secret
+- It reapplies Terraform with ECS desired counts set to `1`
+- It uploads Docker build logs, Terraform logs, ECS service status, and smoke-check logs as GitHub Actions artifacts
+
 Required repository variables:
 
 - `AWS_ACCOUNT_ID`
 - `AWS_REGION`
 - `AWS_ROLE_TO_ASSUME`
+- `GEMINI_MODEL`
+- `SONAR_HOST_URL`
+- `SONAR_ORGANIZATION`
+- `SONAR_PROJECT_KEY`
 
 Optional repository variables:
 
 - `ALARM_EMAIL`
 - `ACM_CERTIFICATE_ARN`
 
-The deployment workflow runs automatically on every push to the `SUN` branch.
+Recommended repository secrets for service deployment:
+
+- `GEMINI_API_KEY`
+- `SONAR_TOKEN`
+- `OPENAI_API_KEY`
+
+The deployment workflow runs automatically on every push to the `SUN` branch in `service` mode.
 
 You can also run it manually with `workflow_dispatch`.
 
 Important behavior:
 
-- `frontend`, `backend`, and `worker` ECS services are created with desired count `0`
-- URLs such as `frontend_url` and `backend_api_url` are infrastructure endpoints only
-- The application itself will not respond until you later build and deploy containers on top of this infrastructure
+- In `infra_only` mode, `frontend`, `backend`, and `worker` ECS services are created with desired count `0`
+- In `service` mode, the workflow deploys one frontend task, one backend task, and one worker task by default
+- `frontend_url` is the user-facing address and `backend_api_url` is the API base URL after service deployment
 - If bootstrap resources already exist but the bootstrap state file is missing, the workflow attempts an automatic bootstrap state recovery and uploads detailed recovery logs as artifacts
 
 ## HTTPS without a domain

@@ -7,6 +7,10 @@ on:
         required: false
         default: "dev"
         type: string
+      deployment_mode:
+        required: false
+        default: "infra_only"
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +30,10 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
       AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
       ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
       ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
       TF_IN_AUTOMATION: "true"
@@ -40,6 +48,10 @@ jobs:
         run: mkdir -p "${ARTIFACT_DIR}"
 
       - name: Check repository configuration
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           set -euo pipefail
           missing=0
@@ -55,6 +67,20 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ inputs.deployment_mode }}" = "service" ]; then
+            for name in GEMINI_MODEL SONAR_HOST_URL SONAR_ORGANIZATION SONAR_PROJECT_KEY; do
+              if [ -z "${!name}" ]; then
+                echo "Missing recommended GitHub variable for service deployment: $name"
+              fi
+            done
+
+            for name in GEMINI_API_KEY SONAR_TOKEN; do
+              if [ -z "${!name}" ]; then
+                echo "Missing recommended GitHub secret for service deployment: $name"
+              fi
+            done
+          fi
+
       - name: Start deployment summary
         run: |
           {
@@ -63,7 +89,7 @@ jobs:
             echo "- Branch: \`${GITHUB_REF_NAME}\`"
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Requested environment: \`${{ inputs.environment || 'dev' }}\`"
-            echo "- Mode: \`terraform infrastructure only\`"
+            echo "- Mode: \`${{ inputs.deployment_mode || 'infra_only' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Terraform
@@ -82,9 +108,19 @@ jobs:
         run: |
           set -euo pipefail
           deploy_environment="${{ inputs.environment }}"
+          deployment_mode="${{ inputs.deployment_mode }}"
 
           if [ -z "${deploy_environment}" ]; then
             deploy_environment="dev"
+          fi
+
+          if [ -z "${deployment_mode}" ]; then
+            deployment_mode="infra_only"
+          fi
+
+          if [ "${deployment_mode}" != "infra_only" ] && [ "${deployment_mode}" != "service" ]; then
+            echo "deployment_mode must be infra_only or service."
+            exit 1
           fi
 
           if [ "${deploy_environment}" = "prod" ] && [ "${GITHUB_REF_NAME}" != "main" ]; then
@@ -93,6 +129,8 @@ jobs:
           fi
 
           echo "deploy_environment=${deploy_environment}" >> "$GITHUB_OUTPUT"
+          echo "deployment_mode=${deployment_mode}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${GITHUB_SHA::12}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve backend names
         id: backend
@@ -262,6 +300,8 @@ jobs:
         working-directory: secureflow_dashboard_infra
         env:
           DEPLOY_ENVIRONMENT: ${{ steps.context.outputs.deploy_environment }}
+          DEPLOYMENT_MODE: ${{ steps.context.outputs.deployment_mode }}
+          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
           STATE_BUCKET: ${{ steps.backend.outputs.state_bucket }}
           LOCK_TABLE: ${{ steps.backend.outputs.lock_table }}
         run: |
@@ -280,6 +320,13 @@ jobs:
             --arg managed_by "${MANAGED_BY}" \
             --arg aws_region "${AWS_REGION}" \
             --arg vpc_cidr "${VPC_CIDR}" \
+            --arg frontend_image_tag "${IMAGE_TAG}" \
+            --arg backend_image_tag "${IMAGE_TAG}" \
+            --arg worker_image_tag "${IMAGE_TAG}" \
+            --arg gemini_model "${GEMINI_MODEL}" \
+            --arg sonar_host_url "${SONAR_HOST_URL}" \
+            --arg sonar_organization "${SONAR_ORGANIZATION}" \
+            --arg sonar_project_key "${SONAR_PROJECT_KEY}" \
             --arg alarm_email "${ALARM_EMAIL}" \
             --arg acm_certificate_arn "${ACM_CERTIFICATE_ARN}" \
             --argjson frontend_desired_count 0 \
@@ -291,6 +338,13 @@ jobs:
               managed_by: $managed_by,
               aws_region: $aws_region,
               vpc_cidr: $vpc_cidr,
+              frontend_image_tag: $frontend_image_tag,
+              backend_image_tag: $backend_image_tag,
+              worker_image_tag: $worker_image_tag,
+              gemini_model: $gemini_model,
+              sonar_host_url: $sonar_host_url,
+              sonar_organization: $sonar_organization,
+              sonar_project_key: $sonar_project_key,
               frontend_desired_count: $frontend_desired_count,
               backend_desired_count: $backend_desired_count,
               worker_desired_count: $worker_desired_count
@@ -311,18 +365,145 @@ jobs:
           set -euo pipefail
           terraform validate -no-color 2>&1 | tee "${ARTIFACT_DIR}/dashboard-validate.log"
 
-      - name: Plan dashboard infrastructure
+      - name: Plan base dashboard infrastructure
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
           terraform plan -no-color -out=tfplan 2>&1 | tee "${ARTIFACT_DIR}/dashboard-plan.log"
           terraform show -no-color tfplan > "${ARTIFACT_DIR}/dashboard-plan.txt"
 
-      - name: Apply dashboard infrastructure
+      - name: Apply base dashboard infrastructure
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
           terraform apply -no-color -auto-approve tfplan 2>&1 | tee "${ARTIFACT_DIR}/dashboard-apply.log"
+
+      - name: Resolve service deployment targets
+        if: steps.context.outputs.deployment_mode == 'service'
+        id: service_targets
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          echo "frontend_repo=$(terraform output -raw frontend_ecr_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "backend_repo=$(terraform output -raw backend_ecr_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "worker_repo=$(terraform output -raw worker_ecr_repository_url)" >> "$GITHUB_OUTPUT"
+          echo "external_api_secret_arn=$(terraform output -raw external_api_secret_arn)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Amazon ECR
+        if: steps.context.outputs.deployment_mode == 'service'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
+          BACKEND_REPO: ${{ steps.service_targets.outputs.backend_repo }}
+        run: |
+          set -euo pipefail
+          docker build -f backend/Dockerfile -t "${BACKEND_REPO}:${IMAGE_TAG}" . 2>&1 | tee "${ARTIFACT_DIR}/docker-backend-build.log"
+          docker push "${BACKEND_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-backend-push.log"
+
+      - name: Build and push worker image
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
+          WORKER_REPO: ${{ steps.service_targets.outputs.worker_repo }}
+        run: |
+          set -euo pipefail
+          docker build -f infra/docker/Dockerfile.worker -t "${WORKER_REPO}:${IMAGE_TAG}" . 2>&1 | tee "${ARTIFACT_DIR}/docker-worker-build.log"
+          docker push "${WORKER_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-worker-push.log"
+
+      - name: Build and push frontend image
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
+          FRONTEND_REPO: ${{ steps.service_targets.outputs.frontend_repo }}
+        run: |
+          set -euo pipefail
+          docker build -f frontend/Dockerfile -t "${FRONTEND_REPO}:${IMAGE_TAG}" frontend 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-build.log"
+          docker push "${FRONTEND_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-push.log"
+
+      - name: Populate external API secret
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          EXTERNAL_API_SECRET_ARN: ${{ steps.service_targets.outputs.external_api_secret_arn }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+          payload="$(jq -nc \
+            --arg gemini "${GEMINI_API_KEY}" \
+            --arg openai "${OPENAI_API_KEY}" \
+            --arg sonar "${SONAR_TOKEN}" \
+            '{GEMINI_API_KEY: $gemini, OPENAI_API_KEY: $openai, SONAR_TOKEN: $sonar}')"
+
+          aws secretsmanager put-secret-value \
+            --secret-id "${EXTERNAL_API_SECRET_ARN}" \
+            --secret-string "${payload}" \
+            > "${ARTIFACT_DIR}/external-api-secret-version.json"
+
+      - name: Write Terraform service runtime config
+        if: steps.context.outputs.deployment_mode == 'service'
+        working-directory: secureflow_dashboard_infra
+        env:
+          DEPLOY_ENVIRONMENT: ${{ steps.context.outputs.deploy_environment }}
+          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg project_name "${PROJECT_NAME}" \
+            --arg environment "${DEPLOY_ENVIRONMENT}" \
+            --arg managed_by "${MANAGED_BY}" \
+            --arg aws_region "${AWS_REGION}" \
+            --arg vpc_cidr "${VPC_CIDR}" \
+            --arg frontend_image_tag "${IMAGE_TAG}" \
+            --arg backend_image_tag "${IMAGE_TAG}" \
+            --arg worker_image_tag "${IMAGE_TAG}" \
+            --arg gemini_model "${GEMINI_MODEL}" \
+            --arg sonar_host_url "${SONAR_HOST_URL}" \
+            --arg sonar_organization "${SONAR_ORGANIZATION}" \
+            --arg sonar_project_key "${SONAR_PROJECT_KEY}" \
+            --arg alarm_email "${ALARM_EMAIL}" \
+            --arg acm_certificate_arn "${ACM_CERTIFICATE_ARN}" \
+            --argjson frontend_desired_count 1 \
+            --argjson backend_desired_count 1 \
+            --argjson worker_desired_count 1 \
+            '{
+              project_name: $project_name,
+              environment: $environment,
+              managed_by: $managed_by,
+              aws_region: $aws_region,
+              vpc_cidr: $vpc_cidr,
+              frontend_image_tag: $frontend_image_tag,
+              backend_image_tag: $backend_image_tag,
+              worker_image_tag: $worker_image_tag,
+              gemini_model: $gemini_model,
+              sonar_host_url: $sonar_host_url,
+              sonar_organization: $sonar_organization,
+              sonar_project_key: $sonar_project_key,
+              frontend_desired_count: $frontend_desired_count,
+              backend_desired_count: $backend_desired_count,
+              worker_desired_count: $worker_desired_count
+            }
+            + (if $alarm_email != "" then {alarm_email: $alarm_email} else {} end)
+            + (if $acm_certificate_arn != "" then {acm_certificate_arn: $acm_certificate_arn} else {} end)' \
+            > ci.auto.tfvars.json
+
+      - name: Plan service rollout
+        if: steps.context.outputs.deployment_mode == 'service'
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          terraform plan -no-color -out=tfplan-service 2>&1 | tee "${ARTIFACT_DIR}/service-plan.log"
+          terraform show -no-color tfplan-service > "${ARTIFACT_DIR}/service-plan.txt"
+
+      - name: Apply service rollout
+        if: steps.context.outputs.deployment_mode == 'service'
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          terraform apply -no-color -auto-approve tfplan-service 2>&1 | tee "${ARTIFACT_DIR}/service-apply.log"
 
       - name: Collect deployment outputs
         id: deploy_outputs
@@ -334,6 +515,48 @@ jobs:
           echo "frontend_url=$(jq -r '.frontend_url.value' outputs.json)" >> "$GITHUB_OUTPUT"
           echo "backend_api_url=$(jq -r '.backend_api_url.value' outputs.json)" >> "$GITHUB_OUTPUT"
           echo "ecs_cluster_name=$(jq -r '.ecs_cluster_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "frontend_service_name=$(jq -r '.frontend_service_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "backend_service_name=$(jq -r '.backend_service_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "worker_service_name=$(jq -r '.worker_service_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Describe ECS services
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          ECS_CLUSTER_NAME: ${{ steps.deploy_outputs.outputs.ecs_cluster_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
+          WORKER_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.worker_service_name }}
+        run: |
+          set -euo pipefail
+          aws ecs describe-services \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" "${WORKER_SERVICE_NAME}" \
+            > "${ARTIFACT_DIR}/ecs-services.json"
+
+      - name: Smoke check public endpoints
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          FRONTEND_URL: ${{ steps.deploy_outputs.outputs.frontend_url }}
+        run: |
+          set -euo pipefail
+
+          for path in / /health; do
+            success=0
+            for attempt in $(seq 1 20); do
+              if curl -fsS -o /dev/null "${FRONTEND_URL}${path}"; then
+                echo "Smoke check passed for ${FRONTEND_URL}${path} on attempt ${attempt}" | tee -a "${ARTIFACT_DIR}/smoke-check.log"
+                success=1
+                break
+              fi
+              echo "Smoke check retry ${attempt} for ${FRONTEND_URL}${path}" | tee -a "${ARTIFACT_DIR}/smoke-check.log"
+              sleep 15
+            done
+
+            if [ "${success}" -ne 1 ]; then
+              echo "Smoke check failed for ${FRONTEND_URL}${path}" | tee -a "${ARTIFACT_DIR}/smoke-check.log"
+              exit 1
+            fi
+          done
 
       - name: Upload terraform artifacts
         if: always()
@@ -364,14 +587,23 @@ jobs:
             echo "- \`dashboard-plan.log\`"
             echo "- \`dashboard-plan.txt\`"
             echo "- \`dashboard-apply.log\`"
+            echo "- \`docker-backend-build.log\`"
+            echo "- \`docker-worker-build.log\`"
+            echo "- \`docker-frontend-build.log\`"
+            echo "- \`service-plan.log\`"
+            echo "- \`service-plan.txt\`"
+            echo "- \`service-apply.log\`"
+            echo "- \`ecs-services.json\`"
+            echo "- \`smoke-check.log\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarize deployment
         run: |
           {
-            echo "## SecureFlow Dashboard infrastructure deployment"
+            echo "## SecureFlow Dashboard deployment"
             echo ""
             echo "- Environment: \`${{ steps.context.outputs.deploy_environment }}\`"
+            echo "- Deployment mode: \`${{ steps.context.outputs.deployment_mode }}\`"
             echo "- Terraform state bucket: \`${{ steps.backend.outputs.state_bucket }}\`"
             echo "- Terraform lock table: \`${{ steps.backend.outputs.lock_table }}\`"
             echo "- ECS cluster: \`${{ steps.deploy_outputs.outputs.ecs_cluster_name }}\`"
@@ -379,6 +611,15 @@ jobs:
             echo "- Frontend URL: \`${{ steps.deploy_outputs.outputs.frontend_url }}\`"
             echo "- Backend URL: \`${{ steps.deploy_outputs.outputs.backend_api_url }}\`"
             echo ""
-            echo "This workflow only provisions AWS infrastructure."
-            echo "Frontend, backend, and worker desired counts are forced to \`0\`, so no application containers, LLM calls, or scan pipelines are deployed."
+            if [ "${{ steps.context.outputs.deployment_mode }}" = "service" ]; then
+              echo "- Image tag: \`${{ steps.context.outputs.image_tag }}\`"
+              echo "- Frontend service: \`${{ steps.deploy_outputs.outputs.frontend_service_name }}\`"
+              echo "- Backend service: \`${{ steps.deploy_outputs.outputs.backend_service_name }}\`"
+              echo "- Worker service: \`${{ steps.deploy_outputs.outputs.worker_service_name }}\`"
+              echo ""
+              echo "The current project folders were built and deployed as ECS services."
+            else
+              echo "This workflow only provisions AWS infrastructure."
+              echo "Frontend, backend, and worker desired counts are forced to \`0\`, so no application containers are deployed."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

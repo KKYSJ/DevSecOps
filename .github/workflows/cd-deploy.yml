@@ -14,6 +14,14 @@ on:
         options:
           - dev
           - prod
+      deployment_mode:
+        description: "Deployment mode"
+        required: true
+        default: "service"
+        type: choice
+        options:
+          - service
+          - infra_only
 
 permissions:
   contents: read
@@ -25,6 +33,7 @@ jobs:
     uses: ./.github/workflows/secureflow-dashboard-deploy.yml
     with:
       environment: dev
+      deployment_mode: service
     secrets: inherit
 
   deploy-manual:
@@ -32,4 +41,5 @@ jobs:
     uses: ./.github/workflows/secureflow-dashboard-deploy.yml
     with:
       environment: ${{ inputs.environment }}
+      deployment_mode: ${{ inputs.deployment_mode }}
     secrets: inherit
