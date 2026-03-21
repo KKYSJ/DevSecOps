@@ -164,6 +164,13 @@ resource "aws_ecs_task_definition" "frontend" {
       name      = "frontend"
       image     = local.frontend_image
       essential = true
+      entryPoint = [
+        "/bin/sh",
+        "-c"
+      ]
+      command = [
+        "mkdir -p /tmp/nginx/client_temp /tmp/nginx/proxy_temp /tmp/nginx/fastcgi_temp /tmp/nginx/uwsgi_temp /tmp/nginx/scgi_temp && exec nginx -g 'daemon off;'"
+      ]
       portMappings = [
         {
           containerPort = 80
