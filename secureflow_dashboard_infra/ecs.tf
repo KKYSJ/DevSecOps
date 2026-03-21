@@ -337,6 +337,7 @@ resource "aws_ecs_service" "frontend" {
   launch_type                       = "FARGATE"
   health_check_grace_period_seconds = 60
   enable_execute_command            = true
+  wait_for_steady_state             = true
 
   deployment_circuit_breaker {
     enable   = true
@@ -370,6 +371,7 @@ resource "aws_ecs_service" "backend" {
   launch_type                       = "FARGATE"
   health_check_grace_period_seconds = 60
   enable_execute_command            = true
+  wait_for_steady_state             = true
 
   deployment_circuit_breaker {
     enable   = true
@@ -401,6 +403,7 @@ resource "aws_ecs_service" "worker" {
   desired_count          = var.worker_desired_count
   launch_type            = "FARGATE"
   enable_execute_command = true
+  wait_for_steady_state  = true
 
   deployment_circuit_breaker {
     enable   = true

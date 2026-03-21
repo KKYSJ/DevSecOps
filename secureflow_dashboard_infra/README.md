@@ -82,6 +82,12 @@ Recommended repository secrets for service deployment:
 - `GEMINI_API_KEY`
 - `SONAR_TOKEN`
 - `OPENAI_API_KEY`
+- `API_SERVER_URL`
+
+Notes:
+
+- `API_SERVER_URL` is passed into the frontend image as `REACT_APP_API_BASE_URL` during the GitHub Actions build.
+- If `API_SERVER_URL` is not set, the frontend falls back to `/api/v1`.
 
 The deployment workflow runs automatically on every push to the `SUN` branch in `service` mode.
 

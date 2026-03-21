@@ -52,6 +52,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
         run: |
           set -euo pipefail
           missing=0
@@ -79,6 +80,11 @@ jobs:
                 echo "Missing recommended GitHub secret for service deployment: $name"
               fi
             done
+
+            if [ -z "${API_SERVER_URL}" ]; then
+              echo "Missing recommended GitHub secret for frontend API routing: API_SERVER_URL"
+              echo "Frontend will fall back to /api/v1."
+            fi
           fi
 
       - name: Start deployment summary
@@ -418,9 +424,15 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
           FRONTEND_REPO: ${{ steps.service_targets.outputs.frontend_repo }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
         run: |
           set -euo pipefail
-          docker build -f frontend/Dockerfile -t "${FRONTEND_REPO}:${IMAGE_TAG}" frontend 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-build.log"
+          frontend_api_base_url="${API_SERVER_URL:-/api/v1}"
+          docker build \
+            -f frontend/Dockerfile \
+            --build-arg "REACT_APP_API_BASE_URL=${frontend_api_base_url}" \
+            -t "${FRONTEND_REPO}:${IMAGE_TAG}" \
+            frontend 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-build.log"
           docker push "${FRONTEND_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-push.log"
 
       - name: Populate external API secret
@@ -533,6 +545,70 @@ jobs:
             --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" "${WORKER_SERVICE_NAME}" \
             > "${ARTIFACT_DIR}/ecs-services.json"
 
+      - name: Wait for ECS services to stabilize
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          ECS_CLUSTER_NAME: ${{ steps.deploy_outputs.outputs.ecs_cluster_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
+          WORKER_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.worker_service_name }}
+        run: |
+          set -euo pipefail
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" "${WORKER_SERVICE_NAME}"
+
+          aws ecs describe-services \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" "${WORKER_SERVICE_NAME}" \
+            > "${ARTIFACT_DIR}/ecs-services-stable.json"
+
+      - name: Wait for ALB target groups to become healthy
+        if: steps.context.outputs.deployment_mode == 'service'
+        env:
+          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
+        run: |
+          set -euo pipefail
+
+          wait_for_target_group() {
+            local service_name="$1"
+            local output_file="$2"
+            local target_group_arn
+            local desired_count
+            local attempt
+
+            target_group_arn="$(jq -r --arg service_name "${service_name}" '.services[] | select(.serviceName == $service_name) | .loadBalancers[0].targetGroupArn // empty' "${ARTIFACT_DIR}/ecs-services-stable.json")"
+            desired_count="$(jq -r --arg service_name "${service_name}" '.services[] | select(.serviceName == $service_name) | .desiredCount' "${ARTIFACT_DIR}/ecs-services-stable.json")"
+
+            if [ -z "${target_group_arn}" ]; then
+              echo "No target group found for ECS service ${service_name}" | tee -a "${ARTIFACT_DIR}/target-health.log"
+              exit 1
+            fi
+
+            for attempt in $(seq 1 20); do
+              aws elbv2 describe-target-health \
+                --target-group-arn "${target_group_arn}" \
+                > "${output_file}"
+
+              healthy_count="$(jq '[.TargetHealthDescriptions[] | select(.TargetHealth.State == "healthy")] | length' "${output_file}")"
+
+              if [ "${healthy_count}" -ge "${desired_count}" ] && [ "${desired_count}" -gt 0 ]; then
+                echo "Target group healthy for ${service_name} on attempt ${attempt} (${healthy_count}/${desired_count})" | tee -a "${ARTIFACT_DIR}/target-health.log"
+                return 0
+              fi
+
+              echo "Target group not healthy yet for ${service_name} on attempt ${attempt} (${healthy_count}/${desired_count})" | tee -a "${ARTIFACT_DIR}/target-health.log"
+              sleep 15
+            done
+
+            echo "Target group failed to become healthy for ${service_name}" | tee -a "${ARTIFACT_DIR}/target-health.log"
+            exit 1
+          }
+
+          wait_for_target_group "${FRONTEND_SERVICE_NAME}" "${ARTIFACT_DIR}/frontend-target-health.json"
+          wait_for_target_group "${BACKEND_SERVICE_NAME}" "${ARTIFACT_DIR}/backend-target-health.json"
+
       - name: Smoke check public endpoints
         if: steps.context.outputs.deployment_mode == 'service'
         env:
@@ -543,12 +619,13 @@ jobs:
           for path in / /health; do
             success=0
             for attempt in $(seq 1 20); do
-              if curl -fsS -o /dev/null "${FRONTEND_URL}${path}"; then
-                echo "Smoke check passed for ${FRONTEND_URL}${path} on attempt ${attempt}" | tee -a "${ARTIFACT_DIR}/smoke-check.log"
+              http_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "${FRONTEND_URL}${path}" || true)"
+              if [ "${http_code}" -ge 200 ] && [ "${http_code}" -lt 400 ]; then
+                echo "Smoke check passed for ${FRONTEND_URL}${path} on attempt ${attempt} (HTTP ${http_code})" | tee -a "${ARTIFACT_DIR}/smoke-check.log"
                 success=1
                 break
               fi
-              echo "Smoke check retry ${attempt} for ${FRONTEND_URL}${path}" | tee -a "${ARTIFACT_DIR}/smoke-check.log"
+              echo "Smoke check retry ${attempt} for ${FRONTEND_URL}${path} (HTTP ${http_code})" | tee -a "${ARTIFACT_DIR}/smoke-check.log"
               sleep 15
             done
 
@@ -594,6 +671,10 @@ jobs:
             echo "- \`service-plan.txt\`"
             echo "- \`service-apply.log\`"
             echo "- \`ecs-services.json\`"
+            echo "- \`ecs-services-stable.json\`"
+            echo "- \`target-health.log\`"
+            echo "- \`frontend-target-health.json\`"
+            echo "- \`backend-target-health.json\`"
             echo "- \`smoke-check.log\`"
           } >> "$GITHUB_STEP_SUMMARY"
 

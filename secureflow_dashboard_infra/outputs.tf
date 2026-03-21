@@ -101,7 +101,7 @@ output "redis_endpoint" {
 }
 
 output "github_secret_backend_url" {
-  description = "Value to store in the GitHub secret BACKEND_URL."
+  description = "Value to store in the GitHub secret API_SERVER_URL."
   value       = var.enable_cloudfront_https ? "https://${aws_cloudfront_distribution.app[0].domain_name}/api/v1" : (var.acm_certificate_arn != null ? "https://${aws_lb.main.dns_name}/api/v1" : "http://${aws_lb.main.dns_name}/api/v1")
 }
 

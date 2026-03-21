@@ -361,7 +361,7 @@ jobs:
 
 | Secret | 설명 |
 |--------|------|
-| `BACKEND_URL` | SecureFlow 백엔드 URL (스캔 결과 자동 업로드용) |
+| `API_SERVER_URL` | SecureFlow 백엔드 URL |
 | `GEMINI_API_KEY` | Gemini LLM API 키 |
 
 ---
