@@ -39,6 +39,8 @@ reports/
 
 terraform.tfstate
 terraform.tfvars
+backend.hcl
+*.auto.tfvars.json
 .terraform/
 .terraform/
 *.tfstate

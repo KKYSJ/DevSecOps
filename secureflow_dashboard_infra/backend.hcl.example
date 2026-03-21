@@ -1,0 +1,5 @@
+bucket         = "replace-with-bootstrap-output-state-bucket-name"
+key            = "secureflow_dashboard_infra/terraform.tfstate"
+region         = "ap-northeast-2"
+dynamodb_table = "replace-with-bootstrap-output-lock-table-name"
+encrypt        = true

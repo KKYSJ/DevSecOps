@@ -14,6 +14,7 @@ resource "aws_lb" "main" {
   security_groups            = [aws_security_group.alb.id]
   subnets                    = [for subnet in aws_subnet.public : subnet.id]
   enable_deletion_protection = var.environment == "prod"
+  desync_mitigation_mode     = "strictest"
   drop_invalid_header_fields = true
   enable_http2               = true
 
@@ -33,7 +34,7 @@ resource "aws_lb_target_group" "frontend" {
 
   health_check {
     enabled             = true
-    path                = "/"
+    path                = "/health"
     matcher             = "200-399"
     interval            = 30
     healthy_threshold   = 2
@@ -204,6 +205,10 @@ resource "aws_ecs_task_definition" "backend" {
     cpu_architecture        = "X86_64"
   }
 
+  volume {
+    name = "backend-tmp"
+  }
+
   container_definitions = jsonencode([
     {
       name      = "backend"
@@ -218,21 +223,33 @@ resource "aws_ecs_task_definition" "backend" {
         }
       ]
       readonlyRootFilesystem = true
+      mountPoints = [
+        {
+          sourceVolume  = "backend-tmp"
+          containerPath = "/tmp"
+          readOnly      = false
+        }
+      ]
       environment = [
         { name = "APP_ENV", value = var.environment },
         { name = "AWS_REGION", value = var.aws_region },
+        { name = "AWS_ACCOUNT_ID", value = data.aws_caller_identity.current.account_id },
         { name = "S3_REPORT_BUCKET", value = aws_s3_bucket.reports.id },
-        { name = "SONARQUBE_URL", value = var.sonarqube_url }
+        { name = "GEMINI_MODEL", value = var.gemini_model },
+        { name = "SONAR_HOST_URL", value = var.sonar_host_url },
+        { name = "SONARQUBE_URL", value = var.sonar_host_url },
+        { name = "SONAR_ORGANIZATION", value = var.sonar_organization },
+        { name = "SONAR_PROJECT_KEY", value = var.sonar_project_key }
       ]
       secrets = [
-        { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:DATABASE_URL::" },
-        { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:REDIS_URL::" },
-        { name = "CELERY_BROKER_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:CELERY_BROKER_URL::" },
-        { name = "CELERY_RESULT_BACKEND", valueFrom = "${aws_secretsmanager_secret.app.arn}:CELERY_RESULT_BACKEND::" },
-        { name = "GEMINI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:GEMINI_API_KEY::" },
-        { name = "GEMINI_MODEL", valueFrom = "${aws_secretsmanager_secret.app.arn}:GEMINI_MODEL::" },
-        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:OPENAI_API_KEY::" },
-        { name = "SONARQUBE_TOKEN", valueFrom = "${aws_secretsmanager_secret.app.arn}:SONARQUBE_TOKEN::" }
+        { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.db.arn}:DATABASE_URL::" },
+        { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.redis.arn}:REDIS_URL::" },
+        { name = "CELERY_BROKER_URL", valueFrom = "${aws_secretsmanager_secret.redis.arn}:CELERY_BROKER_URL::" },
+        { name = "CELERY_RESULT_BACKEND", valueFrom = "${aws_secretsmanager_secret.redis.arn}:CELERY_RESULT_BACKEND::" },
+        { name = "GEMINI_API_KEY", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:GEMINI_API_KEY::" },
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:OPENAI_API_KEY::" },
+        { name = "SONAR_TOKEN", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:SONAR_TOKEN::" },
+        { name = "SONARQUBE_TOKEN", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:SONAR_TOKEN::" }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -260,6 +277,10 @@ resource "aws_ecs_task_definition" "worker" {
     cpu_architecture        = "X86_64"
   }
 
+  volume {
+    name = "worker-tmp"
+  }
+
   container_definitions = jsonencode([
     {
       name                   = "worker"
@@ -267,22 +288,34 @@ resource "aws_ecs_task_definition" "worker" {
       essential              = true
       command                = ["celery", "-A", "backend.app.core.celery_app.celery_app", "worker", "--loglevel=info"]
       readonlyRootFilesystem = true
+      mountPoints = [
+        {
+          sourceVolume  = "worker-tmp"
+          containerPath = "/tmp"
+          readOnly      = false
+        }
+      ]
       environment = [
         { name = "APP_ENV", value = var.environment },
         { name = "AWS_REGION", value = var.aws_region },
+        { name = "AWS_ACCOUNT_ID", value = data.aws_caller_identity.current.account_id },
         { name = "S3_REPORT_BUCKET", value = aws_s3_bucket.reports.id },
-        { name = "SONARQUBE_URL", value = var.sonarqube_url },
+        { name = "GEMINI_MODEL", value = var.gemini_model },
+        { name = "SONAR_HOST_URL", value = var.sonar_host_url },
+        { name = "SONARQUBE_URL", value = var.sonar_host_url },
+        { name = "SONAR_ORGANIZATION", value = var.sonar_organization },
+        { name = "SONAR_PROJECT_KEY", value = var.sonar_project_key },
         { name = "PYTHONPATH", value = "/app" }
       ]
       secrets = [
-        { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:DATABASE_URL::" },
-        { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:REDIS_URL::" },
-        { name = "CELERY_BROKER_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:CELERY_BROKER_URL::" },
-        { name = "CELERY_RESULT_BACKEND", valueFrom = "${aws_secretsmanager_secret.app.arn}:CELERY_RESULT_BACKEND::" },
-        { name = "GEMINI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:GEMINI_API_KEY::" },
-        { name = "GEMINI_MODEL", valueFrom = "${aws_secretsmanager_secret.app.arn}:GEMINI_MODEL::" },
-        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:OPENAI_API_KEY::" },
-        { name = "SONARQUBE_TOKEN", valueFrom = "${aws_secretsmanager_secret.app.arn}:SONARQUBE_TOKEN::" }
+        { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.db.arn}:DATABASE_URL::" },
+        { name = "REDIS_URL", valueFrom = "${aws_secretsmanager_secret.redis.arn}:REDIS_URL::" },
+        { name = "CELERY_BROKER_URL", valueFrom = "${aws_secretsmanager_secret.redis.arn}:CELERY_BROKER_URL::" },
+        { name = "CELERY_RESULT_BACKEND", valueFrom = "${aws_secretsmanager_secret.redis.arn}:CELERY_RESULT_BACKEND::" },
+        { name = "GEMINI_API_KEY", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:GEMINI_API_KEY::" },
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:OPENAI_API_KEY::" },
+        { name = "SONAR_TOKEN", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:SONAR_TOKEN::" },
+        { name = "SONARQUBE_TOKEN", valueFrom = "${aws_secretsmanager_secret.external_api.arn}:SONAR_TOKEN::" }
       ]
       logConfiguration = {
         logDriver = "awslogs"

@@ -94,7 +94,83 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  rule {
+    id     = "cleanup-old-logs"
+    status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+
+    expiration {
+      days = 90
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+}
+
+data "aws_iam_policy_document" "reports_bucket" {
+  statement {
+    sid    = "DenyInsecureTransport"
+    effect = "Deny"
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.reports.arn,
+      "${aws_s3_bucket.reports.arn}/*"
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "reports" {
+  bucket = aws_s3_bucket.reports.id
+  policy = data.aws_iam_policy_document.reports_bucket.json
+}
+
 data "aws_iam_policy_document" "logs_bucket" {
+  statement {
+    sid    = "DenyInsecureTransport"
+    effect = "Deny"
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.logs.arn,
+      "${aws_s3_bucket.logs.arn}/*"
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+
   statement {
     sid    = "AllowALBAccessLogs"
     effect = "Allow"
@@ -157,6 +233,18 @@ resource "aws_cloudwatch_log_group" "worker" {
   kms_key_id        = aws_kms_key.logs.arn
 }
 
+resource "aws_cloudwatch_log_group" "rds_postgresql" {
+  name              = "/aws/rds/instance/${local.name}-postgres/postgresql"
+  retention_in_days = var.log_retention_in_days
+  kms_key_id        = aws_kms_key.logs.arn
+}
+
+resource "aws_cloudwatch_log_group" "rds_upgrade" {
+  name              = "/aws/rds/instance/${local.name}-postgres/upgrade"
+  retention_in_days = var.log_retention_in_days
+  kms_key_id        = aws_kms_key.logs.arn
+}
+
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   name              = "/vpc/${local.name}/flow-logs"
   retention_in_days = var.log_retention_in_days
@@ -167,4 +255,13 @@ resource "aws_cloudwatch_log_group" "waf" {
   name              = "aws-waf-logs-${local.name}"
   retention_in_days = var.log_retention_in_days
   kms_key_id        = aws_kms_key.logs.arn
+}
+
+resource "aws_cloudwatch_log_group" "waf_cloudfront" {
+  count    = var.enable_waf && var.enable_cloudfront_https ? 1 : 0
+  provider = aws.us_east_1
+
+  name              = "aws-waf-logs-${local.name}-cloudfront"
+  retention_in_days = var.log_retention_in_days
+  kms_key_id        = aws_kms_key.logs_us_east_1[0].arn
 }

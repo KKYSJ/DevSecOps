@@ -45,7 +45,7 @@ resource "aws_db_instance" "postgres" {
   multi_az                        = var.db_multi_az
   publicly_accessible             = false
   deletion_protection             = var.environment == "prod"
-  skip_final_snapshot             = true
+  skip_final_snapshot             = var.environment != "prod"
   final_snapshot_identifier       = var.environment == "prod" ? local.db_final_snapshot_identifier : null
   auto_minor_version_upgrade      = true
   copy_tags_to_snapshot           = true

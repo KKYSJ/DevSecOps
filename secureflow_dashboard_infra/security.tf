@@ -1,25 +1,36 @@
+data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
+  count = var.enable_cloudfront_https ? 1 : 0
+  name  = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb-sg"
   description = "Public ALB access"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "ingress" {
+    for_each = (!var.enable_cloudfront_https || var.acm_certificate_arn == null) ? [1] : []
+
+    content {
+      description     = var.enable_cloudfront_https ? "HTTP from CloudFront origins" : "HTTP"
+      from_port       = 80
+      to_port         = 80
+      protocol        = "tcp"
+      cidr_blocks     = var.enable_cloudfront_https ? null : ["0.0.0.0/0"]
+      prefix_list_ids = var.enable_cloudfront_https ? [try(data.aws_ec2_managed_prefix_list.cloudfront_origin_facing[0].id, null)] : null
+    }
   }
 
   dynamic "ingress" {
     for_each = var.acm_certificate_arn != null ? [1] : []
 
     content {
-      description = "HTTPS"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      description     = var.enable_cloudfront_https ? "HTTPS from CloudFront origins" : "HTTPS"
+      from_port       = 443
+      to_port         = 443
+      protocol        = "tcp"
+      cidr_blocks     = var.enable_cloudfront_https ? null : ["0.0.0.0/0"]
+      prefix_list_ids = var.enable_cloudfront_https ? [try(data.aws_ec2_managed_prefix_list.cloudfront_origin_facing[0].id, null)] : null
     }
   }
 

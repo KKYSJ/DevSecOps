@@ -1,13 +1,13 @@
 locals {
-  name = "${lower(replace("${var.project_name}-${var.environment}", "_", "-"))}-dashboard"
+  name = lower(replace("${var.project_name}-${var.environment}", "_", "-"))
   azs  = slice(data.aws_availability_zones.available.names, 0, 2)
 
   common_tags = merge(
     {
       Project     = var.project_name
       Environment = var.environment
-      ManagedBy   = "admin-user"
-      Service     = "secureflow"
+      ManagedBy   = var.managed_by
+      Service     = "secureflow-dashboard"
     },
     var.tags
   )
@@ -17,9 +17,20 @@ locals {
     lower("${local.name}-${data.aws_caller_identity.current.account_id}-reports")
   )
 
-  app_secret_name = coalesce(
+  db_secret_name = coalesce(
+    var.db_secret_name,
+    "${local.name}/db"
+  )
+
+  redis_secret_name = coalesce(
+    var.redis_secret_name,
+    "${local.name}/redis"
+  )
+
+  external_api_secret_name = coalesce(
+    var.external_api_secret_name,
     var.app_secret_name,
-    "${local.name}/app"
+    "${local.name}/external-api"
   )
 
   db_final_snapshot_identifier = "${local.name}-final-${random_id.db_snapshot_suffix.hex}"

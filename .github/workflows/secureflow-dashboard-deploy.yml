@@ -1,0 +1,216 @@
+name: SecureFlow Dashboard Terraform Apply
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: false
+        default: "dev"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: secureflow-dashboard-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: secureflow-dashboard
+      MANAGED_BY: admin-dev
+      VPC_CIDR: 10.50.0.0/16
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+      ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
+      ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Check repository configuration
+        run: |
+          missing=0
+
+          for name in AWS_REGION AWS_ACCOUNT_ID AWS_ROLE_TO_ASSUME; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required GitHub setting: $name"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      - name: Resolve deploy context
+        id: context
+        run: |
+          deploy_environment="${{ inputs.environment }}"
+
+          if [ -z "${deploy_environment}" ]; then
+            deploy_environment="dev"
+          fi
+
+          if [ "${deploy_environment}" = "prod" ] && [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "Production deploys are only allowed from the main branch."
+            exit 1
+          fi
+
+          echo "deploy_environment=${deploy_environment}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve backend names
+        id: backend
+        run: |
+          actual_account_id="$(aws sts get-caller-identity --query Account --output text)"
+
+          if [ "${AWS_ACCOUNT_ID}" != "${actual_account_id}" ]; then
+            echo "AWS_ACCOUNT_ID repository variable (${AWS_ACCOUNT_ID}) does not match the assumed account (${actual_account_id})."
+            exit 1
+          fi
+
+          state_bucket="${PROJECT_NAME}-shared-${actual_account_id}-tfstate"
+          lock_table="${PROJECT_NAME}-shared-tflock"
+
+          echo "state_bucket=${state_bucket}" >> "$GITHUB_OUTPUT"
+          echo "lock_table=${lock_table}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure bootstrap remote state exists
+        working-directory: secureflow_dashboard_infra/bootstrap
+        env:
+          STATE_BUCKET: ${{ steps.backend.outputs.state_bucket }}
+          LOCK_TABLE: ${{ steps.backend.outputs.lock_table }}
+        run: |
+          cat > backend.hcl <<EOF
+          bucket         = "${STATE_BUCKET}"
+          key            = "secureflow_dashboard_infra/bootstrap/terraform.tfstate"
+          region         = "${AWS_REGION}"
+          dynamodb_table = "${LOCK_TABLE}"
+          encrypt        = true
+          EOF
+
+          bucket_exists=0
+          table_exists=0
+
+          if aws s3api head-bucket --bucket "${STATE_BUCKET}" >/dev/null 2>&1; then
+            bucket_exists=1
+          fi
+
+          if aws dynamodb describe-table --table-name "${LOCK_TABLE}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+            table_exists=1
+          fi
+
+          if [ "${bucket_exists}" -eq 1 ] && [ "${table_exists}" -eq 1 ]; then
+            terraform init -reconfigure -backend-config=backend.hcl
+          elif [ "${bucket_exists}" -eq 0 ] && [ "${table_exists}" -eq 0 ]; then
+            terraform init -backend=false
+            terraform apply -auto-approve \
+              -var="project_name=${PROJECT_NAME}" \
+              -var="environment=shared" \
+              -var="managed_by=${MANAGED_BY}" \
+              -var="aws_region=${AWS_REGION}" \
+              -var="state_bucket_name=${STATE_BUCKET}" \
+              -var="lock_table_name=${LOCK_TABLE}"
+            terraform init -reconfigure -migrate-state -force-copy -backend-config=backend.hcl
+            terraform apply -auto-approve \
+              -var="project_name=${PROJECT_NAME}" \
+              -var="environment=shared" \
+              -var="managed_by=${MANAGED_BY}" \
+              -var="aws_region=${AWS_REGION}" \
+              -var="state_bucket_name=${STATE_BUCKET}" \
+              -var="lock_table_name=${LOCK_TABLE}"
+          else
+            echo "Partial bootstrap backend detected. Check the state bucket and lock table before retrying."
+            exit 1
+          fi
+
+      - name: Write Terraform runtime config
+        working-directory: secureflow_dashboard_infra
+        env:
+          DEPLOY_ENVIRONMENT: ${{ steps.context.outputs.deploy_environment }}
+          STATE_BUCKET: ${{ steps.backend.outputs.state_bucket }}
+          LOCK_TABLE: ${{ steps.backend.outputs.lock_table }}
+        run: |
+          cat > backend.hcl <<EOF
+          bucket         = "${STATE_BUCKET}"
+          key            = "secureflow_dashboard_infra/terraform.tfstate"
+          region         = "${AWS_REGION}"
+          dynamodb_table = "${LOCK_TABLE}"
+          encrypt        = true
+          EOF
+
+          jq -n \
+            --arg project_name "${PROJECT_NAME}" \
+            --arg environment "${DEPLOY_ENVIRONMENT}" \
+            --arg managed_by "${MANAGED_BY}" \
+            --arg aws_region "${AWS_REGION}" \
+            --arg vpc_cidr "${VPC_CIDR}" \
+            --argjson frontend_desired_count 0 \
+            --argjson backend_desired_count 0 \
+            --argjson worker_desired_count 0 \
+            '{
+              project_name: $project_name,
+              environment: $environment,
+              managed_by: $managed_by,
+              aws_region: $aws_region,
+              vpc_cidr: $vpc_cidr,
+              frontend_desired_count: $frontend_desired_count,
+              backend_desired_count: $backend_desired_count,
+              worker_desired_count: $worker_desired_count
+            }
+            + (env.ALARM_EMAIL != "" ? {alarm_email: env.ALARM_EMAIL} : {})
+            + (env.ACM_CERTIFICATE_ARN != "" ? {acm_certificate_arn: env.ACM_CERTIFICATE_ARN} : {})' \
+            > ci.auto.tfvars.json
+
+      - name: Initialize dashboard terraform
+        working-directory: secureflow_dashboard_infra
+        run: terraform init -reconfigure -backend-config=backend.hcl
+
+      - name: Apply dashboard infrastructure
+        working-directory: secureflow_dashboard_infra
+        run: terraform apply -auto-approve
+
+      - name: Collect deployment outputs
+        id: deploy_outputs
+        working-directory: secureflow_dashboard_infra
+        run: |
+          terraform output -json > outputs.json
+          echo "alb_dns_name=$(jq -r '.alb_dns_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=$(jq -r '.frontend_url.value' outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "backend_api_url=$(jq -r '.backend_api_url.value' outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "ecs_cluster_name=$(jq -r '.ecs_cluster_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize deployment
+        run: |
+          {
+            echo "## SecureFlow Dashboard infrastructure deployment"
+            echo ""
+            echo "- Environment: \`${{ steps.context.outputs.deploy_environment }}\`"
+            echo "- Terraform state bucket: \`${{ steps.backend.outputs.state_bucket }}\`"
+            echo "- Terraform lock table: \`${{ steps.backend.outputs.lock_table }}\`"
+            echo "- ECS cluster: \`${{ steps.deploy_outputs.outputs.ecs_cluster_name }}\`"
+            echo "- ALB DNS: \`${{ steps.deploy_outputs.outputs.alb_dns_name }}\`"
+            echo "- Frontend URL: \`${{ steps.deploy_outputs.outputs.frontend_url }}\`"
+            echo "- Backend URL: \`${{ steps.deploy_outputs.outputs.backend_api_url }}\`"
+            echo ""
+            echo "This workflow only provisions AWS infrastructure."
+            echo "Frontend, backend, and worker desired counts are forced to \`0\`, so no application containers, LLM calls, or scan pipelines are deployed."
+          } >> "$GITHUB_STEP_SUMMARY"

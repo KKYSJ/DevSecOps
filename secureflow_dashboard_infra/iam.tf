@@ -23,12 +23,16 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_default" {
 
 data "aws_iam_policy_document" "ecs_execution_secrets" {
   statement {
-    sid    = "ReadAppSecret"
+    sid    = "ReadRuntimeSecrets"
     effect = "Allow"
     actions = [
       "secretsmanager:GetSecretValue"
     ]
-    resources = [aws_secretsmanager_secret.app.arn]
+    resources = [
+      aws_secretsmanager_secret.db.arn,
+      aws_secretsmanager_secret.redis.arn,
+      aws_secretsmanager_secret.external_api.arn
+    ]
   }
 
   statement {
