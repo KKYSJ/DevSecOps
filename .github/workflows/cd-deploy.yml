@@ -481,6 +481,40 @@ jobs:
           upload "nuclei" "artifacts/dast/nuclei-service-results/nuclei-results.json"
         continue-on-error: true
 
+      - name: Wait for SecureFlow DAST parsing
+        if: always() && env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          # Refresh the existing backend dashboard report after DAST uploads complete.
+          for i in $(seq 1 24); do
+            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
+            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
+            echo "done=${DONE}, waiting=${WAIT} (${i}/24)"
+            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
+              echo "SecureFlow DAST parsing finished."
+              break
+            fi
+            sleep 5
+          done
+        continue-on-error: true
+
+      - name: Refresh SecureFlow Phase 2 dashboard report
+        if: always() && env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+            -H "Content-Type: application/json" \
+            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
+            --max-time 120 || true
+        continue-on-error: true
+
   isms-preprod-gate:
     needs:
       - resolve-context

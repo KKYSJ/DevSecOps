@@ -734,6 +734,38 @@ jobs:
           upload "checkov"  "scan-results/checkov-results/checkov-results.json"
         continue-on-error: true
 
+      - name: Wait for SecureFlow scan parsing
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          # Refresh the existing backend dashboard report after raw CI uploads complete.
+          for i in $(seq 1 30); do
+            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
+            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
+            echo "done=${DONE}, waiting=${WAIT} (${i}/30)"
+            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
+              echo "SecureFlow scan parsing finished."
+              break
+            fi
+            sleep 5
+          done
+        continue-on-error: true
+
+      - name: Refresh SecureFlow Phase 1 dashboard report
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+            -H "Content-Type: application/json" \
+            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
+            --max-time 120 || true
+        continue-on-error: true
+
       - name: BACKEND_URL 미설정 안내
         if: env.BACKEND_URL == ''
         run: |
