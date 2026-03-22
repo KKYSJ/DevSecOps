@@ -175,7 +175,15 @@ def process_tool_result(tool: str, raw: dict) -> dict:
     parser = PARSERS.get(tool)
     if not parser:
         raise ValueError(f"지원하지 않는 도구: {tool}. 지원 목록: {list(PARSERS.keys())}")
-    return parser.parse(raw)
+    result = parser.parse(raw)
+    # trivy-image는 tool/category 오버라이드
+    if tool == "trivy-image":
+        result["tool"] = "trivy-image"
+        result["category"] = "IMAGE"
+        for f in result.get("findings", []):
+            f["tool"] = "trivy-image"
+            f["category"] = "IMAGE"
+    return result
 
 
 def match_findings(tool_results: list[dict]) -> list[dict]:
