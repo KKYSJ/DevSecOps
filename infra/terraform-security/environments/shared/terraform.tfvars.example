@@ -17,8 +17,8 @@ cloudtrail_bucket_name      = null
 trail_name                = "secureflow-shared-trail"
 cloudtrail_log_group_name = "/aws/cloudtrail/secureflow-shared"
 
-enable_cloudtrail        = false
-enable_cloudtrail_cloudwatch_logs = false
+enable_cloudtrail                 = true
+enable_cloudtrail_cloudwatch_logs = true
 enable_config            = false
 enable_config_rules      = false
 enable_securityhub       = true
