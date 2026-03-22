@@ -111,61 +111,35 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
         <span className={`text-xs font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
       </div>
 
-      {/* 매칭 통계 — 교차검증 모드에서만 표시 */}
+      {/* 매칭 통계 — 교차검증 모드: 동시탐지 + 단독탐지만 */}
       {mode === 'cross' && (
-        <div className="grid grid-cols-3 gap-3 mb-3">
-          <div className="bg-muted rounded-md p-2 text-center">
-            <div className="text-lg font-bold text-green-600">{matching.matched_count || 0}</div>
-            <div className="text-xs text-muted-foreground">동시 탐지</div>
-          </div>
-          <div className="bg-muted rounded-md p-2 text-center">
-            <div className="text-lg font-bold text-amber-600">{matching.mismatch_count || 0}</div>
-            <div className="text-xs text-muted-foreground">단독 탐지</div>
-          </div>
-          <div className="bg-muted rounded-md p-2 text-center">
-            <div className="text-lg font-bold text-foreground">{combined.total || 0}</div>
-            <div className="text-xs text-muted-foreground">전체</div>
-          </div>
-        </div>
-      )}
-
-      {/* 합산 검증 모드: 전체 건수만 표시 */}
-      {mode === 'combined' && (
         <div className="grid grid-cols-2 gap-3 mb-3">
-          <div className="bg-muted rounded-md p-2 text-center">
-            <div className="text-lg font-bold text-foreground">{combined.total || 0}</div>
-            <div className="text-xs text-muted-foreground">총 탐지 건수</div>
+          <div className="bg-muted rounded-md p-3 text-center">
+            <div className="text-xl font-bold text-green-600">{matching.matched_count || 0}</div>
+            <div className="text-sm text-muted-foreground">동시 탐지</div>
           </div>
-          <div className="bg-muted rounded-md p-2 text-center">
-            <div className="text-lg font-bold text-foreground">{(gate?.tool_summaries || []).length}</div>
-            <div className="text-xs text-muted-foreground">도구 수</div>
+          <div className="bg-muted rounded-md p-3 text-center">
+            <div className="text-xl font-bold text-amber-600">{matching.mismatch_count || 0}</div>
+            <div className="text-sm text-muted-foreground">단독 탐지</div>
           </div>
         </div>
       )}
-
-      {/* 심각도 요약 */}
-      <div className="flex gap-2 mb-3">
-        {combined.critical > 0 && <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">CRITICAL {combined.critical}</span>}
-        {combined.high > 0 && <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">HIGH {combined.high}</span>}
-        {combined.medium > 0 && <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">MEDIUM {combined.medium}</span>}
-        {combined.low > 0 && <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">LOW {combined.low}</span>}
-      </div>
 
       {/* LLM 분석 요약 */}
       {llm.summary && (
-        <div className="bg-muted rounded-md p-3 mb-2">
-          <div className="text-xs font-semibold text-foreground mb-1">LLM 분석 요약</div>
-          <div className="text-xs text-muted-foreground">{llm.summary}</div>
+        <div className="bg-muted rounded-lg p-4 mb-3">
+          <div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div>
+          <div className="text-sm text-foreground leading-relaxed">{llm.summary}</div>
         </div>
       )}
 
       {/* LLM 판정 근거 */}
       {reasons.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-xs font-semibold text-foreground">판정 근거</div>
+        <div className="space-y-2 mb-3">
+          <div className="text-sm font-semibold text-foreground">판정 근거</div>
           {reasons.map((r: string, i: number) => (
-            <div key={i} className="text-xs text-muted-foreground flex gap-1">
-              <span className="text-foreground">•</span> {r}
+            <div key={i} className="text-sm text-muted-foreground flex gap-2">
+              <span className="text-foreground font-bold">•</span> {r}
             </div>
           ))}
         </div>
@@ -173,7 +147,7 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
 
       {/* Provider notes */}
       {llm.provider_notes && (
-        <div className="mt-2 text-xs text-blue-600 bg-blue-50 rounded p-2">
+        <div className="mt-2 text-sm text-blue-700 bg-blue-50 rounded-lg p-3">
           {llm.provider_notes}
         </div>
       )}
@@ -297,6 +271,25 @@ function GateCrossValidation({ gate, judgments }: { gate: any; judgments?: any[]
   );
 }
 
+// 실제 취약점 데이터 기반 Severity 카드
+function VulnSeverityCards({ vulns }: { vulns: Vulnerability[] }) {
+  const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  vulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
+  const colors: Record<string, string> = { CRITICAL: 'text-red-600 bg-red-50 border-red-200', HIGH: 'text-orange-600 bg-orange-50 border-orange-200', MEDIUM: 'text-yellow-600 bg-yellow-50 border-yellow-200', LOW: 'text-blue-600 bg-blue-50 border-blue-200' };
+  const labels: Record<string, string> = { CRITICAL: '긴급 조치 필요', HIGH: '즉시 조치 필요', MEDIUM: '우선 검토 필요', LOW: '모니터링 권장' };
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      {Object.entries(counts).map(([sev, count]) => (
+        <div key={sev} className={`rounded-lg border p-4 ${colors[sev]}`}>
+          <div className="text-xs font-semibold uppercase">{sev}</div>
+          <div className="text-2xl font-bold mt-1">{count}</div>
+          <div className="text-xs mt-1">{labels[sev]}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Gate 기반 Severity 카드
 function GateSeverityCards({ gate }: { gate: any }) {
   if (!gate) return null;
@@ -407,21 +400,38 @@ export default function Home({ params }: HomeProps) {
         const finding_b = f.finding_b || {};
         const tools = [finding_a.tool, finding_b?.tool].filter(Boolean);
 
-        // Vulnerability
-        vulns.push({
-          id: `v-${i}`,
-          severity: f.severity || 'MEDIUM',
-          category: f.finding_a?.category || f.finding_b?.category || 'SAST',
-          tool: tools[0] || 'unknown',
-          file: finding_a.file_path || finding_b.file_path || '',
-          line: finding_a.line_number || finding_b.line_number || 0,
-          cwe: (finding_a.category === 'SCA' || finding_b.category === 'SCA')
-            ? (finding_a.cve_id || finding_b.cve_id || finding_a.cwe_id || finding_b.cwe_id || '')
-            : (finding_a.cwe_id || finding_b.cwe_id || ''),
-          description: f.title_ko || finding_a.title || finding_b.title || '',
-          confidence: f.confidence || 'MED',
-          detectedAt: report.generated_at || new Date().toISOString(),
-        });
+        // Vulnerability — finding_a 행
+        if (finding_a.tool) {
+          const isSCA = finding_a.category === 'SCA';
+          vulns.push({
+            id: `v-${i}-a`,
+            severity: finding_a.severity || f.severity || 'MEDIUM',
+            category: finding_a.category || 'SAST',
+            tool: finding_a.tool,
+            file: finding_a.file_path || '',
+            line: finding_a.line_number || 0,
+            cwe: isSCA ? (finding_a.cve_id || finding_a.cwe_id || '') : (finding_a.cwe_id || ''),
+            description: finding_a.title || '',
+            confidence: finding_b.tool ? 'HIGH' : (f.confidence || 'MED'),
+            detectedAt: report.generated_at || new Date().toISOString(),
+          });
+        }
+        // Vulnerability — finding_b 행 (동시탐지일 때만)
+        if (finding_b.tool && finding_b.tool !== finding_a.tool) {
+          const isSCA = finding_b.category === 'SCA';
+          vulns.push({
+            id: `v-${i}-b`,
+            severity: finding_b.severity || f.severity || 'MEDIUM',
+            category: finding_b.category || 'SAST',
+            tool: finding_b.tool,
+            file: finding_b.file_path || '',
+            line: finding_b.line_number || 0,
+            cwe: isSCA ? (finding_b.cve_id || finding_b.cwe_id || '') : (finding_b.cwe_id || ''),
+            description: finding_b.title || '',
+            confidence: 'HIGH',
+            detectedAt: report.generated_at || new Date().toISOString(),
+          });
+        }
 
         // CrossAnalysisItem
         crossItems.push({
@@ -733,7 +743,7 @@ export default function Home({ params }: HomeProps) {
           {activeSection === 'iac' && (
             <div className="space-y-5">
               {/* 1. Severity 카드 (맨 위) */}
-              <GateSeverityCards gate={llmGates['iac']} />
+              <VulnSeverityCards vulns={vulnerabilities.filter(v => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()))} />
 
               {/* 2. LLM 합산 검증 분석 결과 */}
               {(() => {
@@ -840,9 +850,9 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sast' && (
             <div className="space-y-5">
+              <VulnSeverityCards vulns={vulnerabilities.filter(v => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))} />
               <LlmGateSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} mode="cross" />
               <GateCrossValidation gate={llmGates['sast']} judgments={llmJudgments['sast']} />
-              <GateSeverityCards gate={llmGates['sast']} />
               <GateToolSummary gate={llmGates['sast']} />
               <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sast']} category="SAST" />
             </div>
@@ -850,9 +860,9 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sca' && (
             <div className="space-y-5">
+              <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))} />
               <LlmGateSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} mode="cross" />
               <GateCrossValidation gate={llmGates['sca']} judgments={llmJudgments['sca']} />
-              <GateSeverityCards gate={llmGates['sca']} />
               <GateToolSummary gate={llmGates['sca']} />
               <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sca']} category="SCA" />
             </div>
