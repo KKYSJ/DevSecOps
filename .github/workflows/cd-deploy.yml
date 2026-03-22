@@ -438,13 +438,19 @@ jobs:
       - name: Run Nuclei web scan
         if: steps.target.outputs.enabled == 'true'
         run: |
-          # 프론트엔드 + API 서버 스캔
-          echo "${{ steps.target.outputs.target_url }}" > /tmp/targets.txt
-          echo "${{ steps.target.outputs.target_url }}/api/v1/health" >> /tmp/targets.txt
+          # 프론트엔드 + API 서버 + 취약 엔드포인트 스캔
+          TARGET="${{ steps.target.outputs.target_url }}"
+          cat > /tmp/targets.txt << URLS
+          ${TARGET}
+          ${TARGET}/api/v1/health
+          ${TARGET}/docs
+          ${TARGET}/openapi.json
+          URLS
+          sed -i 's/^[[:space:]]*//' /tmp/targets.txt
           docker run --rm -v "${PWD}:/workspace" -v "/tmp/targets.txt:/targets.txt" projectdiscovery/nuclei:latest \
             -l /targets.txt \
-            -severity low,medium,high,critical \
-            -tags cve,exposure,misconfiguration,default-login \
+            -severity info,low,medium,high,critical \
+            -tags cve,exposure,misconfiguration,default-login,tech,headers,security \
             -json-export /workspace/nuclei-results.json || true
 
       - name: Ensure Nuclei report exists

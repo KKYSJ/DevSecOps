@@ -979,7 +979,9 @@ export default function Home({ params }: HomeProps) {
     // ISMS-P 데이터 로드
     fetchJson<any>('/isms').then((data) => {
       if (!data || data.message) return;
-      setApiIsmsData(data);
+      // CD에서 보낸 데이터는 checker_result 안에 있음
+      const ismsData = data.checker_result || data;
+      setApiIsmsData(ismsData);
     }).catch(() => {});
 
     // SIEM 데이터 로드
