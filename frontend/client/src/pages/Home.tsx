@@ -4,7 +4,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Cloud, Code2, ShieldCheck, GitBranch, Image, Server, Bug, Monitor, ArrowLeft } from 'lucide-react';
+import { Cloud, Code2, ShieldCheck, GitBranch, Image, Server, Bug, Monitor, ArrowLeft, ChevronDown } from 'lucide-react';
 import { useLocation } from 'wouter';
 import Sidebar from '@/components/Sidebar';
 import SummaryCards from '@/components/SummaryCards';
@@ -41,7 +41,7 @@ const PIPELINE_STAGES = [
   // { id: 'normalize', label: '정규화 + 스코어링', subtitle: '', icon: SlidersHorizontal },
   { id: 'image', label: '이미지 스캔', subtitle: 'Trivy', icon: Image },
   { id: 'deploy', label: '배포', subtitle: 'ECS Fargate', icon: Server },
-  { id: 'dast', label: 'DAST', subtitle: 'OWASP ZAP', icon: Bug },
+  { id: 'dast', label: 'DAST', subtitle: 'OWASP ZAP + Nuclei', icon: Bug },
 ];
 
 type PipelineStepState = 'pending' | 'running' | 'success' | 'failed';
@@ -87,6 +87,26 @@ function getStepState(
 }
 
 // CI LLM Gate 분석 결과 표시 컴포넌트
+// 아코디언 컴포넌트
+function Accordion({ title, badge, defaultOpen = false, children }: { title: React.ReactNode; badge?: React.ReactNode; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between p-5 hover:bg-muted/30 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {title}
+          {badge}
+        </div>
+        <ChevronDown size={18} className={`text-muted-foreground transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="px-5 pb-5">{children}</div>}
+    </div>
+  );
+}
+
 function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgments?: any[]; mode?: 'cross' | 'combined' }) {
   if (!gate) return null;
 
@@ -104,11 +124,11 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
   const decisionLabel = decision === 'pass' ? '통과' : decision === 'fail' ? '차단' : '검토 필요';
 
   return (
-    <div className="bg-card rounded-lg border border-border shadow-sm p-4 mb-4">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs font-bold bg-blue-600 text-white px-2 py-1 rounded">Gemini LLM</span>
-        <span className="text-sm font-semibold text-foreground">{mode === 'combined' ? '합산 검증 분석 결과' : 'CI 교차검증 분석 결과'}</span>
-        <span className={`text-xs font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
+    <div className="bg-card rounded-lg border border-border shadow-sm p-5 mb-4">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span>
+        <span className="text-base font-semibold text-foreground">{mode === 'combined' ? '합산 검증 분석 결과' : 'CI 교차검증 분석 결과'}</span>
+        <span className={`text-sm font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
       </div>
 
       {/* 매칭 통계 — judgments 기반 */}
@@ -161,48 +181,341 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
   );
 }
 
-// 스코어 트렌드 컴포넌트
-function ScoreTrend() {
-  const [trendData, setTrendData] = useState<Array<{ time: string; score: number; gate: string }>>([]);
+// 배포 상태 섹션 — cross/history 기반
+function DeploySection() {
+  const [deployData, setDeployData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    Promise.all([
+      fetchJson<any>('/cross/history').catch(() => ({ history: [] })),
+      fetchJson<any>('/cross/gates').catch(() => ({ gates: {}, judgments: {} })),
+    ]).then(([hRes, gatesData]) => {
+      const latest = (hRes.history || []).find((h: any) => h.commit_hash);
+      // judgments에서 통계
+      const jAll = gatesData.judgments || {};
+      const allJ = [...(jAll.sast || []), ...(jAll.sca || []), ...(jAll.iac || []),
+        ...((jAll.gate_result?.judgments?.sast) || []),
+        ...((jAll.gate_result?.judgments?.sca) || []),
+        ...((jAll.gate_result?.judgments?.iac) || [])];
+      const tp = allJ.filter((j: any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length;
+      const total = allJ.length;
+
+      setDeployData({
+        commit: latest?.commit_hash?.slice(0, 8) || '—',
+        gate: latest?.gate_decision || '—',
+        score: latest?.total_score || 0,
+        time: latest?.generated_at || '',
+        findings: total,
+        tp,
+        phase: 1,
+      });
+    }).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="text-center py-10 text-muted-foreground">로딩 중...</div>;
+  if (!deployData) return <div className="text-center py-10 text-muted-foreground">배포 데이터 없음</div>;
+
+  const isBlocked = deployData.gate === 'BLOCK';
+  const timeStr = deployData.time ? new Date(deployData.time).toLocaleString('ko-KR') : '—';
+
+  return (
+    <>
+      {/* 배포 판정 배너 */}
+      <div className={`rounded-lg border-2 p-5 ${isBlocked ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
+        <div className="flex items-center gap-3 mb-2">
+          <span className={`text-lg font-bold ${isBlocked ? 'text-red-700' : 'text-green-700'}`}>
+            {isBlocked ? '🔴 배포 차단' : '🟢 배포 완료'}
+          </span>
+        </div>
+        <div className={`text-sm ${isBlocked ? 'text-red-600' : 'text-green-600'}`}>
+          {isBlocked
+            ? `보안 게이트에서 차단됨 — 동시탐지 ${deployData.tp}건 포함 총 ${deployData.findings}건의 취약점 발견`
+            : '모든 보안 검사를 통과하여 배포가 완료되었습니다'}
+        </div>
+      </div>
+
+      {/* 파이프라인 상태 */}
+      <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+        <h3 className="text-sm font-bold text-foreground mb-4">파이프라인 실행 상태</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-muted rounded-lg p-4">
+            <div className="text-xs text-muted-foreground mb-1">최근 커밋</div>
+            <div className="text-sm font-mono font-bold text-foreground">{deployData.commit}</div>
+          </div>
+          <div className="bg-muted rounded-lg p-4">
+            <div className="text-xs text-muted-foreground mb-1">게이트 판정</div>
+            <div className={`text-sm font-bold ${isBlocked ? 'text-red-600' : 'text-green-600'}`}>{deployData.gate}</div>
+          </div>
+          <div className="bg-muted rounded-lg p-4">
+            <div className="text-xs text-muted-foreground mb-1">Phase</div>
+            <div className="text-sm font-bold text-foreground">Phase {deployData.phase} 완료</div>
+          </div>
+          <div className="bg-muted rounded-lg p-4">
+            <div className="text-xs text-muted-foreground mb-1">실행 시각</div>
+            <div className="text-xs font-mono text-foreground">{timeStr}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Phase 단계별 상태 */}
+      <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+        <h3 className="text-sm font-bold text-foreground mb-4">보안 검사 단계</h3>
+        <div className="space-y-3">
+          {[
+            { label: 'Phase 1 — SAST + SCA + IaC', status: '완료', ok: true },
+            { label: '교차검증 + LLM 판정', status: '완료', ok: true },
+            { label: '게이트 판정', status: deployData.gate, ok: !isBlocked },
+            { label: 'Docker 이미지 빌드', status: isBlocked ? '차단됨' : '완료', ok: !isBlocked },
+            { label: 'Phase 2 — DAST (ZAP + Nuclei)', status: isBlocked ? '미실행' : '완료', ok: !isBlocked },
+            { label: '배포 (ECS Fargate)', status: isBlocked ? '차단됨' : '완료', ok: !isBlocked },
+          ].map((step, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${step.ok ? 'bg-green-500' : 'bg-red-500'}`}>
+                {step.ok ? '✓' : '✕'}
+              </span>
+              <span className="text-sm text-foreground flex-1">{step.label}</span>
+              <span className={`text-xs font-semibold ${step.ok ? 'text-green-600' : 'text-red-600'}`}>{step.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// DAST 전체 섹션 — SAST/SCA와 동일 구조
+function DastFullSection({ gates, judgments }: { gates: Record<string, any>; judgments: Record<string, any[]> }) {
+  const [dastVulns, setDastVulns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchJson<any>('/vulns?category=DAST&limit=50').then(res => {
+      const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+      const vulns = (res?.vulnerabilities || [])
+        .filter((v: any) => (v.severity || '').toUpperCase() !== 'INFO')
+        .sort((a: any, b: any) => (_s[(a.severity || 'LOW').toUpperCase()] ?? 9) - (_s[(b.severity || 'LOW').toUpperCase()] ?? 9))
+        .map((v: any, i: number) => ({
+          id: `dast-${i}`,
+          severity: (v.severity || 'MEDIUM').toUpperCase(),
+          category: 'DAST',
+          tool: v.tool || 'zap',
+          file: v.url || v.file_path || '',
+          line: 0,
+          cwe: v.cwe_id || '',
+          description: v.title || v.description || '',
+          confidence: 'MED',
+          detectedAt: v.created_at || new Date().toISOString(),
+          _originalDesc: v.description || v.title || '',
+        }));
+      setDastVulns(vulns);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
+
+  const gate = gates['dast'];
+  const dastJ = judgments['dast'] || [];
+  const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  dastVulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
+
+  if (dastVulns.length === 0 && !gate) {
+    return <div className="bg-card rounded-lg border border-border p-8 text-center text-muted-foreground"><p className="text-sm">DAST 스캔 결과가 없습니다</p><p className="text-xs mt-1">CD 파이프라인에서 ZAP + Nuclei 스캔 후 표시됩니다</p></div>;
+  }
+
+  return (
+    <>
+      {/* Severity 카드 */}
+      <div className="grid grid-cols-4 gap-3">
+        {Object.entries(counts).map(([sev, count]) => {
+          const colors: Record<string, string> = { CRITICAL: 'text-red-600 bg-red-50 border-red-200', HIGH: 'text-orange-600 bg-orange-50 border-orange-200', MEDIUM: 'text-yellow-600 bg-yellow-50 border-yellow-200', LOW: 'text-blue-600 bg-blue-50 border-blue-200' };
+          const labels: Record<string, string> = { CRITICAL: '긴급 조치 필요', HIGH: '즉시 조치 필요', MEDIUM: '우선 검토 필요', LOW: '모니터링 권장' };
+          return <div key={sev} className={`rounded-lg border p-4 ${colors[sev]}`}><div className="text-xs font-semibold uppercase">{sev}</div><div className="text-2xl font-bold mt-1">{count}</div><div className="text-xs mt-1">{labels[sev]}</div></div>;
+        })}
+      </div>
+
+      {/* CI 교차검증 분석 결과 */}
+      {gate && (
+        <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">DAST 교차검증 분석 결과</span></>}>
+          {(() => {
+            const llm = gate?.llm_analysis || {};
+            const reasons = llm.reasons || [];
+            const zapCount = gate?.tool_summaries?.find((t: any) => t.tool === 'zap')?.summary?.total || 0;
+            const nucleiCount = gate?.tool_summaries?.find((t: any) => t.tool === 'nuclei')?.summary?.total || 0;
+            return (<div className="space-y-3 pt-3">
+              <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-foreground">{zapCount}</div><div className="text-sm text-muted-foreground">ZAP 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-foreground">{nucleiCount}</div><div className="text-sm text-muted-foreground">Nuclei 탐지</div></div></div>
+              {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
+              {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r: string, i: number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+              {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+            </div>);
+          })()}
+        </Accordion>
+      )}
+
+      {/* 동시 탐지 */}
+      {dastJ.length > 0 && (() => {
+        const confirmed = dastJ.filter((j: any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b);
+        return confirmed.length > 0 ? (
+          <Accordion title={<><span className="text-sm font-bold bg-red-600 text-white px-3 py-1 rounded">동시 탐지</span><span className="text-base font-semibold text-foreground">두 도구가 동시에 발견한 취약점</span></>}>
+            <div className="space-y-4 pt-3">{confirmed.map((j: any, i: number) => {
+              const sev = (j.reassessed_severity || j.severity || 'MEDIUM').toUpperCase();
+              const sc = sev === 'CRITICAL' ? 'bg-red-600' : sev === 'HIGH' ? 'bg-orange-600' : 'bg-yellow-600';
+              const fa = j.finding_a || {}; const fb = j.finding_b || {};
+              return <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-4"><div className="flex items-center gap-2 mb-1"><span className={`text-sm font-bold text-white px-2 py-0.5 rounded ${sc}`}>{sev}</span></div><div className="text-base font-semibold text-foreground mb-1">{j.title_ko || fa.title}</div><div className="grid grid-cols-2 gap-3 mb-3"><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700">✓ {fa.tool}</div></div><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700">✓ {fb.tool}</div></div></div>{j.risk_summary && <div className="bg-red-100 rounded-lg p-3 space-y-1"><div className="text-sm text-red-800"><strong>위험:</strong> {j.risk_summary}</div>{j.action_text && <div className="text-sm text-blue-800"><strong>수정 방법:</strong> {j.action_text}</div>}</div>}</div>;
+            })}</div>
+          </Accordion>
+        ) : null;
+      })()}
+
+      {/* 단독 탐지 */}
+      {dastJ.length > 0 && (() => {
+        const review = dastJ.filter((j: any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b));
+        const tools = gate?.tool_summaries || [];
+        const tA = tools[0]?.tool || 'zap'; const tB = tools[1]?.tool || 'nuclei';
+        const rA = review.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === tA.toLowerCase());
+        const rB = review.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === tB.toLowerCase());
+        return (rA.length > 0 || rB.length > 0) ? (
+          <Accordion title={<><span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span><span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span></>}>
+            <div className="grid grid-cols-2 gap-4 pt-3">
+              <div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length > 0 ? rA.map((j: any, i: number) => <div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity || j.severity || '') === 'CRITICAL' ? 'bg-red-600' : (j.reassessed_severity || j.severity || '') === 'HIGH' ? 'bg-orange-600' : 'bg-yellow-600'}`}>{(j.reassessed_severity || j.severity || 'MEDIUM').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko || j.finding_a?.title}</div></div>) : <div className="text-sm text-muted-foreground p-3">탐지 없음</div>}</div></div>
+              <div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length > 0 ? rB.map((j: any, i: number) => <div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity || j.severity || '') === 'CRITICAL' ? 'bg-red-600' : (j.reassessed_severity || j.severity || '') === 'HIGH' ? 'bg-orange-600' : 'bg-yellow-600'}`}>{(j.reassessed_severity || j.severity || 'MEDIUM').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko || j.finding_a?.title}</div></div>) : <div className="text-sm text-muted-foreground p-3">탐지 없음</div>}</div></div>
+            </div>
+          </Accordion>
+        ) : null;
+      })()}
+
+      {/* 도구별 탐지 현황 */}
+      <div className="bg-card rounded-lg border border-border shadow-sm p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">ZAP</span><span className="text-xs text-muted-foreground">총 {dastVulns.filter(v => v.tool === 'zap').length}건</span></div></div>
+          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Nuclei</span><span className="text-xs text-muted-foreground">총 {dastVulns.filter(v => v.tool === 'nuclei').length}건</span></div></div>
+        </div>
+      </div>
+
+      {/* 취약점 목록 */}
+      <VulnerabilityTable vulnerabilities={dastVulns} judgments={dastJ} category="DAST" />
+    </>
+  );
+}
+
+// (레거시) DAST 섹션
+function DastSection() {
+  const [dastVulns, setDastVulns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchJson<any>('/vulns?category=DAST&limit=50').then(res => {
+      const vulns = (res?.vulnerabilities || []).filter((v: any) => (v.severity || '').toUpperCase() !== 'INFO').map((v: any, i: number) => ({
+        id: `dast-${i}`,
+        severity: (v.severity || 'MEDIUM').toUpperCase(),
+        category: 'DAST',
+        tool: v.tool || 'zap',
+        file: v.file_path || v.cwe_id || '',
+        line: v.line_number || 0,
+        cwe: v.cwe_id || '',
+        description: v.title || v.description || '',
+        confidence: 'MED',
+        detectedAt: v.created_at || new Date().toISOString(),
+      }));
+      setDastVulns(vulns);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
+
+  const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+  dastVulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
+
+  const zapCount = dastVulns.filter(v => v.tool === 'zap').length;
+  const nucleiCount = dastVulns.filter(v => v.tool === 'nuclei').length;
+
+  return (
+    <>
+      {dastVulns.length === 0 ? (
+        <div className="bg-card rounded-lg border border-border p-8 text-center text-muted-foreground">
+          <p className="text-sm">DAST 스캔 결과가 없습니다</p>
+          <p className="text-xs mt-1">CD 파이프라인에서 ZAP + Nuclei 스캔 후 표시됩니다</p>
+        </div>
+      ) : (
+        <>
+          {/* Severity 카드 */}
+          <div className="grid grid-cols-5 gap-3">
+            {Object.entries(counts).filter(([k]) => k !== 'INFO').map(([sev, count]) => {
+              const colors: Record<string, string> = { CRITICAL: 'text-red-600 bg-red-50 border-red-200', HIGH: 'text-orange-600 bg-orange-50 border-orange-200', MEDIUM: 'text-yellow-600 bg-yellow-50 border-yellow-200', LOW: 'text-blue-600 bg-blue-50 border-blue-200' };
+              return (
+                <div key={sev} className={`rounded-lg border p-4 ${colors[sev] || ''}`}>
+                  <div className="text-xs font-semibold uppercase">{sev}</div>
+                  <div className="text-2xl font-bold mt-1">{count}</div>
+                </div>
+              );
+            })}
+            <div className="rounded-lg border p-4 text-muted-foreground bg-muted/50 border-border">
+              <div className="text-xs font-semibold uppercase">INFO</div>
+              <div className="text-2xl font-bold mt-1">{counts.INFO}</div>
+            </div>
+          </div>
+
+          {/* 도구별 현황 */}
+          <div className="bg-card rounded-lg border border-border shadow-sm p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-muted rounded-md p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold">ZAP</span>
+                  <span className="text-xs text-muted-foreground">총 {zapCount}건</span>
+                </div>
+              </div>
+              <div className="bg-muted rounded-md p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold">Nuclei</span>
+                  <span className="text-xs text-muted-foreground">총 {nucleiCount}건</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 취약점 목록 */}
+          <VulnerabilityTable vulnerabilities={dastVulns} category="DAST" />
+        </>
+      )}
+    </>
+  );
+}
+
+// 파이프라인 실행 이력 타임라인
+function PipelineTimeline() {
+  const [history, setHistory] = useState<Array<{ time: string; gate: string; commit: string }>>([]);
   useEffect(() => {
     fetchJson<{ history: any[] }>('/cross/history').then(res => {
       const data = (res?.history || [])
         .filter((h: any) => h.commit_hash)
         .slice(0, 10)
-        .reverse()
         .map((h: any) => ({
-          time: new Date(h.generated_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          score: h.total_score || 0,
+          time: new Date(h.generated_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
           gate: h.gate_decision || 'ALLOW',
+          commit: h.commit_hash?.slice(0, 7) || '',
         }));
-      setTrendData(data);
+      setHistory(data);
     }).catch(() => {});
   }, []);
 
-  if (trendData.length < 2) return null;
-  const maxScore = Math.max(...trendData.map(d => d.score), 100);
+  if (history.length === 0) return null;
 
   return (
     <div className="bg-card rounded-lg border border-border shadow-sm p-5">
-      <h3 className="text-sm font-bold text-foreground mb-1">스코어 트렌드</h3>
-      <p className="text-xs text-muted-foreground mb-4">최근 파이프라인 실행별 위험 점수 변화</p>
-      <div className="flex items-end gap-2 h-32">
-        {trendData.map((d, i) => {
-          const height = Math.max((d.score / maxScore) * 100, 4);
-          const color = d.gate === 'BLOCK' ? 'bg-red-500' : d.gate === 'REVIEW' ? 'bg-amber-500' : 'bg-green-500';
+      <h3 className="text-sm font-bold text-foreground mb-1">파이프라인 실행 이력</h3>
+      <p className="text-xs text-muted-foreground mb-4">최근 게이트 판정 변화</p>
+      <div className="space-y-2">
+        {history.map((h, i) => {
+          const icon = h.gate === 'BLOCK' ? '🔴' : h.gate === 'REVIEW' ? '🟡' : '🟢';
+          const color = h.gate === 'BLOCK' ? 'text-red-600' : h.gate === 'REVIEW' ? 'text-amber-600' : 'text-green-600';
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div className="text-[9px] text-muted-foreground font-mono">{d.score > 0 ? d.score.toFixed(0) : ''}</div>
-              <div className={`w-full rounded-t ${color}`} style={{ height: `${height}%` }} title={`${d.gate}: ${d.score}`} />
-              <div className="text-[8px] text-muted-foreground text-center leading-tight">{d.time}</div>
+            <div key={i} className="flex items-center gap-3 py-1.5 border-b border-border last:border-0">
+              <span className="text-base">{icon}</span>
+              <span className={`text-sm font-bold w-16 ${color}`}>{h.gate}</span>
+              <span className="text-xs text-muted-foreground flex-1">{h.time}</span>
+              <code className="text-xs bg-muted px-2 py-0.5 rounded font-mono text-foreground">{h.commit}</code>
             </div>
           );
         })}
-      </div>
-      <div className="flex gap-4 mt-3 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" /> BLOCK</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500" /> REVIEW</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-500" /> ALLOW</span>
       </div>
     </div>
   );
@@ -214,11 +527,11 @@ function GateCrossValidation({ gate, judgments }: { gate: any; judgments?: any[]
 
   // judgments 기반 동시탐지 / 단독탐지 분리
   // 동시탐지 = TRUE_POSITIVE + finding_b 있음 (두 도구 모두 탐지), 최대 3건
-  const confirmed = (judgments || []).filter((j: any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).slice(0, 3);
+  const _sevOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+  const confirmed = (judgments || [])
+    .filter((j: any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b)
+    .sort((a: any, b: any) => (_sevOrder[(a.reassessed_severity || a.severity || 'LOW').toUpperCase()] ?? 9) - (_sevOrder[(b.reassessed_severity || b.severity || 'LOW').toUpperCase()] ?? 9));
   const reviewNeeded = (judgments || []).filter((j: any) => {
-    const sev = (j.severity || '').toUpperCase();
-    if (!['CRITICAL', 'HIGH'].includes(sev)) return false;
-    // REVIEW_NEEDED이거나, TRUE_POSITIVE인데 finding_b 없는 것 (LLM이 단독으로 위험 판정)
     return j.judgement_code === 'REVIEW_NEEDED' || (j.judgement_code === 'TRUE_POSITIVE' && !j.finding_b);
   });
   const tools = gate?.tool_summaries || [];
@@ -239,7 +552,7 @@ function GateCrossValidation({ gate, judgments }: { gate: any; judgments?: any[]
           </div>
           <div className="space-y-4">
             {confirmed.map((j: any, i: number) => {
-              const sev = (j.severity || 'HIGH').toUpperCase();
+              const sev = (j.reassessed_severity || j.severity || 'HIGH').toUpperCase();
               const sevColor = sev === 'CRITICAL' ? 'bg-red-600' : sev === 'HIGH' ? 'bg-orange-600' : 'bg-yellow-600';
               const fa = j.finding_a || {};
               const fb = j.finding_b || {};
@@ -278,7 +591,7 @@ function GateCrossValidation({ gate, judgments }: { gate: any; judgments?: any[]
           <div className="flex items-center gap-2 mb-4">
             <span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span>
             <span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span>
-            <span className="text-sm text-amber-600">(Critical/High만)</span>
+            <span className="text-sm text-amber-600"></span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -514,6 +827,7 @@ export default function Home({ params }: HomeProps) {
               confidence: hasBoth ? 'HIGH' : (j.confidence || 'MED'),
               detectedAt: now,
               _judgment: j,
+              _originalDesc: fa.title || fa.description || '',
             } as any);
           }
 
@@ -528,6 +842,7 @@ export default function Home({ params }: HomeProps) {
               line: fb.line_number || 0,
               cwe: isSCA ? (fb.cve_id || cleanCwe(fb.cwe_id || '')) : cleanCwe(fb.cwe_id || ''),
               description: j.title_ko || fb.title || '',
+              _originalDesc: fb.title || fb.description || '',
               confidence: 'HIGH',
               detectedAt: now,
               _judgment: j,
@@ -650,7 +965,7 @@ export default function Home({ params }: HomeProps) {
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 py-6 space-y-5">
+        <div className="mx-auto w-full max-w-6xl px-6 sm:px-10 lg:px-16 py-6 space-y-5">
           {/* Section breadcrumb */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>대시보드</span>
@@ -750,9 +1065,9 @@ export default function Home({ params }: HomeProps) {
                                     'w-[120px] md:w-[130px] lg:w-[140px] xl:w-[150px] flex-shrink-0',
                                     'lg:px-2.5 lg:py-2',
                                   ].join(' '),
-                                'bg-background hover:bg-muted/40',
+                                isSelected ? 'bg-primary/10 border-primary' : 'bg-background hover:bg-muted/40',
                                 c.ring,
-                                isSelected ? 'ring-2 ring-primary/25 shadow-sm' : 'hover:shadow-sm',
+                                isSelected ? 'ring-2 ring-primary shadow-md' : 'hover:shadow-sm',
                               ].join(' ')}
                             >
                               <div className="relative flex-shrink-0">
@@ -819,53 +1134,24 @@ export default function Home({ params }: HomeProps) {
               {/* 1. Severity 카드 (맨 위) */}
               <VulnSeverityCards vulns={vulnerabilities.filter(v => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()))} />
 
-              {/* 2. LLM 합산 검증 분석 결과 */}
-              {(() => {
-                const gate = llmGates['iac'];
-                const llm = gate?.llm_analysis || {};
-                const reasons = llm.reasons || [];
-                const decision = (gate?.decision || 'review').toLowerCase();
-                const decisionColor = decision === 'pass' ? 'text-green-600 bg-green-50 border-green-200'
-                  : decision === 'fail' ? 'text-red-600 bg-red-50 border-red-200'
-                  : 'text-amber-600 bg-amber-50 border-amber-200';
-                const decisionLabel = decision === 'pass' ? '통과' : decision === 'fail' ? '차단' : '검토 필요';
-                return gate ? (
-                  <div className="bg-card rounded-lg border border-border shadow-sm p-5">
-                    <div className="flex items-center gap-2 mb-4">
-                      <span className="text-sm font-bold bg-blue-600 text-white px-2 py-1 rounded">Gemini LLM</span>
-                      <span className="text-base font-semibold text-foreground">합산 검증 분석 결과</span>
-                      <span className={`text-sm font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
-                    </div>
-                    {llm.summary && (
-                      <div className="bg-muted rounded-lg p-4 mb-4">
-                        <div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div>
-                        <div className="text-sm text-foreground leading-relaxed">{llm.summary}</div>
-                      </div>
-                    )}
-                    {reasons.length > 0 && (
-                      <div className="space-y-2 mb-3">
-                        <div className="text-sm font-semibold text-foreground">판정 근거</div>
-                        {reasons.map((r: string, i: number) => (
-                          <div key={i} className="text-sm text-muted-foreground flex gap-2">
-                            <span className="text-foreground font-bold">•</span> {r}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {llm.provider_notes && (
-                      <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>
-                    )}
-                  </div>
-                ) : null;
-              })()}
+              {/* 2. LLM 합산 검증 분석 결과 — 아코디언 */}
+              <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">합산 검증 분석 결과</span></>}>
+                {(() => {
+                  const gate = llmGates['iac'];
+                  const llm = gate?.llm_analysis || {};
+                  const reasons = llm.reasons || [];
+                  if (!gate) return <div className="text-sm text-muted-foreground pt-3">데이터 없음</div>;
+                  return (<div className="space-y-3 pt-3">
+                    {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
+                    {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r: string, i: number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+                    {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+                  </div>);
+                })()}
+              </Accordion>
 
-              {/* 3. 합산 검증 카드 — 심각도 순 상위 5건 */}
+              {/* 3. 합산 검증 카드 — 심각도 순 상위 5건 — 아코디언 */}
               {(llmJudgments['iac'] && llmJudgments['iac'].length > 0) ? (
-              <div className="bg-card rounded-lg border border-border shadow-sm p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">합산 검증</span>
-                  <span className="text-base font-semibold text-foreground">tfsec + Checkov 통합 점검 결과</span>
-                </div>
+              <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">합산 검증</span><span className="text-base font-semibold text-foreground">tfsec + Checkov 통합 점검 결과</span></>}>
                 {(() => {
                   const sevOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
                   const iacVulns = vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()));
@@ -923,7 +1209,7 @@ export default function Home({ params }: HomeProps) {
                     </div>
                   );
                 })()}
-              </div>
+              </Accordion>
               ) : (
               <div className="bg-card rounded-lg border border-border p-6 text-center text-muted-foreground text-sm">
                 IaC LLM 판정 데이터가 없습니다. 다음 CI 실행 후 표시됩니다.
@@ -945,22 +1231,46 @@ export default function Home({ params }: HomeProps) {
           )}
 
           {activeSection === 'sast' && (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <VulnSeverityCards vulns={vulnerabilities.filter(v => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))} />
-              <LlmGateSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} mode="cross" />
-              <GateCrossValidation gate={llmGates['sast']} judgments={llmJudgments['sast']} />
+              <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">CI 교차검증 분석 결과</span></>}>
+                {(() => { const gate = llmGates['sast']; const llm = gate?.llm_analysis || {}; const reasons = llm.reasons || []; const jAll = llmJudgments['sast'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length; const jRV = jAll.length - jTP; return (<div className="space-y-3 pt-3">
+                  <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
+                  {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
+                  {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r:string,i:number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+                  {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+                </div>); })()}
+              </Accordion>
+              <Accordion title={<><span className="text-sm font-bold bg-red-600 text-white px-3 py-1 rounded">동시 탐지</span><span className="text-base font-semibold text-foreground">두 도구가 동시에 발견한 취약점</span></>}>
+                {(() => { const jAll = llmJudgments['sast'] || []; const _so: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; const confirmed = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).sort((a:any,b:any) => (_so[(a.reassessed_severity||a.severity||'LOW').toUpperCase()]??9) - (_so[(b.reassessed_severity||b.severity||'LOW').toUpperCase()]??9)); return confirmed.length > 0 ? <div className="space-y-4 pt-3">{confirmed.map((j:any,i:number) => { const sev = (j.reassessed_severity||j.severity||'HIGH').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':'bg-yellow-600'; const fa=j.finding_a||{}; const fb=j.finding_b||{}; return <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-4"><div className="flex items-center gap-2 mb-1"><span className={`text-sm font-bold text-white px-2 py-0.5 rounded ${sc}`}>{sev}</span>{fa.cwe_id && <span className="text-sm font-bold text-blue-700">{fa.cwe_id}</span>}</div><div className="text-base font-semibold text-foreground mb-1">{j.title_ko}</div>{fa.file_path && <div className="text-sm text-muted-foreground mb-3">📁 {fa.file_path}{fa.line_number?`:${fa.line_number}`:''}</div>}<div className="grid grid-cols-2 gap-3 mb-3"><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fa.tool} 탐지</div><div className="text-xs text-muted-foreground">{fa.cwe_id||''}</div></div><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fb.tool} 탐지</div><div className="text-xs text-muted-foreground">{fb.cwe_id||''}</div></div></div><div className="bg-red-100 rounded-lg p-3 space-y-1">{j.risk_summary && <div className="text-sm text-red-800"><strong>위험:</strong> {j.risk_summary}</div>}{j.action_text && <div className="text-sm text-blue-800"><strong>수정 방법:</strong> {j.action_text}</div>}</div></div>; })}</div> : <div className="text-sm text-muted-foreground pt-3">동시 탐지 항목 없음</div>; })()}
+              </Accordion>
+              <Accordion title={<><span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span><span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span></>} defaultOpen={false}>
+                {(() => { const jAll = llmJudgments['sast'] || []; const review = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b) ); const tools = llmGates['sast']?.tool_summaries || []; const tA = tools[0]?.tool || 'semgrep'; const tB = tools[1]?.tool || 'sonarqube'; const rA = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tA.toLowerCase()).slice(0,5); const rB = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tB.toLowerCase()).slice(0,5); return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div></div>; })()}
+              </Accordion>
               <GateToolSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sast']} category="SAST" />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))} judgments={llmJudgments['sast']} category="SAST" />
             </div>
           )}
 
           {activeSection === 'sca' && (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))} />
-              <LlmGateSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} mode="cross" />
-              <GateCrossValidation gate={llmGates['sca']} judgments={llmJudgments['sca']} />
+              <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">CI 교차검증 분석 결과</span></>}>
+                {(() => { const gate = llmGates['sca']; const llm = gate?.llm_analysis || {}; const reasons = llm.reasons || []; const jAll = llmJudgments['sca'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length; const jRV = jAll.length - jTP; return (<div className="space-y-3 pt-3">
+                  <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
+                  {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
+                  {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r:string,i:number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+                  {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+                </div>); })()}
+              </Accordion>
+              <Accordion title={<><span className="text-sm font-bold bg-red-600 text-white px-3 py-1 rounded">동시 탐지</span><span className="text-base font-semibold text-foreground">두 도구가 동시에 발견한 취약점</span></>}>
+                {(() => { const jAll = llmJudgments['sca'] || []; const _so: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; const confirmed = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).sort((a:any,b:any) => (_so[(a.reassessed_severity||a.severity||'LOW').toUpperCase()]??9) - (_so[(b.reassessed_severity||b.severity||'LOW').toUpperCase()]??9)); return confirmed.length > 0 ? <div className="space-y-4 pt-3">{confirmed.map((j:any,i:number) => { const sev = (j.reassessed_severity||j.severity||'HIGH').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':'bg-yellow-600'; const fa=j.finding_a||{}; const fb=j.finding_b||{}; return <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-4"><div className="flex items-center gap-2 mb-1"><span className={`text-sm font-bold text-white px-2 py-0.5 rounded ${sc}`}>{sev}</span>{(fa.cve_id||fa.cwe_id) && <span className="text-sm font-bold text-blue-700">{fa.cve_id||fa.cwe_id}</span>}</div><div className="text-base font-semibold text-foreground mb-1">{j.title_ko}</div>{fa.file_path && <div className="text-sm text-muted-foreground mb-3">📁 {fa.file_path}</div>}<div className="grid grid-cols-2 gap-3 mb-3"><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fa.tool} 탐지</div></div><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fb.tool} 탐지</div></div></div><div className="bg-red-100 rounded-lg p-3 space-y-1">{j.risk_summary && <div className="text-sm text-red-800"><strong>위험:</strong> {j.risk_summary}</div>}{j.action_text && <div className="text-sm text-blue-800"><strong>수정 방법:</strong> {j.action_text}</div>}</div></div>; })}</div> : <div className="text-sm text-muted-foreground pt-3">동시 탐지 항목 없음</div>; })()}
+              </Accordion>
+              <Accordion title={<><span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span><span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span></>} defaultOpen={false}>
+                {(() => { const jAll = llmJudgments['sca'] || []; const review = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b) ); const tools = llmGates['sca']?.tool_summaries || []; const tA = tools[0]?.tool || 'trivy'; const tB = tools[1]?.tool || 'depcheck'; const rA = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tA.toLowerCase()).slice(0,5); const rB = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tB.toLowerCase()).slice(0,5); return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div></div>; })()}
+              </Accordion>
               <GateToolSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sca']} category="SCA" />
+              <VulnerabilityTable vulnerabilities={(() => { const _s: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; return vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).sort((a,b) => (_s[a.severity]??9) - (_s[b.severity]??9)); })()} judgments={llmJudgments['sca']} category="SCA" />
             </div>
           )}
 
@@ -971,8 +1281,8 @@ export default function Home({ params }: HomeProps) {
                 // judgments 기반 전체 통계
                 const allJ = [...(llmJudgments['sast'] || []), ...(llmJudgments['sca'] || []), ...(llmJudgments['iac'] || [])];
                 const totalConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length;
-                const criticalConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.severity || '').toUpperCase() === 'CRITICAL').length;
-                const highConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.severity || '').toUpperCase() === 'HIGH').length;
+                const criticalConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.reassessed_severity || j.severity || '').toUpperCase() === 'CRITICAL').length;
+                const highConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.reassessed_severity || j.severity || '').toUpperCase() === 'HIGH').length;
                 const isBlock = criticalConfirmed > 0 || totalConfirmed >= 3;
                 const reason = criticalConfirmed > 0
                   ? `CRITICAL 동시탐지 ${criticalConfirmed}건 발견 → 즉시 수정 필요`
@@ -1067,7 +1377,7 @@ export default function Home({ params }: HomeProps) {
               })()}
 
               {/* 스코어 트렌드 — cross/history 기반 */}
-              <ScoreTrend />
+              <PipelineTimeline />
             </div>
           )}
 
@@ -1092,48 +1402,13 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'deploy' && (
             <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {/* 교차 검증 결과 테이블 */}
-              {(() => {
-                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
-                  item.tools.some(tool => ['Semgrep', 'Bandit', 'ESLint Security'].includes(tool))
-                );
-
-                return <StageCrossAnalysis items={stageCrossAnalysis} />;
-              })()}
-              <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-                <h3 className="text-sm font-semibold text-foreground mb-2">배포 상태 (ECS Fargate)</h3>
-                <p className="text-xs text-muted-foreground mb-4">최근 배포 로그 및 서비스 상태를 확인합니다.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="rounded-md border border-border p-4">
-                    <div className="text-xs text-muted-foreground mb-2">서비스 상태</div>
-                    <div className="text-sm font-semibold">Running</div>
-                    <div className="text-xs text-muted-foreground mt-1">모든 태스크가 정상 실행 중입니다.</div>
-                  </div>
-                  <div className="rounded-md border border-border p-4">
-                    <div className="text-xs text-muted-foreground mb-2">최근 배포</div>
-                    <div className="text-sm font-semibold">v2.4.1</div>
-                    <div className="text-xs text-muted-foreground mt-1">약 5분 전 완료</div>
-                  </div>
-                </div>
-              </div>
+              <DeploySection />
             </div>
           )}
 
           {activeSection === 'dast' && (
-            <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {/* 교차 검증 결과 테이블 */}
-              {(() => {
-                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
-                  item.tools.some(tool => ['OWASP ZAP'].includes(tool))
-                );
-
-                return <StageCrossAnalysis items={stageCrossAnalysis} />;
-              })()}
-              <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => ['zap', 'owasp zap'].includes(v.tool?.toLowerCase()))}
-              />
+            <div className="space-y-4">
+              <DastFullSection gates={llmGates} judgments={llmJudgments} />
             </div>
           )}
 

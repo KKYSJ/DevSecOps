@@ -112,7 +112,7 @@ def main():
         print("BACKEND_URL 미설정, 스킵")
         return
 
-    stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC"}
+    stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST"}
     all_judgments = {}
 
     for stage, category in stages.items():

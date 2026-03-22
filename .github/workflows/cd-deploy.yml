@@ -216,6 +216,87 @@ jobs:
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
       concurrency_suffix: staging-${{ needs.resolve-context.outputs.branch_name }}
 
+  # ── 이미지 스캔 (Trivy) ─────────────────────────────────
+  image-scan:
+    needs:
+      - resolve-context
+      - deploy-staging-fastapi
+      - deploy-staging-node
+      - deploy-staging-spring
+      - deploy-staging-frontend
+    if: always() && needs.resolve-context.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ap-northeast-2
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Scan FastAPI image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest"
+          format: json
+          output: trivy-image-fastapi.json
+          severity: CRITICAL,HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Scan Node image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest"
+          format: json
+          output: trivy-image-node.json
+          severity: CRITICAL,HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Scan Spring image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest"
+          format: json
+          output: trivy-image-spring.json
+          severity: CRITICAL,HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Upload image scan results to SecureFlow
+        if: env.BACKEND_URL != ''
+        run: |
+          COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
+          for service in fastapi node spring; do
+            FILE="trivy-image-${service}.json"
+            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
+              echo "이미지 스캔 업로드: ${service}"
+              jq -n --arg tool "trivy-image" \
+                    --arg commit "$COMMIT_SHA" \
+                    --arg project "secureflow" \
+                    --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                    --slurpfile raw "$FILE" \
+                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
+              | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -H "Content-Type: application/json" \
+                -d @- || echo "  전송 실패"
+            fi
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan-results
+          path: trivy-image-*.json
+        continue-on-error: true
+
   service-dast-zap:
     needs:
       - resolve-context
