@@ -178,49 +178,7 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
         </div>
       )}
 
-      {/* 개별 취약점 LLM 판정 (한국어) */}
-      {judgments && judgments.length > 0 && (
-        <div className="mt-3 border-t border-border pt-3">
-          <div className="text-xs font-semibold text-foreground mb-2">개별 취약점 LLM 판정</div>
-          <div className="space-y-2">
-            {judgments.map((j: any, i: number) => {
-              const jColor = j.judgement_code === 'TRUE_POSITIVE' ? 'bg-red-50 border-red-200'
-                : j.judgement_code === 'FALSE_POSITIVE' ? 'bg-green-50 border-green-200'
-                : 'bg-amber-50 border-amber-200';
-              const jLabel = j.judgement_code === 'TRUE_POSITIVE' ? '실제 취약점'
-                : j.judgement_code === 'FALSE_POSITIVE' ? '오탐'
-                : '검토 필요';
-              return (
-                <div key={i} className={`rounded-md border p-3 ${jColor}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                      j.judgement_code === 'TRUE_POSITIVE' ? 'bg-red-600 text-white' :
-                      j.judgement_code === 'FALSE_POSITIVE' ? 'bg-green-600 text-white' :
-                      'bg-amber-600 text-white'
-                    }`}>{jLabel}</span>
-                    <span className={`text-xs font-bold ${
-                      j.severity === 'CRITICAL' ? 'text-red-700' :
-                      j.severity === 'HIGH' ? 'text-orange-700' :
-                      'text-yellow-700'
-                    }`}>{j.severity}</span>
-                    <span className="text-xs text-muted-foreground">신뢰도 {j.confidence === 'HIGH' ? '90%' : j.confidence === 'MED' ? '60%' : '30%'}</span>
-                  </div>
-                  {j.title_ko && <div className="text-xs font-semibold text-foreground">{j.title_ko}</div>}
-                  {j.risk_summary && <div className="text-xs text-muted-foreground mt-1">{j.risk_summary}</div>}
-                  {j.reason && <div className="text-xs text-muted-foreground mt-1"><strong>근거:</strong> {j.reason}</div>}
-                  {j.action_text && <div className="text-xs text-blue-700 mt-1"><strong>수정 방법:</strong> {j.action_text}</div>}
-                  {j.finding_a?.file_path && (
-                    <div className="text-xs text-muted-foreground mt-1">
-                      📁 {j.finding_a.file_path}{j.finding_a.line_number ? `:${j.finding_a.line_number}` : ''}
-                      {j.finding_a.cwe_id && <span className="ml-2 text-blue-600">{j.finding_a.cwe_id}</span>}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* 개별 취약점 LLM 판정은 동시탐지/단독탐지 카드에 통합됨 */}
     </div>
   );
 }
@@ -816,7 +774,7 @@ export default function Home({ params }: HomeProps) {
               </div>
               )}
               <GateSeverityCards gate={llmGates['iac']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase())).slice(0, 10)} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['iac']} category="IaC" />
             </div>
           )}
 
@@ -826,7 +784,7 @@ export default function Home({ params }: HomeProps) {
               <GateCrossValidation gate={llmGates['sast']} judgments={llmJudgments['sast']} />
               <GateSeverityCards gate={llmGates['sast']} />
               <GateToolSummary gate={llmGates['sast']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 10)} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sast']} category="SAST" />
             </div>
           )}
 
@@ -836,7 +794,7 @@ export default function Home({ params }: HomeProps) {
               <GateCrossValidation gate={llmGates['sca']} judgments={llmJudgments['sca']} />
               <GateSeverityCards gate={llmGates['sca']} />
               <GateToolSummary gate={llmGates['sca']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 10)} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sca']} category="SCA" />
             </div>
           )}
 
