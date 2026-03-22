@@ -214,8 +214,8 @@ function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
 function GateCrossValidation({ gate, judgments }: { gate: any; judgments?: any[] }) {
   if (!gate && (!judgments || judgments.length === 0)) return null;
 
-  // judgments 기반 동시탐지 / 단독탐지 분리
-  const confirmed = (judgments || []).filter((j: any) => j.judgement_code === 'TRUE_POSITIVE');
+  // judgments 기반 동시탐지 / 단독탐지 분리 (동시탐지 3건, 단독 각 5건)
+  const confirmed = (judgments || []).filter((j: any) => j.judgement_code === 'TRUE_POSITIVE').slice(0, 3);
   const reviewNeeded = (judgments || []).filter((j: any) =>
     j.judgement_code === 'REVIEW_NEEDED' && ['CRITICAL', 'HIGH'].includes((j.severity || '').toUpperCase())
   );
@@ -251,12 +251,12 @@ function GateCrossValidation({ gate, judgments }: { gate: any; judgments?: any[]
                   {fa.file_path && <div className="text-sm text-muted-foreground mb-3">📁 {fa.file_path}{fa.line_number ? `:${fa.line_number}` : ''}</div>}
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div className="bg-white rounded-lg border border-red-100 p-3">
-                      <div className="text-sm font-bold text-red-700 mb-1">✓ {fa.tool}</div>
-                      <div className="text-sm text-foreground">{(fa.title || '').slice(0, 100)}</div>
+                      <div className="text-sm font-bold text-red-700 mb-1">✓ {fa.tool} 탐지</div>
+                      <div className="text-xs text-muted-foreground">{fa.rule_id || fa.cwe_id || ''}</div>
                     </div>
                     <div className="bg-white rounded-lg border border-red-100 p-3">
-                      <div className="text-sm font-bold text-red-700 mb-1">✓ {fb.tool || toolBName}</div>
-                      <div className="text-sm text-foreground">{(fb.title || '').slice(0, 100)}</div>
+                      <div className="text-sm font-bold text-red-700 mb-1">✓ {fb.tool || toolBName} 탐지</div>
+                      <div className="text-xs text-muted-foreground">{fb.rule_id || fb.cwe_id || ''}</div>
                     </div>
                   </div>
                   <div className="bg-red-100 rounded-lg p-3 space-y-1">
@@ -738,10 +738,44 @@ export default function Home({ params }: HomeProps) {
           {activeSection === 'iac' && (
             <div className="space-y-5">
               <LlmGateSummary gate={llmGates['iac']} judgments={llmJudgments['iac']} />
-              <GateCrossValidation gate={llmGates['iac']} judgments={llmJudgments['iac']} />
+              {/* IaC는 합산 검증 — tfsec/checkov 각각 5건씩 */}
+              <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">합산 검증</span>
+                  <span className="text-base font-semibold text-foreground">tfsec + Checkov 통합 점검 결과</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">tfsec ({vulnerabilities.filter(v => v.tool?.toLowerCase() === 'tfsec').length}건 중 상위 5건)</div>
+                    <div className="space-y-2">
+                      {vulnerabilities.filter(v => v.tool?.toLowerCase() === 'tfsec').slice(0, 5).map((v, i) => (
+                        <div key={i} className="bg-blue-50 border border-blue-100 rounded p-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${v.severity === 'CRITICAL' ? 'bg-red-600' : v.severity === 'HIGH' ? 'bg-orange-600' : v.severity === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500'}`}>{v.severity}</span>
+                          </div>
+                          <div className="text-sm font-medium text-foreground">{v.description?.slice(0, 80)}</div>
+                          {v.file && <div className="text-xs text-muted-foreground mt-1">📁 {v.file}{v.line ? `:${v.line}` : ''}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">Checkov ({vulnerabilities.filter(v => v.tool?.toLowerCase() === 'checkov').length}건 중 상위 5건)</div>
+                    <div className="space-y-2">
+                      {vulnerabilities.filter(v => v.tool?.toLowerCase() === 'checkov').slice(0, 5).map((v, i) => (
+                        <div key={i} className="bg-blue-50 border border-blue-100 rounded p-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${v.severity === 'CRITICAL' ? 'bg-red-600' : v.severity === 'HIGH' ? 'bg-orange-600' : v.severity === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500'}`}>{v.severity}</span>
+                          </div>
+                          <div className="text-sm font-medium text-foreground">{v.description?.slice(0, 80)}</div>
+                          {v.file && <div className="text-xs text-muted-foreground mt-1">📁 {v.file}{v.line ? `:${v.line}` : ''}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
               <GateSeverityCards gate={llmGates['iac']} />
-              <GateToolSummary gate={llmGates['iac']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase())).slice(0, 20)} />
             </div>
           )}
 
