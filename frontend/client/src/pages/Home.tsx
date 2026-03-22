@@ -819,7 +819,10 @@ export default function Home({ params }: HomeProps) {
               </div>
               )}
 
-              {/* 3. 취약점 목록 — tfsec + checkov 둘 다 */}
+              {/* 3. Severity 카드 */}
+              <GateSeverityCards gate={llmGates['iac']} />
+
+              {/* 4. 취약점 목록 — tfsec + checkov 둘 다 */}
               <VulnerabilityTable
                 vulnerabilities={[
                   ...vulnerabilities.filter((v) => v.tool?.toLowerCase() === 'tfsec').slice(0, 5),
