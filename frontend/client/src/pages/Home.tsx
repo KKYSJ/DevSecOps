@@ -415,7 +415,9 @@ export default function Home({ params }: HomeProps) {
           tool: tools[0] || 'unknown',
           file: finding_a.file_path || finding_b.file_path || '',
           line: finding_a.line_number || finding_b.line_number || 0,
-          cwe: finding_a.cwe_id || finding_b.cwe_id || '',
+          cwe: (finding_a.category === 'SCA' || finding_b.category === 'SCA')
+            ? (finding_a.cve_id || finding_b.cve_id || finding_a.cwe_id || finding_b.cwe_id || '')
+            : (finding_a.cwe_id || finding_b.cwe_id || ''),
           description: f.title_ko || finding_a.title || finding_b.title || '',
           confidence: f.confidence || 'MED',
           detectedAt: report.generated_at || new Date().toISOString(),
@@ -429,7 +431,9 @@ export default function Home({ params }: HomeProps) {
           tools,
           file: finding_a.file_path || finding_b.file_path || '',
           line: finding_a.line_number || finding_b.line_number || 0,
-          cwe: finding_a.cwe_id || finding_b.cwe_id || '',
+          cwe: (finding_a.category === 'SCA' || finding_b.category === 'SCA')
+            ? (finding_a.cve_id || finding_b.cve_id || finding_a.cwe_id || finding_b.cwe_id || '')
+            : (finding_a.cwe_id || finding_b.cwe_id || ''),
           description: f.title_ko || finding_a.title || '',
           confidence: f.confidence || 'MED',
           detectionCount: tools.length,
