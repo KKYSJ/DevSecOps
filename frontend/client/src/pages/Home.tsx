@@ -732,7 +732,10 @@ export default function Home({ params }: HomeProps) {
           {/* Stage content */}
           {activeSection === 'iac' && (
             <div className="space-y-5">
-              {/* 1. LLM 합산 검증 분석 결과 (맨 위) */}
+              {/* 1. Severity 카드 (맨 위) */}
+              <GateSeverityCards gate={llmGates['iac']} />
+
+              {/* 2. LLM 합산 검증 분석 결과 */}
               {(() => {
                 const gate = llmGates['iac'];
                 const llm = gate?.llm_analysis || {};
@@ -772,7 +775,7 @@ export default function Home({ params }: HomeProps) {
                 ) : null;
               })()}
 
-              {/* 2. 합산 검증 카드 — judgments 기반 한국어 */}
+              {/* 3. 합산 검증 카드 — 심각도 순 상위 5건 */}
               {(llmJudgments['iac'] && llmJudgments['iac'].length > 0) ? (
               <div className="bg-card rounded-lg border border-border shadow-sm p-5">
                 <div className="flex items-center gap-2 mb-4">
@@ -780,9 +783,11 @@ export default function Home({ params }: HomeProps) {
                   <span className="text-base font-semibold text-foreground">tfsec + Checkov 통합 점검 결과</span>
                 </div>
                 {(() => {
+                  const sevOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
                   const iacJ = llmJudgments['iac'] || [];
-                  const tfsecJ = iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'tfsec').slice(0, 5);
-                  const checkovJ = iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'checkov').slice(0, 5);
+                  const sortBySev = (items: any[]) => [...items].sort((a, b) => (sevOrder[(a.severity || 'LOW').toUpperCase()] ?? 9) - (sevOrder[(b.severity || 'LOW').toUpperCase()] ?? 9));
+                  const tfsecJ = sortBySev(iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'tfsec')).slice(0, 5);
+                  const checkovJ = sortBySev(iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'checkov')).slice(0, 5);
                   const renderIacItem = (j: any, i: number) => {
                     const sev = (j.severity || 'MEDIUM').toUpperCase();
                     const sevColor = sev === 'CRITICAL' ? 'bg-red-600' : sev === 'HIGH' ? 'bg-orange-600' : sev === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500';
@@ -819,15 +824,14 @@ export default function Home({ params }: HomeProps) {
               </div>
               )}
 
-              {/* 3. Severity 카드 */}
-              <GateSeverityCards gate={llmGates['iac']} />
-
-              {/* 4. 취약점 목록 — tfsec + checkov 둘 다 */}
+              {/* 4. 취약점 목록 — 전체, 심각도 순, CWE 없음 */}
               <VulnerabilityTable
-                vulnerabilities={[
-                  ...vulnerabilities.filter((v) => v.tool?.toLowerCase() === 'tfsec').slice(0, 5),
-                  ...vulnerabilities.filter((v) => v.tool?.toLowerCase() === 'checkov').slice(0, 5),
-                ]}
+                vulnerabilities={(() => {
+                  const sevOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                  return vulnerabilities
+                    .filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()))
+                    .sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9));
+                })()}
                 judgments={llmJudgments['iac']}
                 category="IaC"
               />
