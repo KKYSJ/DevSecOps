@@ -187,11 +187,15 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
 function GateCrossValidation({ gate, judgments }: { gate: any; judgments?: any[] }) {
   if (!gate && (!judgments || judgments.length === 0)) return null;
 
-  // judgments 기반 동시탐지 / 단독탐지 분리 (동시탐지 3건, 단독 각 5건)
-  const confirmed = (judgments || []).filter((j: any) => j.judgement_code === 'TRUE_POSITIVE').slice(0, 3);
-  const reviewNeeded = (judgments || []).filter((j: any) =>
-    j.judgement_code === 'REVIEW_NEEDED' && ['CRITICAL', 'HIGH'].includes((j.severity || '').toUpperCase())
-  );
+  // judgments 기반 동시탐지 / 단독탐지 분리
+  // 동시탐지 = TRUE_POSITIVE + finding_b 있음 (두 도구 모두 탐지), 최대 3건
+  const confirmed = (judgments || []).filter((j: any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).slice(0, 3);
+  const reviewNeeded = (judgments || []).filter((j: any) => {
+    const sev = (j.severity || '').toUpperCase();
+    if (!['CRITICAL', 'HIGH'].includes(sev)) return false;
+    // REVIEW_NEEDED이거나, TRUE_POSITIVE인데 finding_b 없는 것 (LLM이 단독으로 위험 판정)
+    return j.judgement_code === 'REVIEW_NEEDED' || (j.judgement_code === 'TRUE_POSITIVE' && !j.finding_b);
+  });
   const tools = gate?.tool_summaries || [];
   const toolAName = tools[0]?.tool || '도구A';
   const toolBName = tools[1]?.tool || '도구B';
