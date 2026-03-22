@@ -370,13 +370,12 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
   const gate = gates['dast'];
   const dastJ = judgments['dast'] || [];
 
-  // judgments 기반 취약점 목록 (있으면 우선 사용)
+  // judgments + vulns API 합치기
   const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-  const dastVulns = dastJ.length > 0
-    ? dastJ.map((j: any, i: number) => {
+  const jVulns = dastJ.map((j: any, i: number) => {
         const fa = j.finding_a || {};
         return {
-          id: `dast-${i}`,
+          id: `dast-j-${i}`,
           severity: (j.reassessed_severity || j.severity || fa.severity || 'MEDIUM').toUpperCase(),
           category: 'DAST',
           tool: fa.tool || 'zap',
@@ -389,8 +388,12 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
           _originalDesc: ((fa.description || fa.title || '') as string).replace(/<[^>]*>/g, ''),
           _judgment: j,
         };
-      }).sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9))
-    : dastVulnsApi;
+      }).sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
+
+  // judgments에 없는 vulns API 데이터 추가 (nuclei 등)
+  const jTools = new Set(jVulns.map((v: any) => `${v.tool}|${v.description}`));
+  const extraVulns = dastVulnsApi.filter(v => !jTools.has(`${v.tool}|${v.description}`));
+  const dastVulns = [...jVulns, ...extraVulns].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
 
   if (loading && dastJ.length === 0) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
   const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
