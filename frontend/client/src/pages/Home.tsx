@@ -87,7 +87,7 @@ function getStepState(
 }
 
 // CI LLM Gate 분석 결과 표시 컴포넌트
-function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
+function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgments?: any[]; mode?: 'cross' | 'combined' }) {
   if (!gate) return null;
 
   const llm = gate.llm_analysis || {};
@@ -107,33 +107,48 @@ function LlmGateSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
     <div className="bg-card rounded-lg border border-border shadow-sm p-4 mb-4">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xs font-bold bg-blue-600 text-white px-2 py-1 rounded">Gemini LLM</span>
-        <span className="text-sm font-semibold text-foreground">CI 교차검증 분석 결과</span>
+        <span className="text-sm font-semibold text-foreground">{mode === 'combined' ? '합산 검증 분석 결과' : 'CI 교차검증 분석 결과'}</span>
         <span className={`text-xs font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
       </div>
 
-      {/* 매칭 통계 */}
-      <div className="grid grid-cols-3 gap-3 mb-3">
-        <div className="bg-muted rounded-md p-2 text-center">
-          <div className="text-lg font-bold text-green-600">{matching.matched_count || 0}</div>
-          <div className="text-xs text-muted-foreground">동시 탐지</div>
+      {/* 매칭 통계 — 교차검증 모드에서만 표시 */}
+      {mode === 'cross' && (
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="bg-muted rounded-md p-2 text-center">
+            <div className="text-lg font-bold text-green-600">{matching.matched_count || 0}</div>
+            <div className="text-xs text-muted-foreground">동시 탐지</div>
+          </div>
+          <div className="bg-muted rounded-md p-2 text-center">
+            <div className="text-lg font-bold text-amber-600">{matching.mismatch_count || 0}</div>
+            <div className="text-xs text-muted-foreground">단독 탐지</div>
+          </div>
+          <div className="bg-muted rounded-md p-2 text-center">
+            <div className="text-lg font-bold text-foreground">{combined.total || 0}</div>
+            <div className="text-xs text-muted-foreground">전체</div>
+          </div>
         </div>
-        <div className="bg-muted rounded-md p-2 text-center">
-          <div className="text-lg font-bold text-amber-600">{matching.mismatch_count || 0}</div>
-          <div className="text-xs text-muted-foreground">단독 탐지</div>
+      )}
+
+      {/* 합산 검증 모드: 전체 건수만 표시 */}
+      {mode === 'combined' && (
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-muted rounded-md p-2 text-center">
+            <div className="text-lg font-bold text-foreground">{combined.total || 0}</div>
+            <div className="text-xs text-muted-foreground">총 탐지 건수</div>
+          </div>
+          <div className="bg-muted rounded-md p-2 text-center">
+            <div className="text-lg font-bold text-foreground">{(gate?.tool_summaries || []).length}</div>
+            <div className="text-xs text-muted-foreground">도구 수</div>
+          </div>
         </div>
-        <div className="bg-muted rounded-md p-2 text-center">
-          <div className="text-lg font-bold text-foreground">{combined.total || 0}</div>
-          <div className="text-xs text-muted-foreground">전체</div>
-        </div>
-      </div>
+      )}
 
       {/* 심각도 요약 */}
       <div className="flex gap-2 mb-3">
-        {confirmed.critical > 0 && <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">CRITICAL {confirmed.critical}</span>}
-        {confirmed.high > 0 && <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">HIGH {confirmed.high}</span>}
-        {confirmed.medium > 0 && <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">MEDIUM {confirmed.medium}</span>}
-        {confirmed.low > 0 && <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">LOW {confirmed.low}</span>}
-        {confirmed.total === 0 && <span className="text-xs text-muted-foreground">동시 탐지된 확정 취약점 없음</span>}
+        {combined.critical > 0 && <span className="text-xs font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">CRITICAL {combined.critical}</span>}
+        {combined.high > 0 && <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">HIGH {combined.high}</span>}
+        {combined.medium > 0 && <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">MEDIUM {combined.medium}</span>}
+        {combined.low > 0 && <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">LOW {combined.low}</span>}
       </div>
 
       {/* LLM 분석 요약 */}
@@ -404,6 +419,8 @@ export default function Home({ params }: HomeProps) {
   const [apiVulns, setApiVulns] = useState<Vulnerability[]>([]);
   const [apiCross, setApiCross] = useState<CrossAnalysisItem[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
+  const [apiIsmsData, setApiIsmsData] = useState<any>(null);
+  const [apiSiemData, setApiSiemData] = useState<any>(null);
   const [llmGates, setLlmGates] = useState<Record<string, any>>({});
   const [llmJudgments, setLlmJudgments] = useState<Record<string, any[]>>({});
 
@@ -488,6 +505,18 @@ export default function Home({ params }: HomeProps) {
     fetchJson<{ gates: Record<string, any>; judgments: Record<string, any[]> }>('/cross/gates').then((res) => {
       if (res?.gates) setLlmGates(res.gates);
       if (res?.judgments) setLlmJudgments(res.judgments);
+    }).catch(() => {});
+
+    // ISMS-P 데이터 로드
+    fetchJson<any>('/isms').then((data) => {
+      if (!data || data.message) return;
+      setApiIsmsData(data);
+    }).catch(() => {});
+
+    // SIEM 데이터 로드
+    fetchJson<any>('/siem').then((data) => {
+      if (!data || data.message) return;
+      setApiSiemData(data);
     }).catch(() => {});
   }, []);
 
@@ -737,7 +766,7 @@ export default function Home({ params }: HomeProps) {
           {/* Stage content */}
           {activeSection === 'iac' && (
             <div className="space-y-5">
-              <LlmGateSummary gate={llmGates['iac']} judgments={llmJudgments['iac']} />
+              <LlmGateSummary gate={llmGates['iac']} judgments={llmJudgments['iac']} mode="combined" />
               {/* IaC는 합산 검증 — tfsec/checkov 각각 5건씩 */}
               <div className="bg-card rounded-lg border border-border shadow-sm p-5">
                 <div className="flex items-center gap-2 mb-4">
@@ -895,9 +924,16 @@ export default function Home({ params }: HomeProps) {
           {activeSection === 'siem' && (
             <div className="space-y-5">
               <SecurityMonitoring
-                summary={mockSecurityMonitoringSummary}
+                summary={apiSiemData ? {
+                  securityScore: apiSiemData.total_events ?? 0,
+                  activeAlarms: apiSiemData.critical_events ?? 0,
+                  guardDutyFindings: apiSiemData.high_events ?? 0,
+                  cloudTrailStatus: apiSiemData.sources?.length > 0 ? 'Active' : 'N/A',
+                  recentEventTime: apiSiemData.recent_critical_events?.[0]?.time || new Date().toISOString(),
+                  monitoringStatus: (apiSiemData.critical_events ?? 0) > 0 ? 'warning' : 'normal',
+                } : mockSecurityMonitoringSummary}
                 serviceStatuses={mockServiceStatuses}
-                eventItems={mockEventItems}
+                eventItems={apiSiemData?.events || mockEventItems}
                 trendData={mockTrendChartData}
               />
             </div>
@@ -957,13 +993,21 @@ export default function Home({ params }: HomeProps) {
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    <div>총 {mockIsmpItems.length}개 항목 중</div>
-                    <div>{Math.round(mockIsmpItems.length * currentSummary.ismsPCompliance / 100)}개 충족</div>
+                    <div>총 {apiIsmsData?.summary?.total_automated ?? mockIsmpItems.length}개 항목 중</div>
+                    <div>{apiIsmsData?.summary?.compliant ?? Math.round(mockIsmpItems.length * currentSummary.ismsPCompliance / 100)}개 충족</div>
                   </div>
                 </div>
               </div>
 
-              <IsmpSection items={mockIsmpItems} compliance={currentSummary.ismsPCompliance} />
+              <IsmpSection items={apiIsmsData?.automated_results ? apiIsmsData.automated_results.map((r: any, i: number) => ({
+                id: `isms-${i}`,
+                controlId: r.isms_p_id || '',
+                domain: r.isms_p_name || '',
+                requirement: r.manual_supplement || '',
+                status: r.status === 'COMPLIANT' ? 'PASS' : r.status === 'NON_COMPLIANT' ? 'FAIL' : 'N/A',
+                evidence: r.check_details?.map((c: any) => c.reason).join(', ') || '점검 데이터 부족',
+                lastChecked: apiIsmsData.metadata?.checked_at || new Date().toISOString(),
+              })) : mockIsmpItems} compliance={apiIsmsData?.summary?.compliance_rate_pct ?? currentSummary.ismsPCompliance} />
             </div>
           )}
         </div>
