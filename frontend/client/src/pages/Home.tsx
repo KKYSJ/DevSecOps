@@ -111,19 +111,23 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
         <span className={`text-xs font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
       </div>
 
-      {/* 매칭 통계 — 교차검증 모드: 동시탐지 + 단독탐지만 */}
-      {mode === 'cross' && (
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div className="bg-muted rounded-md p-3 text-center">
-            <div className="text-xl font-bold text-green-600">{matching.matched_count || 0}</div>
-            <div className="text-sm text-muted-foreground">동시 탐지</div>
+      {/* 매칭 통계 — judgments 기반 */}
+      {mode === 'cross' && judgments && judgments.length > 0 && (() => {
+        const jConfirmed = judgments.filter((j: any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length;
+        const jReview = judgments.filter((j: any) => j.judgement_code !== 'TRUE_POSITIVE' || !j.finding_b).length;
+        return (
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="bg-muted rounded-md p-3 text-center">
+              <div className="text-xl font-bold text-green-600">{jConfirmed}</div>
+              <div className="text-sm text-muted-foreground">동시 탐지</div>
+            </div>
+            <div className="bg-muted rounded-md p-3 text-center">
+              <div className="text-xl font-bold text-amber-600">{jReview}</div>
+              <div className="text-sm text-muted-foreground">단독 탐지</div>
+            </div>
           </div>
-          <div className="bg-muted rounded-md p-3 text-center">
-            <div className="text-xl font-bold text-amber-600">{matching.mismatch_count || 0}</div>
-            <div className="text-sm text-muted-foreground">단독 탐지</div>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* LLM 분석 요약 */}
       {llm.summary && (
@@ -153,6 +157,53 @@ function LlmGateSummary({ gate, judgments, mode = 'cross' }: { gate: any; judgme
       )}
 
       {/* 개별 취약점 LLM 판정은 동시탐지/단독탐지 카드에 통합됨 */}
+    </div>
+  );
+}
+
+// 스코어 트렌드 컴포넌트
+function ScoreTrend() {
+  const [trendData, setTrendData] = useState<Array<{ time: string; score: number; gate: string }>>([]);
+  useEffect(() => {
+    fetchJson<{ history: any[] }>('/cross/history').then(res => {
+      const data = (res?.history || [])
+        .filter((h: any) => h.commit_hash)
+        .slice(0, 10)
+        .reverse()
+        .map((h: any) => ({
+          time: new Date(h.generated_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          score: h.total_score || 0,
+          gate: h.gate_decision || 'ALLOW',
+        }));
+      setTrendData(data);
+    }).catch(() => {});
+  }, []);
+
+  if (trendData.length < 2) return null;
+  const maxScore = Math.max(...trendData.map(d => d.score), 100);
+
+  return (
+    <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+      <h3 className="text-sm font-bold text-foreground mb-1">스코어 트렌드</h3>
+      <p className="text-xs text-muted-foreground mb-4">최근 파이프라인 실행별 위험 점수 변화</p>
+      <div className="flex items-end gap-2 h-32">
+        {trendData.map((d, i) => {
+          const height = Math.max((d.score / maxScore) * 100, 4);
+          const color = d.gate === 'BLOCK' ? 'bg-red-500' : d.gate === 'REVIEW' ? 'bg-amber-500' : 'bg-green-500';
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div className="text-[9px] text-muted-foreground font-mono">{d.score > 0 ? d.score.toFixed(0) : ''}</div>
+              <div className={`w-full rounded-t ${color}`} style={{ height: `${height}%` }} title={`${d.gate}: ${d.score}`} />
+              <div className="text-[8px] text-muted-foreground text-center leading-tight">{d.time}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-4 mt-3 text-[10px] text-muted-foreground">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" /> BLOCK</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500" /> REVIEW</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-500" /> ALLOW</span>
+      </div>
     </div>
   );
 }
@@ -320,33 +371,67 @@ function GateSeverityCards({ gate }: { gate: any }) {
 }
 
 // Gate 기반 도구별 요약
-function GateToolSummary({ gate }: { gate: any }) {
-  if (!gate) return null;
-  const tools = gate.tool_summaries || [];
-  if (tools.length === 0) return null;
+function GateToolSummary({ gate, judgments }: { gate: any; judgments?: any[] }) {
+  // judgments 기반으로 도구별 집계
+  const toolStats = useMemo(() => {
+    if (!judgments || judgments.length === 0) {
+      // 폴백: gate 데이터
+      return (gate?.tool_summaries || []).map((t: any) => ({
+        tool: t.tool,
+        total: t.summary?.total || 0,
+        critical: t.summary?.critical || 0,
+        high: t.summary?.high || 0,
+        medium: t.summary?.medium || 0,
+        low: t.summary?.low || 0,
+      }));
+    }
+    const map = new Map<string, { tool: string; critical: number; high: number; medium: number; low: number; total: number }>();
+    judgments.forEach((j: any) => {
+      const tool = j.finding_a?.tool || 'unknown';
+      if (!map.has(tool)) map.set(tool, { tool, critical: 0, high: 0, medium: 0, low: 0, total: 0 });
+      const s = map.get(tool)!;
+      const sev = (j.reassessed_severity || j.severity || 'MEDIUM').toUpperCase();
+      if (sev === 'CRITICAL') s.critical++;
+      else if (sev === 'HIGH') s.high++;
+      else if (sev === 'MEDIUM') s.medium++;
+      else s.low++;
+      s.total++;
+      // finding_b도 있으면 (동시탐지) 그 도구도 집계
+      if (j.finding_b?.tool && j.finding_b.tool !== tool) {
+        const toolB = j.finding_b.tool;
+        if (!map.has(toolB)) map.set(toolB, { tool: toolB, critical: 0, high: 0, medium: 0, low: 0, total: 0 });
+        const sb = map.get(toolB)!;
+        if (sev === 'CRITICAL') sb.critical++;
+        else if (sev === 'HIGH') sb.high++;
+        else if (sev === 'MEDIUM') sb.medium++;
+        else sb.low++;
+        sb.total++;
+      }
+    });
+    return Array.from(map.values());
+  }, [judgments, gate]);
+
+  if (toolStats.length === 0) return null;
 
   return (
     <div className="bg-card rounded-lg border border-border shadow-sm p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {tools.map((t: any, i: number) => {
-          const s = t.summary || {};
-          return (
-            <div key={i} className="bg-muted rounded-md p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-foreground">{t.tool}</span>
-                <span className="text-xs text-muted-foreground">총 {s.total || 0}건</span>
-              </div>
-              <div className="flex gap-2">
-                {s.critical > 0 && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">C:{s.critical}</span>}
-                {s.high > 0 && <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">H:{s.high}</span>}
-                {s.medium > 0 && <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold">M:{s.medium}</span>}
-                {s.low > 0 && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">L:{s.low}</span>}
-                {(s.total || 0) === 0 && <span className="text-xs text-muted-foreground">탐지 없음</span>}
-              </div>
+        {toolStats.map((s: any, i: number) => (
+          <div key={i} className="bg-muted rounded-md p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-foreground">{s.tool}</span>
+              <span className="text-xs text-muted-foreground">총 {s.total}건</span>
             </div>
-          );
-        })}
+            <div className="flex gap-2">
+              {s.critical > 0 && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">C:{s.critical}</span>}
+              {s.high > 0 && <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">H:{s.high}</span>}
+              {s.medium > 0 && <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-bold">M:{s.medium}</span>}
+              {s.low > 0 && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">L:{s.low}</span>}
+              {s.total === 0 && <span className="text-xs text-muted-foreground">탐지 없음</span>}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -864,7 +949,7 @@ export default function Home({ params }: HomeProps) {
               <VulnSeverityCards vulns={vulnerabilities.filter(v => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))} />
               <LlmGateSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} mode="cross" />
               <GateCrossValidation gate={llmGates['sast']} judgments={llmJudgments['sast']} />
-              <GateToolSummary gate={llmGates['sast']} />
+              <GateToolSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} />
               <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sast']} category="SAST" />
             </div>
           )}
@@ -874,35 +959,115 @@ export default function Home({ params }: HomeProps) {
               <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))} />
               <LlmGateSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} mode="cross" />
               <GateCrossValidation gate={llmGates['sca']} judgments={llmJudgments['sca']} />
-              <GateToolSummary gate={llmGates['sca']} />
+              <GateToolSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
               <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['sca']} category="SCA" />
             </div>
           )}
 
           {activeSection === 'cross' && (
             <div className="space-y-5">
-              <SummaryCards
-                summary={currentSummary}
-                activeSection={activeSection}
-                vulnerabilities={vulnerabilities}
-                crossAnalysisItems={crossAnalysisItems}
-              />
+              {/* 게이트 판정 배너 */}
+              {(() => {
+                // judgments 기반 전체 통계
+                const allJ = [...(llmJudgments['sast'] || []), ...(llmJudgments['sca'] || []), ...(llmJudgments['iac'] || [])];
+                const totalConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length;
+                const criticalConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.severity || '').toUpperCase() === 'CRITICAL').length;
+                const highConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.severity || '').toUpperCase() === 'HIGH').length;
+                const isBlock = criticalConfirmed > 0 || totalConfirmed >= 3;
+                const reason = criticalConfirmed > 0
+                  ? `CRITICAL 동시탐지 ${criticalConfirmed}건 발견 → 즉시 수정 필요`
+                  : highConfirmed > 0
+                  ? `HIGH 동시탐지 ${highConfirmed}건 발견 → 수정 권장`
+                  : totalConfirmed > 0
+                  ? `동시탐지 ${totalConfirmed}건 발견 → 검토 필요`
+                  : '동시탐지 항목 없음';
 
-              <StageCrossAnalysis items={crossAnalysisItems} />
+                return (
+                  <div className={`rounded-lg border-2 p-5 ${isBlock ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`text-lg font-bold ${isBlock ? 'text-red-700' : 'text-green-700'}`}>
+                        {isBlock ? '🔴 배포 차단' : '🟢 배포 허용'}
+                      </span>
+                    </div>
+                    <div className={`text-sm ${isBlock ? 'text-red-600' : 'text-green-600'}`}>{reason}</div>
+                  </div>
+                );
+              })()}
 
-              <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-                <h3 className="text-sm font-semibold text-foreground mb-2">스코어 트렌드</h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  최근 스캔 주기별 점수 변화를 확인하세요.
-                </p>
-                <VulnerabilityCharts
-                  summary={currentSummary}
-                  toolData={mockToolChartData}
-                  categoryData={mockCategoryChartData}
-                />
+              {/* 카테고리별 교차검증 요약 */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { key: 'sast', label: 'SAST', sub: 'SonarQube + Semgrep', mode: 'cross' as const },
+                  { key: 'sca', label: 'SCA', sub: 'Trivy + Dep-Check', mode: 'cross' as const },
+                  { key: 'iac', label: 'IaC', sub: 'tfsec + Checkov', mode: 'combined' as const },
+                ].map(({ key, label, sub, mode }) => {
+                  const j = llmJudgments[key] || [];
+                  const confirmed = j.filter((x: any) => x.judgement_code === 'TRUE_POSITIVE' && x.finding_b).length;
+                  const review = j.length - confirmed;
+                  const gate = llmGates[key];
+                  const decision = gate?.decision || 'unknown';
+                  const decisionColor = decision === 'pass' ? 'text-green-600' : decision === 'fail' ? 'text-red-600' : 'text-amber-600';
+                  const decisionLabel = decision === 'pass' ? '통과' : decision === 'fail' ? '차단' : '검토 필요';
+
+                  return (
+                    <div key={key} className="bg-card rounded-lg border border-border shadow-sm p-4 cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => setActiveSection(key)}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <div className="text-sm font-bold text-foreground">{label}</div>
+                          <div className="text-xs text-muted-foreground">{sub}</div>
+                        </div>
+                        <span className={`text-xs font-bold ${decisionColor}`}>{decisionLabel}</span>
+                      </div>
+                      {mode === 'cross' ? (
+                        <div className="flex gap-3 mt-3">
+                          <div className="text-center flex-1 bg-red-50 rounded p-2">
+                            <div className="text-lg font-bold text-red-600">{confirmed}</div>
+                            <div className="text-[10px] text-muted-foreground">동시 탐지</div>
+                          </div>
+                          <div className="text-center flex-1 bg-amber-50 rounded p-2">
+                            <div className="text-lg font-bold text-amber-600">{review}</div>
+                            <div className="text-[10px] text-muted-foreground">단독 탐지</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center bg-blue-50 rounded p-2 mt-3">
+                          <div className="text-lg font-bold text-blue-600">{j.length}</div>
+                          <div className="text-[10px] text-muted-foreground">합산 점검</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              <CrossAnalysis items={crossAnalysisItems} />
+              {/* LLM 분석 종합 */}
+              {(() => {
+                const stages = ['sast', 'sca', 'iac'];
+                const summaries = stages.map(s => llmGates[s]?.llm_analysis?.summary).filter(Boolean);
+                if (summaries.length === 0) return null;
+                return (
+                  <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+                    <h3 className="text-sm font-bold text-foreground mb-3">Gemini LLM 종합 분석</h3>
+                    <div className="space-y-3">
+                      {stages.map(s => {
+                        const gate = llmGates[s];
+                        if (!gate?.llm_analysis?.summary) return null;
+                        const label = s === 'sast' ? 'SAST' : s === 'sca' ? 'SCA' : 'IaC';
+                        return (
+                          <div key={s} className="bg-muted rounded-lg p-3">
+                            <div className="text-xs font-bold text-foreground mb-1">{label}</div>
+                            <div className="text-sm text-muted-foreground">{gate.llm_analysis.summary}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 스코어 트렌드 — cross/history 기반 */}
+              <ScoreTrend />
             </div>
           )}
 

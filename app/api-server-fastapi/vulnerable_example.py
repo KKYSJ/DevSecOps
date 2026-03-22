@@ -50,3 +50,55 @@ SECRET_KEY = "super_secret_key_12345"
 @router.post("/auth/hash")
 def hash_password(password: str):
     return {"hash": hashlib.md5(password.encode()).hexdigest()}
+
+
+# ══════════════════════════════════════════════════════
+# SonarQube 단독 탐지 (Semgrep에서는 잡히지 않는 패턴)
+# ══════════════════════════════════════════════════════
+
+# ── 6. SSRF (CWE-918) ── SonarQube 단독
+import urllib.request
+@router.get("/fetch")
+def fetch_url(url: str):
+    response = urllib.request.urlopen(url)
+    return {"data": response.read().decode()[:500]}
+
+
+# ── 7. Unsafe Deserialization (CWE-502) ── SonarQube 단독
+import pickle
+import base64
+@router.post("/deserialize")
+def deserialize_data(data: str):
+    obj = pickle.loads(base64.b64decode(data))
+    return {"result": str(obj)}
+
+
+# ── 8. XSS Reflected (CWE-79) ── SonarQube 단독
+@router.get("/greet")
+def greet(name: str):
+    return f"<h1>Hello {name}</h1>"
+
+
+# ══════════════════════════════════════════════════════
+# Semgrep 단독 탐지 (SonarQube에서는 잡히지 않는 패턴)
+# ══════════════════════════════════════════════════════
+
+# ── 9. Insecure Random (CWE-330) ── Semgrep 단독
+import random
+@router.get("/token/generate")
+def generate_token():
+    token = str(random.randint(100000, 999999))
+    return {"token": token}
+
+
+# ── 10. Binding to all interfaces (CWE-1327) ── Semgrep 단독
+def start_server():
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+
+
+# ── 11. Disabled SSL verification (CWE-295) ── Semgrep 단독
+import requests
+def call_external_api():
+    resp = requests.get("https://api.example.com", verify=False)
+    return resp.json()
