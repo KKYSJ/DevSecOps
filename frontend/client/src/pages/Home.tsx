@@ -732,15 +732,53 @@ export default function Home({ params }: HomeProps) {
           {/* Stage content */}
           {activeSection === 'iac' && (
             <div className="space-y-5">
-              <LlmGateSummary gate={llmGates['iac']} judgments={llmJudgments['iac']} mode="combined" />
-              {/* IaC 합산 검증 — judgments 기반 한국어 */}
+              {/* 1. LLM 합산 검증 분석 결과 (맨 위) */}
+              {(() => {
+                const gate = llmGates['iac'];
+                const llm = gate?.llm_analysis || {};
+                const reasons = llm.reasons || [];
+                const decision = (gate?.decision || 'review').toLowerCase();
+                const decisionColor = decision === 'pass' ? 'text-green-600 bg-green-50 border-green-200'
+                  : decision === 'fail' ? 'text-red-600 bg-red-50 border-red-200'
+                  : 'text-amber-600 bg-amber-50 border-amber-200';
+                const decisionLabel = decision === 'pass' ? '통과' : decision === 'fail' ? '차단' : '검토 필요';
+                return gate ? (
+                  <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-sm font-bold bg-blue-600 text-white px-2 py-1 rounded">Gemini LLM</span>
+                      <span className="text-base font-semibold text-foreground">합산 검증 분석 결과</span>
+                      <span className={`text-sm font-bold px-2 py-1 rounded border ${decisionColor}`}>{decisionLabel}</span>
+                    </div>
+                    {llm.summary && (
+                      <div className="bg-muted rounded-lg p-4 mb-4">
+                        <div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div>
+                        <div className="text-sm text-foreground leading-relaxed">{llm.summary}</div>
+                      </div>
+                    )}
+                    {reasons.length > 0 && (
+                      <div className="space-y-2 mb-3">
+                        <div className="text-sm font-semibold text-foreground">판정 근거</div>
+                        {reasons.map((r: string, i: number) => (
+                          <div key={i} className="text-sm text-muted-foreground flex gap-2">
+                            <span className="text-foreground font-bold">•</span> {r}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {llm.provider_notes && (
+                      <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>
+                    )}
+                  </div>
+                ) : null;
+              })()}
+
+              {/* 2. 합산 검증 카드 — judgments 기반 한국어 */}
               {(llmJudgments['iac'] && llmJudgments['iac'].length > 0) ? (
               <div className="bg-card rounded-lg border border-border shadow-sm p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">합산 검증</span>
                   <span className="text-base font-semibold text-foreground">tfsec + Checkov 통합 점검 결과</span>
                 </div>
-                {/* 도구별 분리 */}
                 {(() => {
                   const iacJ = llmJudgments['iac'] || [];
                   const tfsecJ = iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'tfsec').slice(0, 5);
@@ -753,7 +791,6 @@ export default function Home({ params }: HomeProps) {
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-sm font-bold text-blue-700">#{i + 1}</span>
                           <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sevColor}`}>{sev}</span>
-                          <span className="text-xs text-muted-foreground">신뢰도 {j.confidence === 'HIGH' ? '90%' : j.confidence === 'MED' ? '60%' : '30%'}</span>
                         </div>
                         <div className="text-sm font-semibold text-foreground mb-1">{j.title_ko || j.finding_a?.title}</div>
                         {j.risk_summary && <div className="text-sm text-muted-foreground mb-1">{j.risk_summary}</div>}
@@ -781,8 +818,16 @@ export default function Home({ params }: HomeProps) {
                 IaC LLM 판정 데이터가 없습니다. 다음 CI 실행 후 표시됩니다.
               </div>
               )}
-              <GateSeverityCards gate={llmGates['iac']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase())).slice(0, 10)} judgments={llmJudgments['iac']} category="IaC" />
+
+              {/* 3. 취약점 목록 — tfsec + checkov 둘 다 */}
+              <VulnerabilityTable
+                vulnerabilities={[
+                  ...vulnerabilities.filter((v) => v.tool?.toLowerCase() === 'tfsec').slice(0, 5),
+                  ...vulnerabilities.filter((v) => v.tool?.toLowerCase() === 'checkov').slice(0, 5),
+                ]}
+                judgments={llmJudgments['iac']}
+                category="IaC"
+              />
             </div>
           )}
 
