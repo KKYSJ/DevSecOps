@@ -379,108 +379,97 @@ export default function Home({ params }: HomeProps) {
   const [llmGates, setLlmGates] = useState<Record<string, any>>({});
   const [llmJudgments, setLlmJudgments] = useState<Record<string, any[]>>({});
 
-  // 백엔드 API에서 실제 데이터 로드
+  // judgments 기반 데이터 로드 (매칭 불필요 — judgment에 한국어+원본 모두 포함)
   useEffect(() => {
-    fetchJson<any>('/cross').then((report) => {
-      if (!report || !report.sections) return;
+    const cleanCwe = (cwe: string) => {
+      if (!cwe) return '';
+      const m = cwe.match(/^(CWE-\d+)/i);
+      return m ? m[1] : cwe;
+    };
 
-      // cross report의 findings → Vulnerability 형식으로 변환
+    fetchJson<any>('/cross/gates').then((gatesData) => {
+      if (!gatesData) return;
+      setLlmGates(gatesData.gates || {});
+
+      // judgments 추출
+      const jRaw = gatesData.judgments || {};
+      const jByStage: Record<string, any[]> = {};
+      if (jRaw.gate_result?.judgments) {
+        Object.assign(jByStage, jRaw.gate_result.judgments);
+      } else if (jRaw.sast || jRaw.sca || jRaw.iac) {
+        Object.assign(jByStage, jRaw);
+      }
+      setLlmJudgments(jByStage);
+
+      // judgments → Vulnerability + CrossAnalysisItem 변환
       const vulns: Vulnerability[] = [];
       const crossItems: CrossAnalysisItem[] = [];
+      const now = new Date().toISOString();
 
-      const allFindings = [
-        ...(report.sections?.SAST || []),
-        ...(report.sections?.SCA || []),
-        ...(report.sections?.IaC || []),
-        ...(report.sections?.DAST || []),
-      ];
+      Object.entries(jByStage).forEach(([stage, items]) => {
+        if (!Array.isArray(items)) return;
+        items.forEach((j: any, i: number) => {
+          const fa = j.finding_a || {};
+          const fb = j.finding_b || {};
+          const hasBoth = !!fb.tool && fb.tool !== fa.tool;
+          const cat = (fa.category || stage).toUpperCase();
+          const isSCA = cat === 'SCA';
 
-      allFindings.forEach((f: any, i: number) => {
-        const finding_a = f.finding_a || {};
-        const finding_b = f.finding_b || {};
-        const tools = [finding_a.tool, finding_b?.tool].filter(Boolean);
+          // finding_a 행
+          if (fa.tool) {
+            vulns.push({
+              id: `j-${stage}-${i}-a`,
+              severity: (j.reassessed_severity || j.severity || fa.severity || 'MEDIUM').toUpperCase() as any,
+              category: cat,
+              tool: fa.tool,
+              file: fa.file_path || '',
+              line: fa.line_number || 0,
+              cwe: isSCA ? (fa.cve_id || cleanCwe(fa.cwe_id || '')) : cleanCwe(fa.cwe_id || ''),
+              description: j.title_ko || fa.title || '',
+              confidence: hasBoth ? 'HIGH' : (j.confidence || 'MED'),
+              detectedAt: now,
+              _judgment: j,
+            } as any);
+          }
 
-        // Vulnerability — finding_a 행
-        if (finding_a.tool) {
-          const isSCA = finding_a.category === 'SCA';
-          vulns.push({
-            id: `v-${i}-a`,
-            severity: finding_a.severity || f.severity || 'MEDIUM',
-            category: finding_a.category || 'SAST',
-            tool: finding_a.tool,
-            file: finding_a.file_path || '',
-            line: finding_a.line_number || 0,
-            cwe: isSCA ? (finding_a.cve_id || finding_a.cwe_id || '') : (finding_a.cwe_id || ''),
-            description: finding_a.title || '',
-            confidence: finding_b.tool ? 'HIGH' : (f.confidence || 'MED'),
-            detectedAt: report.generated_at || new Date().toISOString(),
+          // finding_b 행 (다른 도구)
+          if (hasBoth) {
+            vulns.push({
+              id: `j-${stage}-${i}-b`,
+              severity: (j.reassessed_severity || j.severity || fb.severity || 'MEDIUM').toUpperCase() as any,
+              category: cat,
+              tool: fb.tool,
+              file: fb.file_path || '',
+              line: fb.line_number || 0,
+              cwe: isSCA ? (fb.cve_id || cleanCwe(fb.cwe_id || '')) : cleanCwe(fb.cwe_id || ''),
+              description: j.title_ko || fb.title || '',
+              confidence: 'HIGH',
+              detectedAt: now,
+              _judgment: j,
+            } as any);
+          }
+
+          // CrossAnalysisItem
+          crossItems.push({
+            id: `jc-${stage}-${i}`,
+            severity: (j.severity || 'MEDIUM').toUpperCase() as any,
+            category: cat,
+            tools: [fa.tool, fb.tool].filter(Boolean),
+            file: fa.file_path || fb.file_path || '',
+            line: fa.line_number || fb.line_number || 0,
+            cwe: cleanCwe(fa.cwe_id || fb.cwe_id || ''),
+            description: j.title_ko || fa.title || '',
+            confidence: (j.confidence || 'MED') as any,
+            detectionCount: hasBoth ? 2 : 1,
           });
-        }
-        // Vulnerability — finding_b 행 (동시탐지일 때만)
-        if (finding_b.tool && finding_b.tool !== finding_a.tool) {
-          const isSCA = finding_b.category === 'SCA';
-          vulns.push({
-            id: `v-${i}-b`,
-            severity: finding_b.severity || f.severity || 'MEDIUM',
-            category: finding_b.category || 'SAST',
-            tool: finding_b.tool,
-            file: finding_b.file_path || '',
-            line: finding_b.line_number || 0,
-            cwe: isSCA ? (finding_b.cve_id || finding_b.cwe_id || '') : (finding_b.cwe_id || ''),
-            description: finding_b.title || '',
-            confidence: 'HIGH',
-            detectedAt: report.generated_at || new Date().toISOString(),
-          });
-        }
-
-        // CrossAnalysisItem
-        crossItems.push({
-          id: `c-${i}`,
-          severity: f.severity || 'MEDIUM',
-          category: finding_a.category || finding_b.category || 'SAST',
-          tools,
-          file: finding_a.file_path || finding_b.file_path || '',
-          line: finding_a.line_number || finding_b.line_number || 0,
-          cwe: (finding_a.category === 'SCA' || finding_b.category === 'SCA')
-            ? (finding_a.cve_id || finding_b.cve_id || finding_a.cwe_id || finding_b.cwe_id || '')
-            : (finding_a.cwe_id || finding_b.cwe_id || ''),
-          description: f.title_ko || finding_a.title || '',
-          confidence: f.confidence || 'MED',
-          detectionCount: tools.length,
-          llmJudgment: f.judgement_code ? {
-            id: `j-${i}`,
-            vulnerabilityId: `v-${i}`,
-            judgment: f.judgement_code === 'TRUE_POSITIVE' ? 'TRUE_POSITIVE' :
-                      f.judgement_code === 'FALSE_POSITIVE' ? 'FALSE_POSITIVE' : 'UNCERTAIN',
-            confidence: f.confidence === 'HIGH' ? 90 : f.confidence === 'MED' ? 60 : 30,
-            reasoning: f.reason || '',
-            recommendedAction: f.action_text || '',
-            riskAssessment: f.reassessed_severity || f.severity || 'MEDIUM',
-            judgedAt: report.generated_at || new Date().toISOString(),
-          } : undefined,
         });
       });
 
-      setApiVulns(vulns);
-      setApiCross(crossItems);
-      setApiLoaded(true);
-
-      // summary도 업데이트
-      if (report.summary) {
-        setSummary(prev => ({
-          ...prev,
-          totalVulnerabilities: report.summary.total_findings || 0,
-          highCount: (report.summary.by_severity?.CRITICAL || 0) + (report.summary.by_severity?.HIGH || 0),
-          mediumCount: report.summary.by_severity?.MEDIUM || 0,
-          lowCount: report.summary.by_severity?.LOW || 0,
-        }));
+      if (vulns.length > 0) {
+        setApiVulns(vulns);
+        setApiCross(crossItems);
+        setApiLoaded(true);
       }
-    }).catch(() => {});
-
-    // CI LLM Gate 결과 + 개별 판정 로드
-    fetchJson<{ gates: Record<string, any>; judgments: Record<string, any[]> }>('/cross/gates').then((res) => {
-      if (res?.gates) setLlmGates(res.gates);
-      if (res?.judgments) setLlmJudgments(res.judgments);
     }).catch(() => {});
 
     // ISMS-P 데이터 로드
@@ -496,7 +485,7 @@ export default function Home({ params }: HomeProps) {
     }).catch(() => {});
   }, []);
 
-  // API 데이터가 있으면 사용, 없으면 mock fallback
+  // judgments 기반 데이터 사용, 없으면 mock fallback
   const vulnerabilities = apiLoaded ? apiVulns : mockVulnerabilities;
   const crossAnalysisItems = apiLoaded ? apiCross : mockCrossAnalysis;
 
@@ -794,35 +783,57 @@ export default function Home({ params }: HomeProps) {
                 </div>
                 {(() => {
                   const sevOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                  const iacVulns = vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase()));
+                  const sortBySev = (items: any[]) => [...items].sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9));
+                  const tfsecTop = sortBySev(iacVulns.filter(v => v.tool?.toLowerCase() === 'tfsec')).slice(0, 5);
+                  const checkovTop = sortBySev(iacVulns.filter(v => v.tool?.toLowerCase() === 'checkov')).slice(0, 5);
+                  // judgments에서 한국어 매칭
                   const iacJ = llmJudgments['iac'] || [];
-                  const sortBySev = (items: any[]) => [...items].sort((a, b) => (sevOrder[(a.severity || 'LOW').toUpperCase()] ?? 9) - (sevOrder[(b.severity || 'LOW').toUpperCase()] ?? 9));
-                  const tfsecJ = sortBySev(iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'tfsec')).slice(0, 5);
-                  const checkovJ = sortBySev(iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'checkov')).slice(0, 5);
-                  const renderIacItem = (j: any, i: number) => {
-                    const sev = (j.severity || 'MEDIUM').toUpperCase();
+                  const findKo = (v: any) => {
+                    const desc = (v.description || '').toLowerCase().slice(0, 40);
+                    // 1차: 파일명 + 라인번호
+                    const exact = iacJ.find((j: any) => {
+                      const fa = j.finding_a || {};
+                      const fileMatch = fa.file_path && v.file && fa.file_path.split('/').pop() === v.file.split('/').pop();
+                      return fileMatch && fa.line_number && v.line && fa.line_number === v.line;
+                    });
+                    if (exact) return exact;
+                    // 2차: 원본 title 키워드
+                    if (desc.length > 5) {
+                      return iacJ.find((j: any) => {
+                        const fa = j.finding_a || {};
+                        const faTitle = (fa.title || '').toLowerCase();
+                        return faTitle.includes(desc) || desc.includes(faTitle.slice(0, 30));
+                      }) || null;
+                    }
+                    return null;
+                  };
+                  const renderIacItem = (v: any, i: number) => {
+                    const sev = (v.severity || 'MEDIUM').toUpperCase();
                     const sevColor = sev === 'CRITICAL' ? 'bg-red-600' : sev === 'HIGH' ? 'bg-orange-600' : sev === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500';
+                    const ko = findKo(v);
                     return (
                       <div key={i} className="bg-blue-50 border border-blue-100 rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-sm font-bold text-blue-700">#{i + 1}</span>
                           <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sevColor}`}>{sev}</span>
                         </div>
-                        <div className="text-sm font-semibold text-foreground mb-1">{j.title_ko || j.finding_a?.title}</div>
-                        {j.risk_summary && <div className="text-sm text-muted-foreground mb-1">{j.risk_summary}</div>}
-                        {j.action_text && <div className="text-sm text-blue-700"><strong>수정 방법:</strong> {j.action_text}</div>}
-                        {j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}{j.finding_a.line_number ? `:${j.finding_a.line_number}` : ''}</div>}
+                        <div className="text-sm font-semibold text-foreground mb-1">{ko?.title_ko || v.description}</div>
+                        {ko?.risk_summary && <div className="text-sm text-muted-foreground mb-1">{ko.risk_summary}</div>}
+                        {ko?.action_text && <div className="text-sm text-blue-700"><strong>수정 방법:</strong> {ko.action_text}</div>}
+                        {v.file && <div className="text-xs text-muted-foreground mt-1">📁 {v.file}{v.line ? `:${v.line}` : ''}</div>}
                       </div>
                     );
                   };
                   return (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">tfsec (상위 {tfsecJ.length}건)</div>
-                        <div className="space-y-2">{tfsecJ.map(renderIacItem)}</div>
+                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">tfsec (상위 {tfsecTop.length}건)</div>
+                        <div className="space-y-2">{tfsecTop.map(renderIacItem)}</div>
                       </div>
                       <div>
-                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">Checkov (상위 {checkovJ.length}건)</div>
-                        <div className="space-y-2">{checkovJ.map(renderIacItem)}</div>
+                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">Checkov (상위 {checkovTop.length}건)</div>
+                        <div className="space-y-2">{checkovTop.map(renderIacItem)}</div>
                       </div>
                     </div>
                   );
