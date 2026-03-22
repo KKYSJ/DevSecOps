@@ -102,6 +102,12 @@ variable "enable_cloudtrail" {
   default     = false
 }
 
+variable "enable_cloudtrail_cloudwatch_logs" {
+  description = "Whether to integrate CloudTrail with CloudWatch Logs."
+  type        = bool
+  default     = false
+}
+
 variable "enable_config" {
   description = "Whether to manage AWS Config recorder and selected rules."
   type        = bool
