@@ -38,6 +38,7 @@ severity는 CVSSv3 baseSeverity → CVSSv2 severity → name 필드 순서로 �
 import hashlib
 import re
 from datetime import datetime, timezone
+from urllib.parse import unquote
 
 
 _SEVERITY_MAP = {
@@ -81,18 +82,36 @@ def _extract_cvss_score(vuln: dict) -> float | None:
 def _extract_package_info(dependency: dict) -> tuple[str, str]:
     """
     패키지 이름과 버전 추출
-    packages[0].id 형태: "pkg:maven/group/artifact@version" 또는 "pkg:npm/name@version"
+    purl에 namespace가 있으면 보존해서 반환합니다.
     """
     packages = dependency.get("packages", [])
-    if packages:
-        pkg_id: str = packages[0].get("id", "")
-        # pkg:type/name@version 에서 name@version 추출
-        match = re.search(r"/([^/]+@[^/]+)$", pkg_id)
-        if match:
-            name_version = match.group(1)
-            parts = name_version.rsplit("@", 1)
-            if len(parts) == 2:
-                return parts[0], parts[1]
+    for package in packages:
+        pkg_id = str(package.get("id", "")).strip()
+        if not pkg_id.startswith("pkg:"):
+            continue
+
+        body = unquote(pkg_id[4:]).split("#", 1)[0]
+        purl_type, _, remainder = body.partition("/")
+        if not remainder:
+            continue
+
+        name_part, _, version_part = remainder.rpartition("@")
+        if not name_part:
+            name_part = remainder
+            version_part = ""
+
+        version_part = version_part.split("?", 1)[0].split("#", 1)[0].strip()
+        name_part = name_part.strip()
+        if not name_part:
+            continue
+
+        if purl_type == "maven" and "/" in name_part:
+            namespace, artifact = name_part.rsplit("/", 1)
+            package_name = f"{namespace}:{artifact}"
+        else:
+            package_name = name_part
+
+        return package_name, version_part or "unknown"
 
     # fallback: fileName에서 추출 (예: "log4j-core-2.14.1.jar")
     file_name: str = dependency.get("fileName", "unknown")
@@ -117,6 +136,17 @@ def _parse_vulnerability(dependency: dict, vuln: dict) -> dict:
     pkg_name, pkg_version = _extract_package_info(dependency)
 
     refs = [r.get("url") for r in vuln.get("references", []) if r.get("url")]
+    fixed_version = None
+    for sw in vuln.get("vulnerableSoftware", []) or []:
+        if not isinstance(sw, dict):
+            continue
+        fixed_version = (
+            sw.get("versionEndExcluding")
+            or sw.get("versionEndIncluding")
+            or sw.get("versionStartIncluding")
+        )
+        if fixed_version:
+            break
 
     return {
         "id": _make_finding_id(pkg_name, pkg_version, cve_id),
@@ -135,7 +165,7 @@ def _parse_vulnerability(dependency: dict, vuln: dict) -> dict:
         "parameter": None,
         "package_name": pkg_name,
         "package_version": pkg_version,
-        "fixed_version": None,  # Dep-Check JSON에는 수정 버전 정보 없음
+        "fixed_version": fixed_version,
         "cvss_score": _extract_cvss_score(vuln),
         "remediation": f"Upgrade {pkg_name} to a version without {cve_id}",
         "references": refs,

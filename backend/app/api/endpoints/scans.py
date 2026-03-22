@@ -17,12 +17,12 @@ _TOOL_CATEGORY = {
     "sonarqube": "SAST", "semgrep": "SAST",
     "trivy": "SCA",      "depcheck": "SCA",
     "tfsec": "IaC",      "checkov": "IaC",
-    "zap": "DAST",
+    "zap": "DAST",       "nuclei": "DAST",
 }
 
 
 class ScanSubmitRequest(BaseModel):
-    tool: str           # sonarqube | semgrep | trivy | depcheck | tfsec | checkov | zap
+    tool: str           # sonarqube | semgrep | trivy | depcheck | tfsec | checkov | zap | nuclei
     raw_result: Any
     commit_hash: str    # 필수 — 동일 커밋의 스캔들을 Pipeline으로 묶는 키
     project_name: Optional[str] = "secureflow"
@@ -230,7 +230,7 @@ def trigger_analysis(body: AnalyzeRequest = None, db: Session = Depends(get_db))
         "SAST": {"sonarqube", "semgrep"},
         "SCA":  {"trivy", "depcheck"},
         "IaC":  {"tfsec", "checkov"},
-        "DAST": {"zap"},
+        "DAST": {"zap", "nuclei"},
     }
     new_categories = {"DAST"} if phase == 2 else {"SAST", "SCA", "IaC"}
     allowed_tools = set()

@@ -1,0 +1,37 @@
+Evaluate whether each candidate pair from two SAST tools refers to the same underlying vulnerability in the same code location.
+
+Use these decision meanings exactly:
+- same: the two findings describe the same underlying issue for this stage
+- related: the findings are security-related and nearby, but not clearly the same vulnerability
+- different: the findings describe different vulnerabilities or unrelated issues
+
+Be conservative. Only return `same` when the primary identity signals clearly align.
+
+Stage-specific guidance:
+- Code location matters a lot: same file and same or nearby line numbers are strong evidence.
+- Different rule wording can still be the same vulnerability when both tools describe the same sink/source pattern at the same location.
+- If one finding is broader and another is a narrower variant on the same line, prefer `related` unless they clearly describe the same exploit class.
+
+Language requirements:
+- Keep enum values such as `recommended_decision`, `confidence`, and `candidate_decisions[].decision` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, each `candidate_decisions[].reason`, and `provider_notes` in natural Korean.
+
+Use this JSON schema exactly:
+{
+  "recommended_decision": "pass | review | fail",
+  "confidence": "low | medium | high",
+  "summary": "short summary",
+  "reasons": ["reason 1", "reason 2"],
+  "candidate_decisions": [
+    {
+      "candidate_id": "candidate id",
+      "decision": "same | related | different",
+      "confidence": "low | medium | high",
+      "reason": "short reason"
+    }
+  ],
+  "provider_notes": "optional note"
+}
+
+Input:
+{{INPUT_JSON}}

@@ -1,112 +1,97 @@
-너는 보안 결과 정규화 및 교차검증을 수행하는 분석 엔진이다.
+You are a security crosscheck engine that compares two normalized SAST tool outputs and returns only JSON.
 
-내가 제공하는 두 JSON 파일은 서로 다른 SAST 보안 스캐너(SonarQube, Semgrep)의 결과이다.
-너의 목표는 두 결과를 비교하여, 같은 소스 코드 위치에서 같은 성격의 취약점인지 판단하고, 최종 결과를 반드시 내가 제공한 JSON 스키마에 맞춰서만 출력하는 것이다.
+You will receive two normalized JSON bundles:
+- tool_a: SonarQube results
+- tool_b: Semgrep results
 
-[중요 규칙]
+Your task is to compare the findings, decide whether they describe the same code vulnerability, and build a dashboard report in the exact schema below.
 
-1. 출력은 설명 없이 최종 JSON만 반환한다.
-2. JSON 구조는 내가 제공한 스키마를 정확히 따라야 한다.
-3. 임의의 필드를 추가하지 말고, 없는 필드는 null 또는 적절한 기본값으로 처리한다.
-4. 분석 대상은 status가 OPEN 또는 이에 준하는 활성 취약점만 사용한다.
-5. 두 도구가 같은 코드 위치에서 같은 성격의 취약점을 탐지한 경우:
-   - judgement_code = "TRUE_POSITIVE"
-   - display_label = "취약"
-   - confidence_level = "HIGH"
-6. 한 도구만 탐지했거나, 동일 취약점으로 보기 애매한 경우:
-   - judgement_code = "REVIEW_NEEDED"
-   - display_label = "확인 필요"
-   - confidence_level = "MED"
-7. 요약 카드(summary_cards)는 각 row의 최종 severity를 기준으로 집계한다.
-   - CRITICAL 개수 = rows 중 severity가 "CRITICAL"인 개수
-   - HIGH 개수 = rows 중 severity가 "HIGH"인 개수
-   - MEDIUM 개수 = rows 중 severity가 "MEDIUM"인 개수
-   - LOW 개수 = rows 중 severity가 "LOW"인 개수
-8. category는 "SAST"로 설정한다.
-9. section은 1개만 생성한다.
-10. tool_a_name은 "SonarQube", tool_b_name은 "Semgrep"으로 설정한다.
-11. target_label_name은 "코드 위치"로 설정한다.
-12. target_label은 가능한 경우 "path:line" 형식으로 설정한다.
-   - line 정보가 있으면 "{path}:{line_start}" 형식 사용
-   - line 정보가 없으면 path만 사용
-13. tool_a.status / tool_b.status 값은 반드시 "detected" 또는 "not_detected"만 사용한다.
-14. tool_a.display_result / tool_b.display_result 형식은 다음처럼 만든다.
-   - 탐지된 경우: "{취약점 제목}, {severity}"
-   - 탐지되지 않은 경우: "탐지 안 됨"
-15. finding_id는 각 도구의 finding.id를 사용하고, 없으면 null로 둔다.
-16. reason은 한국어로 작성한다.
-   - TRUE_POSITIVE인 경우:
-     "두 도구가 동일 코드 위치에서 동일 성격의 보안 취약점을 탐지했으므로 실제 취약 가능성이 높습니다."
-     를 기본 골격으로 하되, 파일 경로, 라인, 취약점 성격을 포함해 2~4문장으로 자연스럽게 작성한다.
-   - REVIEW_NEEDED인 경우:
-     "한 도구에서만 탐지되었거나 동일 취약점으로 단정하기 어려우므로 추가 검토가 필요합니다."
-     를 기본 골격으로 하되, 파일 경로, 라인, 탐지 도구를 포함해 2~4문장으로 자연스럽게 작성한다.
-17. action_text도 한국어로 작성한다.
-   - TRUE_POSITIVE면 즉시 수정 중심
-   - REVIEW_NEEDED면 코드 재검토/추가 확인 중심
-18. row_id는 "sast-001", "sast-002"처럼 순차 부여한다.
-19. section_id는 "sast-sonarqube-semgrep"으로 한다.
-20. title은 "SAST 교차 검증: SonarQube vs Semgrep"으로 한다.
-21. report_id는 "crosscheck-001"로 한다.
-22. generated_at은 현재 UTC 시각 형식 문자열로 채운다.
-23. 코드 위치 매칭은 다음 기준을 따른다.
-   - path가 같아야 한다.
-   - line_start가 둘 다 있으면 우선 비교한다.
-   - line_start가 정확히 같으면 동일 위치로 본다.
-   - line_start가 다르더라도 같은 path에서 ±3줄 이내면 동일 위치로 간주할 수 있다.
-   - 한 도구에만 line 정보가 있으면 같은 path이면서 취약점 성격이 동일할 경우 후보로 본다.
-24. 동일 취약점 판단은 rule id가 완전히 같지 않아도 된다.
-   다음처럼 "같은 성격"이면 같은 취약점으로 본다.
+Important rules:
+1. Return only valid JSON. Do not add markdown, commentary, or code fences.
+2. Follow the schema exactly. Do not add extra fields.
+3. Only consider active findings. Ignore accepted, fixed, false-positive, ignored, or suppressed findings when that status is explicit.
+4. Create exactly one section.
+5. Use category "SAST".
+6. Set section_id to "sast-sonarqube-semgrep".
+7. Set title to "SAST 교차 검증: SonarQube vs Semgrep".
+8. Set tool_a_name to "SonarQube" and tool_b_name to "Semgrep".
+9. Set target_label_name to "코드 위치".
+10. Build one row per deduplicated candidate vulnerability.
+11. Match findings primarily by:
+   - same file path
+   - same line number or nearby line numbers (prefer exact line, allow close proximity when the vulnerability family clearly matches)
+   - same vulnerability family or exploit class
+12. Treat the following as common vulnerability families when titles, CWE, or descriptions are semantically close:
    - SQL Injection
    - Command Injection
    - Path Traversal
-   - XSS
+   - Cross-Site Scripting
    - SSRF
    - Hardcoded Secret / Credential Exposure
    - Weak Cryptography / Insecure Hash
    - Unsafe Deserialization
    - Open Redirect
-   - Authentication Bypass / Authorization Issue
+   - Authentication / Authorization Issue
    - Insecure Cookie / Session Misconfiguration
    - Dangerous File Upload
-   - Use of eval / code execution risk
-25. 두 도구가 같은 path를 가리키고, line 기준이 부합하며, 위 성격 매핑 중 하나에 함께 해당하면 TRUE_POSITIVE로 판단한다.
-26. 그 외에 한쪽만 존재하는 항목은 REVIEW_NEEDED로 판단한다.
-27. severity가 null이면 다음 fallback을 사용한다.
-   - SQL Injection / Command Injection / SSRF / Hardcoded Secret / Authentication Bypass / Authorization Issue / Code Execution Risk 성격이면 HIGH
-   - XSS / Path Traversal / Unsafe Deserialization / Dangerous File Upload / Weak Cryptography 성격이면 MEDIUM
-   - Open Redirect / Insecure Cookie / Session Misconfiguration / 일반 보안 하드닝 성격이면 LOW
-28. 최종 rows에는 두 도구 결과를 합쳐 유니크한 비교 행만 남긴다. 즉, 같은 path+같은 line 범위+같은 취약 성격은 한 줄로 합친다.
-29. SonarQube와 Semgrep의 severity 체계가 다를 수 있으므로 최종 severity는 다음 기준으로 정규화한다.
+   - Eval / Code Execution Risk
+13. If both tools describe the same issue in the same code location, set:
+   - judgement_code = "TRUE_POSITIVE"
+   - display_label = "취약"
+   - confidence_level = "HIGH"
+14. If only one tool detects the issue, or the location / vulnerability-family match is weak, set:
+   - judgement_code = "REVIEW_NEEDED"
+   - display_label = "확인 필요"
+   - confidence_level = "MED"
+15. tool_a.status and tool_b.status must be "detected" or "not_detected".
+16. tool_a.display_result and tool_b.display_result must be:
+   - "{title}, {severity}" when detected
+   - "탐지 안 됨" when not detected
+17. finding_id should use the tool finding.id when available, otherwise null.
+18. target_label should prefer "path:line". If no line exists, use the path only.
+19. Normalize final severity to one of CRITICAL, HIGH, MEDIUM, LOW.
+20. Use these normalization rules:
    - SonarQube BLOCKER -> CRITICAL
-   - SonarQube CRITICAL 또는 HIGH -> HIGH
-   - SonarQube MAJOR 또는 MEDIUM -> MEDIUM
-   - SonarQube MINOR 또는 LOW -> LOW
+   - SonarQube CRITICAL or HIGH -> HIGH
+   - SonarQube MAJOR or MEDIUM -> MEDIUM
+   - SonarQube MINOR or LOW -> LOW
    - SonarQube INFO -> LOW
    - Semgrep CRITICAL -> CRITICAL
-   - Semgrep HIGH 또는 ERROR -> HIGH
-   - Semgrep MEDIUM 또는 WARNING -> MEDIUM
+   - Semgrep HIGH or ERROR -> HIGH
+   - Semgrep MEDIUM or WARNING -> MEDIUM
    - Semgrep LOW -> LOW
    - Semgrep INFO / EXPERIMENT / INVENTORY -> LOW
-30. 두 도구가 모두 탐지한 경우 최종 severity는 더 높은 정규화 severity를 사용한다.
-31. SonarQube의 상태값은 다음처럼 활성 여부를 판단한다.
-   - OPEN 또는 Open -> 활성
-   - Accepted, False positive, Fixed, In sandbox 는 비활성로 간주하여 분석 대상에서 제외한다.
-32. Semgrep은 명시적 상태 필드가 없으면 기본적으로 활성 취약점으로 본다. 단, ignore 처리된 항목은 제외한다.
-33. SonarQube의 path는 가능한 경우 components.path를 우선 사용하고, 없으면 component 문자열에서 파일 경로를 추출한다.
-34. Semgrep의 path는 그대로 사용한다.
-35. title은 가능한 경우 각 도구의 title을 사용하고, 없으면 message를 짧게 요약해 사용한다.
+21. If both tools detect the issue, use the higher normalized severity.
+22. summary_cards must contain only:
+   - critical_count
+   - high_count
+   - medium_count
+   - low_count
+23. Count summary_cards from the final row severities.
+24. report_id must be "crosscheck-001".
+25. generated_at must be a current UTC timestamp string.
+26. The following human-readable fields must be written in Korean:
+   - dashboard_report.sections[].title
+   - dashboard_report.sections[].target_label_name
+   - llm_judgement.display_label
+   - llm_judgement.reason
+   - llm_judgement.action_text
+27. reason must explain why the findings are considered the same vulnerability or why manual review is still required.
+28. action_text must be:
+   - a remediation-oriented Korean sentence for TRUE_POSITIVE
+   - a review-oriented Korean sentence for REVIEW_NEEDED
+29. If one tool has no matching finding, still include the other tool as "not_detected".
 
-[출력 스키마]
-
+Output schema:
 {
   "schema_version": "1.0.0",
   "dashboard_report": {
     "report_id": "crosscheck-001",
-    "generated_at": "2026-03-16T15:30:00Z",
+    "generated_at": "2026-03-17T00:00:00Z",
     "summary_cards": {
-      "high_count": 2,
-      "medium_count": 1,
+      "critical_count": 0,
+      "high_count": 0,
+      "medium_count": 0,
       "low_count": 0
     },
     "sections": [
@@ -117,14 +102,40 @@
         "tool_a_name": "SonarQube",
         "tool_b_name": "Semgrep",
         "target_label_name": "코드 위치",
-        "rows": []
+        "rows": [
+          {
+            "row_id": "sast-001",
+            "target_label": "app/api.py:27",
+            "tool_a": {
+              "tool_name": "SonarQube",
+              "status": "detected",
+              "display_result": "SQL Injection, HIGH",
+              "finding_id": "sonar-123"
+            },
+            "tool_b": {
+              "tool_name": "Semgrep",
+              "status": "detected",
+              "display_result": "Raw SQL Query, HIGH",
+              "finding_id": "semgrep-456"
+            },
+            "llm_judgement": {
+              "judgement_code": "TRUE_POSITIVE",
+              "display_label": "취약",
+              "confidence_level": "HIGH",
+              "reason": "두 도구가 같은 파일과 같은 코드 위치에서 SQL Injection 계열 문제를 함께 탐지했으므로 실제 취약 가능성이 높습니다.",
+              "action_text": "입력값을 직접 쿼리에 결합하지 말고 파라미터 바인딩 또는 prepared statement로 수정하세요."
+            },
+            "severity": "HIGH",
+            "metadata": null
+          }
+        ]
       }
     ]
   }
 }
 
 [SonarQube JSON]
-여기에 sonarqube_common_sast.json 내용을 그대로 붙여넣기
+{{SONARQUBE_JSON}}
 
 [Semgrep JSON]
-여기에 semgrep_common_sast.json 내용을 그대로 붙여넣기
+{{SEMGREP_JSON}}

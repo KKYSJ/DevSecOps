@@ -73,6 +73,15 @@ _TOOLS = [
         "language_support": ["Web Applications (HTTP/HTTPS)"],
         "doc_url": "https://www.zaproxy.org/docs/",
     },
+    {
+        "name": "nuclei",
+        "category": "DAST",
+        "version": "3.x",
+        "status": "active",
+        "description": "ProjectDiscovery Nuclei. ?⑦뀒?뚯뵆由우듃 湲곕컲???숈쟻 ?좏뵆由ъ??댁뀡??寃?ы빀?덈떎.",
+        "language_support": ["Web Applications (HTTP/HTTPS)"],
+        "doc_url": "https://nuclei.projectdiscovery.io/",
+    },
 ]
 
 _TOOL_MAP = {t["name"]: t for t in _TOOLS}
