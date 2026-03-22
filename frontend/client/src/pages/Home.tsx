@@ -419,8 +419,8 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
             const llm = gate?.llm_analysis || {};
             const fallbackSummary = sm?.summary || llm.summary;
             const fallbackReasons = sm?.reasons?.length > 0 ? sm.reasons : (llm.reasons || []);
-            const zapCount = gate?.tool_summaries?.find((t: any) => t.tool === 'zap')?.summary?.total || 0;
-            const nucleiCount = gate?.tool_summaries?.find((t: any) => t.tool === 'nuclei')?.summary?.total || 0;
+            const zapCount = dastVulns.filter((v: any) => v.tool === 'zap').length;
+            const nucleiCount = dastVulns.filter((v: any) => v.tool === 'nuclei').length;
             return (<div className="space-y-3 pt-3">
               <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-foreground">{zapCount}</div><div className="text-sm text-muted-foreground">ZAP 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-foreground">{nucleiCount}</div><div className="text-sm text-muted-foreground">Nuclei 탐지</div></div></div>
               {fallbackSummary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{fallbackSummary}</div></div>}
@@ -895,9 +895,11 @@ export default function Home({ params }: HomeProps) {
       delete cleanGates.judgments;
       setLlmGates(cleanGates);
 
-      // summaries 추출
-      const rawJudgmentsObj = rawGates.judgments || gatesData.judgments || {};
-      const sm = rawJudgmentsObj.summaries || rawJudgmentsObj.gate_result?.summaries || {};
+      // summaries 추출 — top-level 우선 (merge된 데이터)
+      const sm = gatesData.summaries
+        || rawGates.judgments?.summaries
+        || rawGates.judgments?.gate_result?.summaries
+        || {};
       setLlmSummaries(sm);
       setLlmJudgments(jByStage);
 

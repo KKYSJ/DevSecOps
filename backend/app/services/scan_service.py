@@ -44,6 +44,7 @@ PARSERS = {
     "checkov":   _Adapter(_p_checkov),
     "zap":       _Adapter(_p_zap),
     "nuclei":    NucleiParser(),
+    "trivy-image": _Adapter(_p_trivy),
 }
 
 # ── 스코어링 상수 ─────────────────────────────────────────────────────────────

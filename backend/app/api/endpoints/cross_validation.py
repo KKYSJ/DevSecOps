@@ -114,6 +114,7 @@ def get_llm_gates(db: Session = Depends(get_db)):
             .limit(5)
             .all()
         )
+        summaries: dict = {}
         for j_rec in reversed(j_records):  # 오래된 것부터 → 최신이 덮어씀
             j_data = j_rec.data or {}
             j_inner = j_data.get("judgments", {})
@@ -121,7 +122,13 @@ def get_llm_gates(db: Session = Depends(get_db)):
                 for stage_key, items in j_inner.items():
                     if isinstance(items, list) and len(items) > 0:
                         judgments[stage_key] = items
+            # summaries도 merge
+            s_inner = j_data.get("summaries", {})
+            if isinstance(s_inner, dict):
+                for stage_key, sdata in s_inner.items():
+                    if isinstance(sdata, dict) and sdata.get("summary"):
+                        summaries[stage_key] = sdata
 
-        return {"gates": gates, "judgments": judgments}
+        return {"gates": gates, "judgments": judgments, "summaries": summaries}
     except Exception:
         return {"gates": {}, "judgments": {}}
