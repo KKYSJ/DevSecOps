@@ -457,7 +457,14 @@ jobs:
         if: always()
         run: |
           if [ ! -f nuclei-results.json ]; then
-            echo '{"tool_disabled":true,"reason":"missing_nuclei_output","findings":[]}' > nuclei-results.json
+            echo '[]' > nuclei-results.json
+          else
+            # JSONL → JSON 배열 변환 (Nuclei -json-export는 JSONL 형식)
+            if ! jq empty nuclei-results.json 2>/dev/null; then
+              echo "Converting JSONL to JSON array..."
+              jq -s '.' nuclei-results.json > nuclei-results-arr.json && mv nuclei-results-arr.json nuclei-results.json
+            fi
+            echo "Nuclei results: $(jq length nuclei-results.json 2>/dev/null || echo 0) findings"
           fi
 
       - name: Upload Nuclei results
