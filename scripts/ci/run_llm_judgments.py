@@ -60,18 +60,22 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
             },
         })
 
-    # 2. 단독 탐지 (unmatched - 상위 5건만, 쿼터 절약)
+    # 2. 단독 탐지 (unmatched - 도구당 상위 5건, 쿼터 절약)
+    #    IaC(합산 검증)는 severity 무관하게 도구당 5건씩
     unmatched = gate.get("unmatched_findings", {})
     count = 0
     for tool_name, findings in unmatched.items():
         if not isinstance(findings, list):
             continue
+        tool_count = 0
         for f in findings:
-            if count >= 5:
+            if tool_count >= 5:
                 break
             severity = (f.get("severity") or "MEDIUM").upper()
-            if severity not in ("CRITICAL", "HIGH"):
-                continue  # Critical/High만
+            # IaC(합산)는 전체, SAST/SCA/DAST(교차)는 Critical/High만
+            if category != "IaC" and severity not in ("CRITICAL", "HIGH"):
+                continue
+            tool_count += 1
             pairs.append({
                 "category": category,
                 "severity": severity,

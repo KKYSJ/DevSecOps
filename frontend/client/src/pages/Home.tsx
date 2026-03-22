@@ -767,44 +767,56 @@ export default function Home({ params }: HomeProps) {
           {activeSection === 'iac' && (
             <div className="space-y-5">
               <LlmGateSummary gate={llmGates['iac']} judgments={llmJudgments['iac']} mode="combined" />
-              {/* IaC는 합산 검증 — tfsec/checkov 각각 5건씩 */}
+              {/* IaC 합산 검증 — judgments 기반 한국어 */}
+              {(llmJudgments['iac'] && llmJudgments['iac'].length > 0) ? (
               <div className="bg-card rounded-lg border border-border shadow-sm p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">합산 검증</span>
                   <span className="text-base font-semibold text-foreground">tfsec + Checkov 통합 점검 결과</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">tfsec ({vulnerabilities.filter(v => v.tool?.toLowerCase() === 'tfsec').length}건 중 상위 5건)</div>
-                    <div className="space-y-2">
-                      {vulnerabilities.filter(v => v.tool?.toLowerCase() === 'tfsec').slice(0, 5).map((v, i) => (
-                        <div key={i} className="bg-blue-50 border border-blue-100 rounded p-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${v.severity === 'CRITICAL' ? 'bg-red-600' : v.severity === 'HIGH' ? 'bg-orange-600' : v.severity === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500'}`}>{v.severity}</span>
-                          </div>
-                          <div className="text-sm font-medium text-foreground">{v.description?.slice(0, 80)}</div>
-                          {v.file && <div className="text-xs text-muted-foreground mt-1">📁 {v.file}{v.line ? `:${v.line}` : ''}</div>}
+                {/* 도구별 분리 */}
+                {(() => {
+                  const iacJ = llmJudgments['iac'] || [];
+                  const tfsecJ = iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'tfsec').slice(0, 5);
+                  const checkovJ = iacJ.filter((j: any) => (j.finding_a?.tool || '').toLowerCase() === 'checkov').slice(0, 5);
+                  const renderIacItem = (j: any, i: number) => {
+                    const sev = (j.severity || 'MEDIUM').toUpperCase();
+                    const sevColor = sev === 'CRITICAL' ? 'bg-red-600' : sev === 'HIGH' ? 'bg-orange-600' : sev === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500';
+                    return (
+                      <div key={i} className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-bold text-blue-700">#{i + 1}</span>
+                          <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sevColor}`}>{sev}</span>
+                          <span className="text-xs text-muted-foreground">신뢰도 {j.confidence === 'HIGH' ? '90%' : j.confidence === 'MED' ? '60%' : '30%'}</span>
                         </div>
-                      ))}
+                        <div className="text-sm font-semibold text-foreground mb-1">{j.title_ko || j.finding_a?.title}</div>
+                        {j.risk_summary && <div className="text-sm text-muted-foreground mb-1">{j.risk_summary}</div>}
+                        {j.action_text && <div className="text-sm text-blue-700"><strong>수정 방법:</strong> {j.action_text}</div>}
+                        {j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}{j.finding_a.line_number ? `:${j.finding_a.line_number}` : ''}</div>}
+                      </div>
+                    );
+                  };
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">tfsec (상위 {tfsecJ.length}건)</div>
+                        <div className="space-y-2">{tfsecJ.map(renderIacItem)}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">Checkov (상위 {checkovJ.length}건)</div>
+                        <div className="space-y-2">{checkovJ.map(renderIacItem)}</div>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">Checkov ({vulnerabilities.filter(v => v.tool?.toLowerCase() === 'checkov').length}건 중 상위 5건)</div>
-                    <div className="space-y-2">
-                      {vulnerabilities.filter(v => v.tool?.toLowerCase() === 'checkov').slice(0, 5).map((v, i) => (
-                        <div key={i} className="bg-blue-50 border border-blue-100 rounded p-3">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${v.severity === 'CRITICAL' ? 'bg-red-600' : v.severity === 'HIGH' ? 'bg-orange-600' : v.severity === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500'}`}>{v.severity}</span>
-                          </div>
-                          <div className="text-sm font-medium text-foreground">{v.description?.slice(0, 80)}</div>
-                          {v.file && <div className="text-xs text-muted-foreground mt-1">📁 {v.file}{v.line ? `:${v.line}` : ''}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
+              ) : (
+              <div className="bg-card rounded-lg border border-border p-6 text-center text-muted-foreground text-sm">
+                IaC LLM 판정 데이터가 없습니다. 다음 CI 실행 후 표시됩니다.
+              </div>
+              )}
               <GateSeverityCards gate={llmGates['iac']} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['tfsec', 'checkov'].includes(v.tool?.toLowerCase())).slice(0, 10)} />
             </div>
           )}
 
