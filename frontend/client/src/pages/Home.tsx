@@ -1287,32 +1287,31 @@ export default function Home({ params }: HomeProps) {
                     }
                     return null;
                   };
+                  // 중복 제거
+                  const dedup = (items: any[]) => { const seen = new Set<string>(); return items.filter(v => { const k = v.description || ''; if (seen.has(k)) return false; seen.add(k); return true; }); };
                   const renderIacItem = (v: any, i: number) => {
                     const sev = (v.severity || 'MEDIUM').toUpperCase();
                     const sevColor = sev === 'CRITICAL' ? 'bg-red-600' : sev === 'HIGH' ? 'bg-orange-600' : sev === 'MEDIUM' ? 'bg-yellow-600' : 'bg-gray-500';
                     const ko = findKo(v);
                     return (
-                      <div key={i} className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                      <div key={i} className="bg-blue-50 border border-blue-100 rounded p-3">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-bold text-blue-700">#{i + 1}</span>
                           <span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sevColor}`}>{sev}</span>
                         </div>
-                        <div className="text-sm font-semibold text-foreground mb-1">{ko?.title_ko || v.description}</div>
-                        {ko?.risk_summary && <div className="text-sm text-muted-foreground mb-1">{ko.risk_summary}</div>}
-                        {ko?.action_text && <div className="text-sm text-blue-700"><strong>수정 방법:</strong> {ko.action_text}</div>}
-                        {v.file && <div className="text-xs text-muted-foreground mt-1">📁 {v.file}{v.line ? `:${v.line}` : ''}</div>}
+                        <div className="text-sm font-medium text-foreground">{ko?.title_ko || v.description}</div>
+                        {v.file && <div className="text-xs text-muted-foreground mt-1">📁 {v.file}</div>}
                       </div>
                     );
                   };
                   return (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">tfsec (상위 {tfsecTop.length}건)</div>
-                        <div className="space-y-2">{tfsecTop.map(renderIacItem)}</div>
+                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">tfsec ({dedup(tfsecTop).length}건)</div>
+                        <div className="space-y-2">{dedup(tfsecTop).map(renderIacItem)}</div>
                       </div>
                       <div>
-                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">Checkov (상위 {checkovTop.length}건)</div>
-                        <div className="space-y-2">{checkovTop.map(renderIacItem)}</div>
+                        <div className="text-sm font-bold text-foreground mb-2 bg-muted rounded p-2">Checkov ({dedup(checkovTop).length}건)</div>
+                        <div className="space-y-2">{dedup(checkovTop).map(renderIacItem)}</div>
                       </div>
                     </div>
                   );
