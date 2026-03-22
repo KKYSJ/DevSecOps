@@ -60,22 +60,30 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
             },
         })
 
-    # 2. 단독 탐지 (unmatched - 도구당 상위 5건, 쿼터 절약)
-    #    IaC(합산 검증)는 severity 무관하게 도구당 5건씩
+    # 2. 단독 탐지 — 도구당 심각도 순 상위 5건
+    _SEV = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
     unmatched = gate.get("unmatched_findings", {})
-    count = 0
     for tool_name, findings in unmatched.items():
         if not isinstance(findings, list):
             continue
+        # 심각도 순 정렬
+        sorted_findings = sorted(
+            findings,
+            key=lambda f: _SEV.get((f.get("severity") or "LOW").upper(), 9)
+        )
         tool_count = 0
-        for f in findings:
+        for f in sorted_findings:
             if tool_count >= 5:
                 break
             severity = (f.get("severity") or "MEDIUM").upper()
-            # IaC(합산)는 전체, SAST/SCA/DAST(교차)는 Critical/High만
+            # SAST/SCA/DAST(교차)는 Critical/High만, IaC(합산)는 전체
             if category != "IaC" and severity not in ("CRITICAL", "HIGH"):
                 continue
             tool_count += 1
+            # title + description 합쳐서 LLM에 충분한 맥락 제공
+            title = f.get("title", "")
+            desc = f.get("description") or ""
+            full_desc = f"{title}. {desc}" if desc and desc != title else title
             pairs.append({
                 "category": category,
                 "severity": severity,
@@ -83,16 +91,15 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
                     "tool": f.get("tool", tool_name),
                     "category": category,
                     "severity": severity,
-                    "title": f.get("title", ""),
+                    "title": title,
                     "file_path": f.get("file_path", ""),
                     "line_number": f.get("line_number"),
                     "cwe_id": f.get("cwe_id"),
                     "cve_id": f.get("cve_id"),
-                    "description": (f.get("description") or "")[:200],
+                    "description": full_desc[:400],
                 },
                 "finding_b": None,
             })
-            count += 1
 
     return pairs
 

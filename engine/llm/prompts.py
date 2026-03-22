@@ -54,8 +54,13 @@ def _format_finding_compact(finding: dict | None, category: str) -> str:
     elif category == "IaC":
         if finding.get("file_path"):
             parts.append(f"file={finding['file_path']}")
+        if finding.get("line_number") is not None:
+            parts.append(f"line={finding['line_number']}")
         if finding.get("resource"):
             parts.append(f"resource={finding['resource']}")
+        if finding.get("description"):
+            desc = str(finding["description"])[:100]
+            parts.append(f'desc="{desc}"')
     elif category == "DAST":
         if finding.get("url"):
             parts.append(f"url={finding['url']}")
