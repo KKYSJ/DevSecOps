@@ -596,6 +596,20 @@ jobs:
             --max-time 120 || true
         continue-on-error: true
 
+      - name: DAST 개별 취약점 LLM 판정 (한국어)
+        if: always() && env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # DAST gate 파일을 run_llm_judgments.py가 찾는 경로에 복사
+          mkdir -p scan-results/dast-llm-gate
+          cp artifacts/dast/dast-llm-gate.json scan-results/dast-llm-gate/dast-llm-gate.json 2>/dev/null || true
+          pip install -q httpx 2>/dev/null
+          python scripts/ci/run_llm_judgments.py || echo "DAST 개별 판정 실패 (무시)"
+        continue-on-error: true
+
   isms-preprod-gate:
     needs:
       - resolve-context
