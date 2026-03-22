@@ -34,6 +34,30 @@ variable "cloudtrail_log_group_name" {
   nullable    = true
 }
 
+variable "create_cloudtrail_bucket" {
+  description = "Whether to create a dedicated S3 bucket for CloudTrail delivery."
+  type        = bool
+  default     = false
+}
+
+variable "cloudtrail_bucket_name" {
+  description = "Optional existing S3 bucket name for CloudTrail delivery."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = !var.enable_cloudtrail || var.create_cloudtrail_bucket || var.cloudtrail_bucket_name != null || var.create_security_logs_bucket
+    error_message = "Set cloudtrail_bucket_name or enable create_cloudtrail_bucket when CloudTrail is enabled."
+  }
+}
+
+variable "cloudtrail_bucket_force_destroy" {
+  description = "Whether the managed CloudTrail S3 bucket may be force-destroyed."
+  type        = bool
+  default     = false
+}
+
 variable "create_security_logs_bucket" {
   description = "Whether to create a dedicated S3 bucket for security service logs."
   type        = bool
@@ -213,6 +237,13 @@ variable "config_delivery_channel_name" {
   default     = "default"
 }
 
+variable "config_s3_key_prefix" {
+  description = "Optional S3 key prefix for AWS Config delivery."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "create_config_service_role" {
   description = "Whether to create a dedicated IAM role for AWS Config instead of reusing an existing service-linked role."
   type        = bool
@@ -229,6 +260,39 @@ variable "config_recorder_role_arn" {
     condition     = !var.enable_config || var.create_config_service_role || var.config_recorder_role_arn != null
     error_message = "Set config_recorder_role_arn when enable_config is true and create_config_service_role is false."
   }
+}
+
+variable "config_recording_frequency" {
+  description = "Recording frequency for the AWS Config recorder."
+  type        = string
+  default     = "DAILY"
+
+  validation {
+    condition     = contains(["CONTINUOUS", "DAILY"], var.config_recording_frequency)
+    error_message = "config_recording_frequency must be CONTINUOUS or DAILY."
+  }
+}
+
+variable "config_recording_override_frequency" {
+  description = "Recording frequency override for selected AWS Config resource types."
+  type        = string
+  default     = "CONTINUOUS"
+
+  validation {
+    condition     = contains(["CONTINUOUS", "DAILY"], var.config_recording_override_frequency)
+    error_message = "config_recording_override_frequency must be CONTINUOUS or DAILY."
+  }
+}
+
+variable "config_recording_override_resource_types" {
+  description = "Resource types that should use the AWS Config recording mode override."
+  type        = list(string)
+  default = [
+    "AWS::IAM::Policy",
+    "AWS::IAM::User",
+    "AWS::IAM::Role",
+    "AWS::IAM::Group"
+  ]
 }
 
 variable "config_rule_names" {

@@ -14,6 +14,7 @@ locals {
   trail_name                = coalesce(var.trail_name, "${local.name_prefix}-trail")
   cloudtrail_log_group_name = coalesce(var.cloudtrail_log_group_name, "/aws/cloudtrail/${local.name_prefix}")
   security_logs_bucket_name = try(aws_s3_bucket.security_logs[0].bucket, var.security_logs_bucket_name)
+  cloudtrail_bucket_name    = try(aws_s3_bucket.cloudtrail[0].bucket, var.cloudtrail_bucket_name, try(aws_s3_bucket.security_logs[0].bucket, null))
   config_recorder_role_arn  = var.enable_config && var.create_config_service_role ? aws_iam_role.config[0].arn : var.config_recorder_role_arn
   flow_logs_log_group_name  = coalesce(var.flow_logs_log_group_name, "/aws/vpc/flowlogs/${local.name_prefix}")
   flow_logs_log_group_arn   = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:${local.flow_logs_log_group_name}"

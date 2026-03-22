@@ -54,7 +54,7 @@ resource "aws_cloudtrail" "main" {
   count = var.enable_cloudtrail ? 1 : 0
 
   name                          = local.trail_name
-  s3_bucket_name                = local.security_logs_bucket_name
+  s3_bucket_name                = local.cloudtrail_bucket_name
   include_global_service_events = true
   is_multi_region_trail         = true
   enable_log_file_validation    = true
@@ -64,6 +64,7 @@ resource "aws_cloudtrail" "main" {
   tags = merge(local.common_tags, { Name = local.trail_name })
 
   depends_on = [
+    aws_s3_bucket_policy.cloudtrail,
     aws_s3_bucket_policy.security_logs,
     aws_iam_role_policy.cloudtrail_logs
   ]

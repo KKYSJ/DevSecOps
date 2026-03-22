@@ -36,6 +36,23 @@ resource "aws_config_configuration_recorder" "main" {
   recording_group {
     all_supported                 = true
     include_global_resource_types = true
+
+    recording_strategy {
+      use_only = "ALL_SUPPORTED_RESOURCE_TYPES"
+    }
+  }
+
+  recording_mode {
+    recording_frequency = var.config_recording_frequency
+
+    dynamic "recording_mode_override" {
+      for_each = length(var.config_recording_override_resource_types) > 0 ? [1] : []
+
+      content {
+        recording_frequency = var.config_recording_override_frequency
+        resource_types      = var.config_recording_override_resource_types
+      }
+    }
   }
 }
 
@@ -44,7 +61,7 @@ resource "aws_config_delivery_channel" "main" {
 
   name           = var.config_delivery_channel_name
   s3_bucket_name = local.security_logs_bucket_name
-  s3_key_prefix  = "config"
+  s3_key_prefix  = var.config_s3_key_prefix
 
   depends_on = [
     aws_s3_bucket_policy.security_logs

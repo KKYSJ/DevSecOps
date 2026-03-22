@@ -11,6 +11,8 @@ default_tags = {
 
 create_security_logs_bucket = false
 security_logs_bucket_name   = "<existing-security-logs-bucket>"
+create_cloudtrail_bucket    = true
+cloudtrail_bucket_name      = null
 
 trail_name                = "secureflow-shared-trail"
 cloudtrail_log_group_name = "/aws/cloudtrail/secureflow-shared"
