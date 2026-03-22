@@ -1,0 +1,38 @@
+project_name = "secureflow"
+environment  = "shared"
+aws_region   = "<aws-region>"
+
+default_tags = {
+  Project     = "secureflow"
+  Environment = "shared"
+  ManagedBy   = "Terraform"
+  Stack       = "security-baseline"
+}
+
+create_security_logs_bucket = false
+security_logs_bucket_name   = "<existing-security-logs-bucket>"
+
+trail_name                = "secureflow-shared-trail"
+cloudtrail_log_group_name = "/aws/cloudtrail/secureflow-shared"
+
+enable_cloudtrail        = false
+enable_config            = false
+enable_config_rules      = false
+enable_securityhub       = true
+enable_guardduty         = true
+enable_ecr_registry_scan = true
+
+create_config_service_role   = false
+config_recorder_name         = "default"
+config_delivery_channel_name = "default"
+config_recorder_role_arn     = "<existing-config-recorder-role-arn>"
+
+enable_flow_logs           = false
+create_flow_logs_log_group = false
+create_flow_logs_iam_role  = false
+managed_vpc_ids            = []
+
+enable_waf               = false
+existing_waf_web_acl_arn = null
+
+enable_incident_response = false

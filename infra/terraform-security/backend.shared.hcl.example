@@ -1,0 +1,5 @@
+bucket         = "<terraform-state-bucket>"
+key            = "security/shared/terraform.tfstate"
+region         = "<aws-region>"
+dynamodb_table = "<terraform-lock-table>"
+encrypt        = true
