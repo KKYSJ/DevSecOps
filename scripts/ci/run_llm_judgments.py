@@ -76,8 +76,8 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
             if tool_count >= 5:
                 break
             severity = (f.get("severity") or "MEDIUM").upper()
-            # SAST/SCA/DAST(교차)는 Critical/High만, IaC(합산)는 전체
-            if category != "IaC" and severity not in ("CRITICAL", "HIGH"):
+            # SAST/SCA는 Critical/High만, IaC/DAST는 전체
+            if category not in ("IaC", "DAST") and severity not in ("CRITICAL", "HIGH"):
                 continue
             tool_count += 1
             # title + description 합쳐서 LLM에 충분한 맥락 제공
