@@ -810,21 +810,21 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sast' && (
             <div className="space-y-5">
-              <LlmGateSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} />
+              <LlmGateSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} mode="cross" />
               <GateCrossValidation gate={llmGates['sast']} judgments={llmJudgments['sast']} />
               <GateSeverityCards gate={llmGates['sast']} />
               <GateToolSummary gate={llmGates['sast']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 20)} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase())).slice(0, 10)} />
             </div>
           )}
 
           {activeSection === 'sca' && (
             <div className="space-y-5">
-              <LlmGateSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
+              <LlmGateSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} mode="cross" />
               <GateCrossValidation gate={llmGates['sca']} judgments={llmJudgments['sca']} />
               <GateSeverityCards gate={llmGates['sca']} />
               <GateToolSummary gate={llmGates['sca']} />
-              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 20)} />
+              <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).slice(0, 10)} />
             </div>
           )}
 
