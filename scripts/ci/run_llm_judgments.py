@@ -94,6 +94,7 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
                     "title": title,
                     "file_path": f.get("file_path", ""),
                     "line_number": f.get("line_number"),
+                    "url": f.get("url", ""),
                     "cwe_id": f.get("cwe_id"),
                     "cve_id": f.get("cve_id"),
                     "description": full_desc[:400],
@@ -112,7 +113,16 @@ def main():
         print("BACKEND_URL 미설정, 스킵")
         return
 
-    stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST"}
+    all_stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST"}
+    # gate 파일이 있는 stage만 처리 (CD에서는 DAST만 있을 수 있음)
+    stages = {}
+    for k, v in all_stages.items():
+        gate_path = ROOT / f"scan-results/{k}-llm-gate/{k}-llm-gate.json"
+        if gate_path.exists():
+            stages[k] = v
+    if not stages:
+        print("처리할 gate 파일 없음")
+        return
     all_judgments = {}
 
     for stage, category in stages.items():
@@ -145,6 +155,41 @@ def main():
 
         all_judgments[stage] = analyzed
 
+    # 카테고리별 LLM 요약 생성
+    summaries = {}
+    for stage, analyzed in all_judgments.items():
+        tp = [p for p in analyzed if p.get("judgement_code") == "TRUE_POSITIVE" and p.get("finding_b")]
+        rv = [p for p in analyzed if not (p.get("judgement_code") == "TRUE_POSITIVE" and p.get("finding_b"))]
+        tp_titles = [p.get("title_ko", "") for p in tp[:5]]
+        rv_titles = [p.get("title_ko", "") for p in rv[:3]]
+
+        summary_prompt = f"""너는 DevSecOps 보안 분석 전문가다. 아래 교차검증 결과를 한국어로 요약하라.
+
+카테고리: {stage.upper()}
+동시 탐지 (두 도구 모두 발견): {len(tp)}건
+{chr(10).join(f'  - {t}' for t in tp_titles) if tp_titles else '  없음'}
+단독 탐지 (한 도구만 발견): {len(rv)}건
+{chr(10).join(f'  - {t}' for t in rv_titles) if rv_titles else '  없음'}
+
+아래 JSON 형식으로만 응답하라:
+{{"summary": "2~3문장 한국어 요약", "reasons": ["근거1", "근거2"]}}
+"""
+        try:
+            from engine.llm.client import call_llm
+            resp = call_llm(summary_prompt)
+            import re
+            json_match = re.search(r'\{[\s\S]+\}', resp)
+            if json_match:
+                sdata = json.loads(json_match.group(0))
+                summaries[stage] = sdata
+                print(f"  {stage} 요약 생성 완료")
+        except Exception as e:
+            print(f"  {stage} 요약 실패 ({e})")
+            summaries[stage] = {
+                "summary": f"동시 탐지 {len(tp)}건, 단독 탐지 {len(rv)}건이 확인되었습니다.",
+                "reasons": []
+            }
+
     # EC2로 전송
     if all_judgments:
         import urllib.request
@@ -154,6 +199,7 @@ def main():
             "gate_result": {
                 "type": "individual_judgments",
                 "commit_hash": commit_hash,
+                "summaries": summaries,
                 "judgments": {
                     stage: [
                         {

@@ -105,18 +105,22 @@ def get_llm_gates(db: Session = Depends(get_db)):
             if stage not in gates:  # 카테고리별 최신 1건만
                 gates[stage] = data
 
-        # 개별 판정 결과 (judgments)
-        judgments = {}
+        # 개별 판정 결과 (judgments) — 여러 건 merge
+        judgments: dict = {}
         j_records = (
             db.query(ToolResult)
             .filter(ToolResult.name == "llm-gate-judgments")
             .order_by(ToolResult.id.desc())
-            .limit(1)
+            .limit(5)
             .all()
         )
-        if j_records:
-            j_data = j_records[0].data or {}
-            judgments = j_data.get("judgments", {})
+        for j_rec in reversed(j_records):  # 오래된 것부터 → 최신이 덮어씀
+            j_data = j_rec.data or {}
+            j_inner = j_data.get("judgments", {})
+            if isinstance(j_inner, dict):
+                for stage_key, items in j_inner.items():
+                    if isinstance(items, list) and len(items) > 0:
+                        judgments[stage_key] = items
 
         return {"gates": gates, "judgments": judgments}
     except Exception:

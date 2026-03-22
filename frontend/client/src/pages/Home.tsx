@@ -283,9 +283,66 @@ function DeploySection() {
   );
 }
 
+// 이미지 스캔 섹션
+function ImageScanSection() {
+  const [vulns, setVulns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchJson<any>('/vulns?tool=trivy-image&limit=50').then(res => {
+      const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+      const v = (res?.vulnerabilities || [])
+        .sort((a: any, b: any) => (_s[(a.severity || 'LOW').toUpperCase()] ?? 9) - (_s[(b.severity || 'LOW').toUpperCase()] ?? 9))
+        .map((v: any, i: number) => ({
+          id: `img-${i}`,
+          severity: (v.severity || 'MEDIUM').toUpperCase(),
+          category: 'IMAGE',
+          tool: 'trivy-image',
+          file: v.file_path || v.package_name || '',
+          line: 0,
+          cwe: v.cve_id || v.cwe_id || '',
+          description: v.title || v.description || '',
+          confidence: 'MED',
+          detectedAt: v.created_at || new Date().toISOString(),
+          _originalDesc: v.description || v.title || '',
+        }));
+      setVulns(v);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="text-center py-10 text-muted-foreground">이미지 스캔 데이터 로딩 중...</div>;
+
+  if (vulns.length === 0) {
+    return (
+      <div className="bg-card rounded-lg border border-border p-8 text-center">
+        <div className="text-lg font-semibold text-foreground mb-2">이미지 스캔</div>
+        <p className="text-sm text-muted-foreground mb-1">Docker 빌드 후 컨테이너 이미지 내부의 취약점을 Trivy로 스캔합니다.</p>
+        <p className="text-sm text-muted-foreground">CD 파이프라인에서 이미지 빌드 → ECR 푸시 → 이미지 스캔 순서로 실행됩니다.</p>
+        <div className="mt-4 text-xs text-muted-foreground bg-muted rounded p-3">
+          다음 CD 파이프라인 실행 시 이미지 스캔 결과가 여기에 표시됩니다.
+        </div>
+      </div>
+    );
+  }
+
+  const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  vulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
+
+  return (
+    <>
+      <div className="grid grid-cols-4 gap-3">
+        {Object.entries(counts).map(([sev, count]) => {
+          const colors: Record<string, string> = { CRITICAL: 'text-red-600 bg-red-50 border-red-200', HIGH: 'text-orange-600 bg-orange-50 border-orange-200', MEDIUM: 'text-yellow-600 bg-yellow-50 border-yellow-200', LOW: 'text-blue-600 bg-blue-50 border-blue-200' };
+          return <div key={sev} className={`rounded-lg border p-4 ${colors[sev]}`}><div className="text-xs font-semibold uppercase">{sev}</div><div className="text-2xl font-bold mt-1">{count}</div></div>;
+        })}
+      </div>
+      <VulnerabilityTable vulnerabilities={vulns} category="IMAGE" />
+    </>
+  );
+}
+
 // DAST 전체 섹션 — SAST/SCA와 동일 구조
-function DastFullSection({ gates, judgments }: { gates: Record<string, any>; judgments: Record<string, any[]> }) {
-  const [dastVulns, setDastVulns] = useState<any[]>([]);
+function DastFullSection({ gates, judgments, summaries }: { gates: Record<string, any>; judgments: Record<string, any[]>; summaries?: Record<string, any> }) {
+  const [dastVulnsApi, setDastVulnsApi] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     fetchJson<any>('/vulns?category=DAST&limit=50').then(res => {
@@ -294,7 +351,7 @@ function DastFullSection({ gates, judgments }: { gates: Record<string, any>; jud
         .filter((v: any) => (v.severity || '').toUpperCase() !== 'INFO')
         .sort((a: any, b: any) => (_s[(a.severity || 'LOW').toUpperCase()] ?? 9) - (_s[(b.severity || 'LOW').toUpperCase()] ?? 9))
         .map((v: any, i: number) => ({
-          id: `dast-${i}`,
+          id: `dast-api-${i}`,
           severity: (v.severity || 'MEDIUM').toUpperCase(),
           category: 'DAST',
           tool: v.tool || 'zap',
@@ -304,16 +361,38 @@ function DastFullSection({ gates, judgments }: { gates: Record<string, any>; jud
           description: v.title || v.description || '',
           confidence: 'MED',
           detectedAt: v.created_at || new Date().toISOString(),
-          _originalDesc: v.description || v.title || '',
+          _originalDesc: ((v.description || v.title || '') as string).replace(/<[^>]*>/g, ''),
         }));
-      setDastVulns(vulns);
+      setDastVulnsApi(vulns);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
-
   const gate = gates['dast'];
   const dastJ = judgments['dast'] || [];
+
+  // judgments 기반 취약점 목록 (있으면 우선 사용)
+  const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+  const dastVulns = dastJ.length > 0
+    ? dastJ.map((j: any, i: number) => {
+        const fa = j.finding_a || {};
+        return {
+          id: `dast-${i}`,
+          severity: (j.reassessed_severity || j.severity || fa.severity || 'MEDIUM').toUpperCase(),
+          category: 'DAST',
+          tool: fa.tool || 'zap',
+          file: fa.url || fa.file_path || '',
+          line: 0,
+          cwe: fa.cwe_id || '',
+          description: j.title_ko || fa.title || '',
+          confidence: j.confidence || 'MED',
+          detectedAt: new Date().toISOString(),
+          _originalDesc: ((fa.description || fa.title || '') as string).replace(/<[^>]*>/g, ''),
+          _judgment: j,
+        };
+      }).sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9))
+    : dastVulnsApi;
+
+  if (loading && dastJ.length === 0) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
   const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
   dastVulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
 
@@ -336,15 +415,16 @@ function DastFullSection({ gates, judgments }: { gates: Record<string, any>; jud
       {gate && (
         <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">DAST 교차검증 분석 결과</span></>}>
           {(() => {
+            const sm = summaries?.['dast'] || {};
             const llm = gate?.llm_analysis || {};
-            const reasons = llm.reasons || [];
+            const fallbackSummary = sm?.summary || llm.summary;
+            const fallbackReasons = sm?.reasons?.length > 0 ? sm.reasons : (llm.reasons || []);
             const zapCount = gate?.tool_summaries?.find((t: any) => t.tool === 'zap')?.summary?.total || 0;
             const nucleiCount = gate?.tool_summaries?.find((t: any) => t.tool === 'nuclei')?.summary?.total || 0;
             return (<div className="space-y-3 pt-3">
               <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-foreground">{zapCount}</div><div className="text-sm text-muted-foreground">ZAP 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-foreground">{nucleiCount}</div><div className="text-sm text-muted-foreground">Nuclei 탐지</div></div></div>
-              {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
-              {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r: string, i: number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
-              {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+              {fallbackSummary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{fallbackSummary}</div></div>}
+              {fallbackReasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{fallbackReasons.map((r: string, i: number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
             </div>);
           })()}
         </Accordion>
@@ -776,6 +856,7 @@ export default function Home({ params }: HomeProps) {
   const [apiSiemData, setApiSiemData] = useState<any>(null);
   const [llmGates, setLlmGates] = useState<Record<string, any>>({});
   const [llmJudgments, setLlmJudgments] = useState<Record<string, any[]>>({});
+  const [llmSummaries, setLlmSummaries] = useState<Record<string, any>>({});
 
   // judgments 기반 데이터 로드 (매칭 불필요 — judgment에 한국어+원본 모두 포함)
   useEffect(() => {
@@ -787,16 +868,37 @@ export default function Home({ params }: HomeProps) {
 
     fetchJson<any>('/cross/gates').then((gatesData) => {
       if (!gatesData) return;
-      setLlmGates(gatesData.gates || {});
+      console.log('gatesData keys:', Object.keys(gatesData));
+      console.log('gatesData.gates keys:', Object.keys(gatesData.gates || {}));
+      console.log('gatesData.judgments keys:', Object.keys(gatesData.judgments || {}));
+      console.log('gatesData.gates.judgments?', !!gatesData.gates?.judgments);
+      const rawGates = gatesData.gates || {};
 
-      // judgments 추출
-      const jRaw = gatesData.judgments || {};
-      const jByStage: Record<string, any[]> = {};
-      if (jRaw.gate_result?.judgments) {
-        Object.assign(jByStage, jRaw.gate_result.judgments);
-      } else if (jRaw.sast || jRaw.sca || jRaw.iac) {
-        Object.assign(jByStage, jRaw);
+      // judgments 찾기 — top-level을 우선 (merge된 데이터)
+      let jByStage: Record<string, any[]> = {};
+      const paths = [
+        gatesData.judgments,                  // top.judgments (merge된 전체)
+        gatesData.judgments?.judgments,       // top.judgments.judgments
+        gatesData.judgments?.gate_result?.judgments,
+        rawGates.judgments?.judgments,        // gates.judgments.judgments (최신 1건만)
+        rawGates.judgments?.gate_result?.judgments,
+      ];
+      for (const p of paths) {
+        if (p && typeof p === 'object' && (p.sast || p.sca || p.iac || p.dast)) {
+          jByStage = p;
+          break;
+        }
       }
+
+      // gates에서 judgments 키 제거 (gate 데이터만)
+      const cleanGates = { ...rawGates };
+      delete cleanGates.judgments;
+      setLlmGates(cleanGates);
+
+      // summaries 추출
+      const rawJudgmentsObj = rawGates.judgments || gatesData.judgments || {};
+      const sm = rawJudgmentsObj.summaries || rawJudgmentsObj.gate_result?.summaries || {};
+      setLlmSummaries(sm);
       setLlmJudgments(jByStage);
 
       // judgments → Vulnerability + CrossAnalysisItem 변환
@@ -1137,14 +1239,18 @@ export default function Home({ params }: HomeProps) {
               {/* 2. LLM 합산 검증 분석 결과 — 아코디언 */}
               <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">합산 검증 분석 결과</span></>}>
                 {(() => {
+                  const sm = llmSummaries['iac'];
+                  const jAll = llmJudgments['iac'] || [];
+                  // 폴백: gate LLM
                   const gate = llmGates['iac'];
                   const llm = gate?.llm_analysis || {};
-                  const reasons = llm.reasons || [];
-                  if (!gate) return <div className="text-sm text-muted-foreground pt-3">데이터 없음</div>;
+                  const fallbackSummary = sm?.summary || llm.summary;
+                  const fallbackReasons = sm?.reasons?.length > 0 ? sm.reasons : (llm.reasons || []);
+                  if (!fallbackSummary && jAll.length === 0) return <div className="text-sm text-muted-foreground pt-3">데이터 없음</div>;
                   return (<div className="space-y-3 pt-3">
-                    {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
-                    {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r: string, i: number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
-                    {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+                    {fallbackSummary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{fallbackSummary}</div></div>}
+                    {fallbackReasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{fallbackReasons.map((r: string, i: number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+                    {!fallbackSummary && jAll.length > 0 && <div className="bg-muted rounded-lg p-4"><div className="text-sm text-muted-foreground">합산 점검 {jAll.length}건이 확인되었습니다.</div></div>}
                   </div>);
                 })()}
               </Accordion>
@@ -1234,18 +1340,23 @@ export default function Home({ params }: HomeProps) {
             <div className="space-y-4">
               <VulnSeverityCards vulns={vulnerabilities.filter(v => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))} />
               <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">CI 교차검증 분석 결과</span></>}>
-                {(() => { const gate = llmGates['sast']; const llm = gate?.llm_analysis || {}; const reasons = llm.reasons || []; const jAll = llmJudgments['sast'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length; const jRV = jAll.length - jTP; return (<div className="space-y-3 pt-3">
-                  <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
-                  {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
-                  {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r:string,i:number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
-                  {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+                {(() => { const jAll = llmJudgments['sast'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b); const jRV = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b)); const sm = llmSummaries['sast']; return (<div className="space-y-3 pt-3">
+                  <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP.length}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV.length}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
+                  {sm?.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{sm.summary}</div></div>}
+                  {sm?.reasons?.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{sm.reasons.map((r:string,i:number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+                  {!sm?.summary && jAll.length > 0 && <div className="bg-muted rounded-lg p-4"><div className="text-sm text-muted-foreground">동시 탐지 {jTP.length}건, 단독 탐지 {jRV.length}건이 확인되었습니다.</div></div>}
                 </div>); })()}
               </Accordion>
               <Accordion title={<><span className="text-sm font-bold bg-red-600 text-white px-3 py-1 rounded">동시 탐지</span><span className="text-base font-semibold text-foreground">두 도구가 동시에 발견한 취약점</span></>}>
                 {(() => { const jAll = llmJudgments['sast'] || []; const _so: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; const confirmed = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).sort((a:any,b:any) => (_so[(a.reassessed_severity||a.severity||'LOW').toUpperCase()]??9) - (_so[(b.reassessed_severity||b.severity||'LOW').toUpperCase()]??9)); return confirmed.length > 0 ? <div className="space-y-4 pt-3">{confirmed.map((j:any,i:number) => { const sev = (j.reassessed_severity||j.severity||'HIGH').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':'bg-yellow-600'; const fa=j.finding_a||{}; const fb=j.finding_b||{}; return <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-4"><div className="flex items-center gap-2 mb-1"><span className={`text-sm font-bold text-white px-2 py-0.5 rounded ${sc}`}>{sev}</span>{fa.cwe_id && <span className="text-sm font-bold text-blue-700">{fa.cwe_id}</span>}</div><div className="text-base font-semibold text-foreground mb-1">{j.title_ko}</div>{fa.file_path && <div className="text-sm text-muted-foreground mb-3">📁 {fa.file_path}{fa.line_number?`:${fa.line_number}`:''}</div>}<div className="grid grid-cols-2 gap-3 mb-3"><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fa.tool} 탐지</div><div className="text-xs text-muted-foreground">{fa.cwe_id||''}</div></div><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fb.tool} 탐지</div><div className="text-xs text-muted-foreground">{fb.cwe_id||''}</div></div></div><div className="bg-red-100 rounded-lg p-3 space-y-1">{j.risk_summary && <div className="text-sm text-red-800"><strong>위험:</strong> {j.risk_summary}</div>}{j.action_text && <div className="text-sm text-blue-800"><strong>수정 방법:</strong> {j.action_text}</div>}</div></div>; })}</div> : <div className="text-sm text-muted-foreground pt-3">동시 탐지 항목 없음</div>; })()}
               </Accordion>
               <Accordion title={<><span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span><span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span></>} defaultOpen={false}>
-                {(() => { const jAll = llmJudgments['sast'] || []; const review = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b) ); const tools = llmGates['sast']?.tool_summaries || []; const tA = tools[0]?.tool || 'semgrep'; const tB = tools[1]?.tool || 'sonarqube'; const rA = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tA.toLowerCase()).slice(0,5); const rB = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tB.toLowerCase()).slice(0,5); return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div></div>; })()}
+                {(() => { const jAll = llmJudgments['sast'] || []; const review = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b)); const tools = llmGates['sast']?.tool_summaries || []; const tA = tools[0]?.tool || 'semgrep'; const tB = tools[1]?.tool || 'sonarqube';
+                  const dedup = (items: any[]) => { const seen = new Set<string>(); return items.filter(j => { const k = j.title_ko || j.finding_a?.title || ''; if (seen.has(k)) return false; seen.add(k); return true; }); };
+                  const rA = dedup(review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tA.toLowerCase()));
+                  const rB = dedup(review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tB.toLowerCase()));
+                  const renderItem = (j:any, i:number) => { const sev = (j.reassessed_severity||j.severity||'MEDIUM').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':sev==='MEDIUM'?'bg-yellow-600':'bg-gray-500'; return <div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sc}`}>{sev}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>; };
+                  return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div></div>; })()}
               </Accordion>
               <GateToolSummary gate={llmGates['sast']} judgments={llmJudgments['sast']} />
               <VulnerabilityTable vulnerabilities={vulnerabilities.filter((v) => ['semgrep', 'sonarqube', 'bandit'].includes(v.tool?.toLowerCase()))} judgments={llmJudgments['sast']} category="SAST" />
@@ -1256,18 +1367,23 @@ export default function Home({ params }: HomeProps) {
             <div className="space-y-4">
               <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))} />
               <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">CI 교차검증 분석 결과</span></>}>
-                {(() => { const gate = llmGates['sca']; const llm = gate?.llm_analysis || {}; const reasons = llm.reasons || []; const jAll = llmJudgments['sca'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length; const jRV = jAll.length - jTP; return (<div className="space-y-3 pt-3">
-                  <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
-                  {llm.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{llm.summary}</div></div>}
-                  {reasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{reasons.map((r:string,i:number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
-                  {llm.provider_notes && <div className="text-sm text-blue-700 bg-blue-50 rounded-lg p-3">{llm.provider_notes}</div>}
+                {(() => { const jAll = llmJudgments['sca'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b); const jRV = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b)); const sm = llmSummaries['sca']; return (<div className="space-y-3 pt-3">
+                  <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP.length}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV.length}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
+                  {sm?.summary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{sm.summary}</div></div>}
+                  {sm?.reasons?.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{sm.reasons.map((r:string,i:number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+                  {!sm?.summary && jAll.length > 0 && <div className="bg-muted rounded-lg p-4"><div className="text-sm text-muted-foreground">동시 탐지 {jTP.length}건, 단독 탐지 {jRV.length}건이 확인되었습니다.</div></div>}
                 </div>); })()}
               </Accordion>
               <Accordion title={<><span className="text-sm font-bold bg-red-600 text-white px-3 py-1 rounded">동시 탐지</span><span className="text-base font-semibold text-foreground">두 도구가 동시에 발견한 취약점</span></>}>
                 {(() => { const jAll = llmJudgments['sca'] || []; const _so: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; const confirmed = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).sort((a:any,b:any) => (_so[(a.reassessed_severity||a.severity||'LOW').toUpperCase()]??9) - (_so[(b.reassessed_severity||b.severity||'LOW').toUpperCase()]??9)); return confirmed.length > 0 ? <div className="space-y-4 pt-3">{confirmed.map((j:any,i:number) => { const sev = (j.reassessed_severity||j.severity||'HIGH').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':'bg-yellow-600'; const fa=j.finding_a||{}; const fb=j.finding_b||{}; return <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-4"><div className="flex items-center gap-2 mb-1"><span className={`text-sm font-bold text-white px-2 py-0.5 rounded ${sc}`}>{sev}</span>{(fa.cve_id||fa.cwe_id) && <span className="text-sm font-bold text-blue-700">{fa.cve_id||fa.cwe_id}</span>}</div><div className="text-base font-semibold text-foreground mb-1">{j.title_ko}</div>{fa.file_path && <div className="text-sm text-muted-foreground mb-3">📁 {fa.file_path}</div>}<div className="grid grid-cols-2 gap-3 mb-3"><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fa.tool} 탐지</div></div><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700 mb-1">✓ {fb.tool} 탐지</div></div></div><div className="bg-red-100 rounded-lg p-3 space-y-1">{j.risk_summary && <div className="text-sm text-red-800"><strong>위험:</strong> {j.risk_summary}</div>}{j.action_text && <div className="text-sm text-blue-800"><strong>수정 방법:</strong> {j.action_text}</div>}</div></div>; })}</div> : <div className="text-sm text-muted-foreground pt-3">동시 탐지 항목 없음</div>; })()}
               </Accordion>
               <Accordion title={<><span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span><span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span></>} defaultOpen={false}>
-                {(() => { const jAll = llmJudgments['sca'] || []; const review = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b) ); const tools = llmGates['sca']?.tool_summaries || []; const tA = tools[0]?.tool || 'trivy'; const tB = tools[1]?.tool || 'depcheck'; const rA = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tA.toLowerCase()).slice(0,5); const rB = review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tB.toLowerCase()).slice(0,5); return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map((j:any,i:number)=><div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${(j.reassessed_severity||j.severity)==='CRITICAL'?'bg-red-600':'bg-orange-600'}`}>{(j.reassessed_severity||j.severity||'').toUpperCase()}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>):<div className="text-sm text-muted-foreground p-3">Critical/High 없음</div>}</div></div></div>; })()}
+                {(() => { const jAll = llmJudgments['sca'] || []; const review = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b)); const tools = llmGates['sca']?.tool_summaries || []; const tA = tools[0]?.tool || 'trivy'; const tB = tools[1]?.tool || 'depcheck';
+                  const dedup = (items: any[]) => { const seen = new Set<string>(); return items.filter(j => { const k = j.title_ko || j.finding_a?.title || ''; if (seen.has(k)) return false; seen.add(k); return true; }); };
+                  const rA = dedup(review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tA.toLowerCase()));
+                  const rB = dedup(review.filter((j:any) => (j.finding_a?.tool||'').toLowerCase() === tB.toLowerCase()));
+                  const renderItem = (j:any, i:number) => { const sev = (j.reassessed_severity||j.severity||'MEDIUM').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':sev==='MEDIUM'?'bg-yellow-600':'bg-gray-500'; return <div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sc}`}>{sev}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div>{j.finding_a?.file_path && <div className="text-xs text-muted-foreground mt-1">📁 {j.finding_a.file_path}</div>}</div>; };
+                  return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div></div>; })()}
               </Accordion>
               <GateToolSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
               <VulnerabilityTable vulnerabilities={(() => { const _s: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; return vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).sort((a,b) => (_s[a.severity]??9) - (_s[b.severity]??9)); })()} judgments={llmJudgments['sca']} category="SCA" />
@@ -1385,18 +1501,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'image' && (
             <div className="space-y-5">
-              <SummaryCards summary={currentSummary} activeSection={activeSection} vulnerabilities={vulnerabilities} crossAnalysisItems={crossAnalysisItems} />
-              {/* 교차 검증 결과 테이블 */}
-              {(() => {
-                const stageCrossAnalysis = crossAnalysisItems.filter(item =>
-                  item.tools.some(tool => ['Semgrep', 'Bandit', 'ESLint Security', 'Gitleaks'].includes(tool))
-                );
-
-                return <StageCrossAnalysis items={stageCrossAnalysis} />;
-              })()}
-              <VulnerabilityTable
-                vulnerabilities={vulnerabilities.filter((v) => v.tool?.toLowerCase() === 'trivy')}
-              />
+              <ImageScanSection />
             </div>
           )}
 
@@ -1408,7 +1513,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'dast' && (
             <div className="space-y-4">
-              <DastFullSection gates={llmGates} judgments={llmJudgments} />
+              <DastFullSection gates={llmGates} judgments={llmJudgments} summaries={llmSummaries} />
             </div>
           )}
 
