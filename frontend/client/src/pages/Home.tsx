@@ -37,11 +37,10 @@ const PIPELINE_STAGES = [
   { id: 'iac', label: 'IaC 스캔', subtitle: 'tfsec + Checkov', icon: Cloud },
   { id: 'sast', label: 'SAST', subtitle: 'SonarQube + Semgrep', icon: Code2 },
   { id: 'sca', label: 'SCA', subtitle: 'Trivy + Dep-Check', icon: ShieldCheck },
-  { id: 'cross', label: '교차 검증', subtitle: '', icon: GitBranch },
-  // { id: 'normalize', label: '정규화 + 스코어링', subtitle: '', icon: SlidersHorizontal },
+  { id: 'cross', label: '교차 검증', subtitle: 'LLM 판정', icon: GitBranch },
   { id: 'image', label: '이미지 스캔', subtitle: 'Trivy + Grype', icon: Image },
   { id: 'deploy', label: '배포', subtitle: 'ECS Fargate', icon: Server },
-  { id: 'dast', label: 'DAST', subtitle: 'OWASP ZAP + Nuclei', icon: Bug },
+  { id: 'dast', label: 'DAST', subtitle: 'ZAP + Nuclei', icon: Bug },
 ];
 
 type PipelineStepState = 'pending' | 'running' | 'success' | 'failed';
@@ -57,6 +56,64 @@ function stageIdFromPipelineText(text: string | undefined): string | null {
   if (text.includes('배포')) return 'deploy';
   if (text.includes('DAST')) return 'dast';
   return null;
+}
+
+// gate 결과 기반 단계별 상태 계산
+function getStepStateFromGates(
+  stageId: string,
+  gates: Record<string, any>
+): PipelineStepState {
+  const getGateDecision = (g: any) => {
+    const d = (g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase();
+    // fail = block
+    if (d === 'fail' || d === 'block') return 'block';
+    return d;
+  };
+
+  const stageGateMap: Record<string, string[]> = {
+    'iac': ['iac'],
+    'sast': ['sast'],
+    'sca': ['sca'],
+    'cross': ['sast', 'sca', 'iac'],
+    'image': ['image'],
+    'deploy': [],
+    'dast': ['dast'],
+  };
+
+  const relevantGates = stageGateMap[stageId] || [];
+
+  if (stageId === 'cross') {
+    const hasBlock = relevantGates.some(g => getGateDecision(gates[g]) === 'block');
+    const hasAny = relevantGates.some(g => gates[g]);
+    if (!hasAny) return 'pending';
+    return hasBlock ? 'failed' : 'success';
+  }
+
+  // BLOCK된 단계 이후는 전부 회색
+  const stageOrder = ['iac', 'sast', 'sca', 'cross', 'image', 'deploy', 'dast'];
+  const currentStageIdx = stageOrder.indexOf(stageId);
+  for (let i = 0; i < currentStageIdx; i++) {
+    const prevId = stageOrder[i];
+    const prevGates = stageGateMap[prevId] || [];
+    const prevDecision = prevGates.length > 0 ? getGateDecision(gates[prevGates[0]]) : '';
+    if (prevDecision === 'block') return 'pending';  // 이전에 BLOCK → 회색
+    // cross는 Phase 1 중 BLOCK이 있으면
+    if (prevId === 'cross') {
+      const hasBlock = ['sast', 'sca', 'iac'].some(g => getGateDecision(gates[g]) === 'block');
+      if (hasBlock) return 'pending';
+    }
+  }
+
+  if (stageId === 'deploy') {
+    return 'success';
+  }
+
+  const gate = gates[relevantGates[0]];
+  if (!gate) return 'pending';
+  const decision = getGateDecision(gate);
+  if (decision === 'block') return 'failed';
+  if (decision === 'review') return 'running';
+  return 'success';
 }
 
 function getStepState(
@@ -1224,11 +1281,29 @@ export default function Home({ params }: HomeProps) {
                   <h2 className="text-sm font-semibold text-foreground">DevSecOps 파이프라인</h2>
                   <div className="flex items-center gap-2">
                     <div
-                      className={`w-2 h-2 rounded-full ${pipelineStatus === 'running' ? 'status-running' : ''}`}
-                      style={{ backgroundColor: pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8' }}
+                      className={`w-2 h-2 rounded-full`}
+                      style={{ backgroundColor: (() => {
+                        if (Object.keys(llmGates).length > 0) {
+                          const hasBlock = Object.values(llmGates).some((g: any) => ['block', 'fail'].includes((g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase()));
+                          return hasBlock ? '#ef4444' : '#10b981';
+                        }
+                        return pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8';
+                      })() }}
                     />
-                    <span className="text-xs font-medium" style={{ color: pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8' }}>
-                      {pipelineStatus === 'success' ? 'SUCCESS' : pipelineStatus === 'failed' ? 'FAILED' : pipelineStatus === 'running' ? 'RUNNING' : 'IDLE'}
+                    <span className="text-xs font-medium" style={{ color: (() => {
+                      if (Object.keys(llmGates).length > 0) {
+                        const hasBlock = Object.values(llmGates).some((g: any) => ['block', 'fail'].includes((g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase()));
+                        return hasBlock ? '#ef4444' : '#10b981';
+                      }
+                      return pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8';
+                    })() }}>
+                      {(() => {
+                        if (Object.keys(llmGates).length > 0) {
+                          const hasBlock = Object.values(llmGates).some((g: any) => ['block', 'fail'].includes((g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase()));
+                          return hasBlock ? 'BLOCK' : 'ALLOW';
+                        }
+                        return pipelineStatus === 'success' ? 'SUCCESS' : pipelineStatus === 'failed' ? 'FAILED' : pipelineStatus === 'running' ? 'RUNNING' : 'IDLE';
+                      })()}
                     </span>
                   </div>
                 </div>
@@ -1254,7 +1329,9 @@ export default function Home({ params }: HomeProps) {
                         opts: { showConnector: boolean; fullWidth?: boolean }
                       ) => {
                         const Icon = stage.icon;
-                        const stepState = getStepState(index, currentIdx, pipelineStatus, isFailure, progress);
+                        const stepState = Object.keys(llmGates).length > 0
+                          ? getStepStateFromGates(stage.id, llmGates)
+                          : getStepState(index, currentIdx, pipelineStatus, isFailure, progress);
                         const isSelected = activeSection === stage.id;
 
                         const colors = {
@@ -1289,9 +1366,9 @@ export default function Home({ params }: HomeProps) {
                         const badge = stepState === 'success'
                           ? { label: 'OK', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
                           : stepState === 'failed'
-                            ? { label: 'FAIL', className: 'border-red-200 bg-red-50 text-red-700' }
+                            ? { label: 'BLOCK', className: 'border-red-200 bg-red-50 text-red-700' }
                             : stepState === 'running'
-                              ? { label: 'RUN', className: 'border-amber-200 bg-amber-50 text-amber-700' }
+                              ? { label: 'REVIEW', className: 'border-amber-200 bg-amber-50 text-amber-700' }
                               : null;
 
                         return (
@@ -1305,7 +1382,7 @@ export default function Home({ params }: HomeProps) {
                                   : [
                                     // Small/medium desktop widths may still overflow → allow horizontal scroll.
                                     // Only very large screens should fit all steps in one row → flex and shrink.
-                                    'w-[120px] md:w-[130px] lg:w-[140px] xl:w-[150px] flex-shrink-0',
+                                    'w-[230px] h-[65px] flex-shrink-0',
                                     'lg:px-2.5 lg:py-2',
                                   ].join(' '),
                                 isSelected ? 'bg-primary/10 border-primary' : 'bg-background hover:bg-muted/40',
@@ -1321,23 +1398,19 @@ export default function Home({ params }: HomeProps) {
                                   <div className="absolute inset-0 rounded-lg border-2 border-amber-400/35 animate-pulse pointer-events-none" />
                                 )}
                               </div>
-                              <div className="min-w-0 text-left flex-1 pr-1">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="text-xs lg:text-[11px] font-semibold text-foreground leading-tight whitespace-nowrap">
-                                      {stage.label}
-                                    </div>
-                                    <div className="text-xs lg:text-xs text-muted-foreground leading-snug whitespace-normal lg:whitespace-nowrap lg:truncate">
-                                      {stage.subtitle || (index < currentIdx ? '완료' : index === currentIdx ? (stepState === 'failed' ? '실패' : '진행/대기') : '대기')}
-                                    </div>
-                                  </div>
-                                  {badge && (
-                                    <span className={`text-xs lg:text-xs font-mono px-2 lg:px-1.5 py-0.5 rounded-md border ${badge.className}`}>
-                                      {badge.label}
-                                    </span>
-                                  )}
+                              <div className="min-w-0 text-left flex-1">
+                                <div className="text-xs font-semibold text-foreground leading-tight whitespace-nowrap">
+                                  {stage.label}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground leading-snug whitespace-nowrap">
+                                  {stage.subtitle}
                                 </div>
                               </div>
+                              {badge && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${badge.className}`}>
+                                  {badge.label}
+                                </span>
+                              )}
                             </button>
 
                             {opts.showConnector && index < PIPELINE_STAGES.length - 1 && (

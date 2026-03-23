@@ -23,6 +23,7 @@ import boto3
 from ismsp.config import DEFAULT_REGION, DEFAULT_PROFILE, LOG_LEVEL
 from ismsp.checker.aws_checker import AWSChecker
 from ismsp.checker.evaluator import Evaluator
+from ismsp.reporter.json_report import JsonReporter
 
 
 def parse_args():
@@ -50,6 +51,8 @@ def setup_logging(verbose: bool):
 def print_summary(report: dict):
     s = report["summary"]
     m = report["metadata"]
+    items = report["items"]
+
     print(f"\n{'='*58}")
     print("  ISMS-P 자동화 점검 결과")
     print(f"{'='*58}")
@@ -57,22 +60,21 @@ def print_summary(report: dict):
     print(f"  리전:   {m['region']}")
     print(f"  일시:   {m['checked_at']}")
     print(f"{'-'*58}")
-    print(f"  자동화 {s['total_automated']}개 항목")
+    print(f"  전체 {s['total']}개 항목")
     print(f"    ✅ COMPLIANT:          {s['compliant']:3d}개")
     print(f"    ❌ NON_COMPLIANT:      {s['non_compliant']:3d}개")
     print(f"    ⚠️  INSUFFICIENT_DATA:  {s['insufficient_data']:3d}개")
-    print(f"  준수율: {s['compliance_rate_pct']}%")
-    print(f"  수동 심사: {len(report['manual_items'])}개")
+    print(f"    📋 MANUAL_REQUIRED:   {s['manual_required']:3d}개")
+    print(f"  자동화 준수율: {s['compliance_rate_pct']}%")
     print(f"{'='*58}")
 
-    nc = [r for r in report["automated_results"] if r["status"] == "NON_COMPLIANT"]
+    nc = [r for r in items if r["status"] == "NON_COMPLIANT"]
     if nc:
         print(f"\n  [미준수 {len(nc)}개]")
         for r in nc:
             print(f"    ❌ {r['isms_p_id']:7s} {r['isms_p_name']}")
-            for d in r["check_details"]:
-                if d["status"] == "NON_COMPLIANT" and d.get("reason"):
-                    print(f"         → {d['check_id']}: {d['reason']}")
+            if r.get("reason"):
+                print(f"         → {r['reason']}")
     print()
 
 
@@ -96,16 +98,15 @@ def main():
     evaluator.load_mappings()
     report = evaluator.run(item_ids=args.items)
 
-    # 결과 저장
-    out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_file = out_dir / f"isms_p_report_{ts}.json"
-    with open(out_file, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+    # 결과 저장 (전체 + 요약 + latest)
+    reporter = JsonReporter(output_dir=args.output_dir)
+    paths = reporter.save(report)
+    logger.info(f"결과 저장: {paths['full']}")
 
     print_summary(report)
-    print(f"  📄 상세 결과: {out_file}\n")
+    print(f"  📄 전체 결과:  {paths['full']}")
+    print(f"  📊 요약 결과:  {paths['summary']}")
+    print(f"  🔗 최신 결과:  {paths['latest']}\n")
 
 
 if __name__ == "__main__":
