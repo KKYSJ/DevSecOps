@@ -36,6 +36,7 @@ jobs:
       SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
       ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
       ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
+      TF_VAR_actions_upload_bypass_key: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
       ARTIFACT_DIR: ${{ github.workspace }}/artifacts/terraform
@@ -68,6 +69,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
         run: |
           set -euo pipefail
           missing=0
@@ -83,6 +85,13 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ inputs.deployment_mode }}" = "waf_only" ]; then
+            if [ -z "${SECUREFLOW_UPLOAD_KEY}" ]; then
+              echo "Missing required GitHub secret for WAF upload bypass: SECUREFLOW_UPLOAD_KEY"
+              exit 1
+            fi
+          fi
+
           if [ "${{ inputs.deployment_mode }}" = "service" ]; then
             for name in GEMINI_MODEL SONAR_HOST_URL SONAR_ORGANIZATION SONAR_PROJECT_KEY; do
               if [ -z "${!name}" ]; then
@@ -90,7 +99,7 @@ jobs:
               fi
             done
 
-            for name in GEMINI_API_KEY SONAR_TOKEN; do
+            for name in GEMINI_API_KEY SONAR_TOKEN SECUREFLOW_UPLOAD_KEY; do
               if [ -z "${!name}" ]; then
                 echo "Missing recommended GitHub secret for service deployment: $name"
               fi
@@ -139,8 +148,8 @@ jobs:
             deployment_mode="infra_only"
           fi
 
-          if [ "${deployment_mode}" != "infra_only" ] && [ "${deployment_mode}" != "service" ]; then
-            echo "deployment_mode must be infra_only or service."
+          if [ "${deployment_mode}" != "infra_only" ] && [ "${deployment_mode}" != "service" ] && [ "${deployment_mode}" != "waf_only" ]; then
+            echo "deployment_mode must be waf_only, infra_only, or service."
             exit 1
           fi
 
@@ -332,6 +341,33 @@ jobs:
           encrypt        = true
           EOF
 
+      - name: Write Terraform WAF-only runtime config
+        if: steps.context.outputs.deployment_mode == 'waf_only'
+        working-directory: secureflow_dashboard_infra
+        env:
+          DEPLOY_ENVIRONMENT: ${{ steps.context.outputs.deploy_environment }}
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg project_name "${PROJECT_NAME}" \
+            --arg environment "${DEPLOY_ENVIRONMENT}" \
+            --arg managed_by "${MANAGED_BY}" \
+            --arg aws_region "${AWS_REGION}" \
+            --arg vpc_cidr "${VPC_CIDR}" \
+            --arg alarm_email "${ALARM_EMAIL}" \
+            --arg acm_certificate_arn "${ACM_CERTIFICATE_ARN}" \
+            '{
+              project_name: $project_name,
+              environment: $environment,
+              managed_by: $managed_by,
+              aws_region: $aws_region,
+              vpc_cidr: $vpc_cidr
+            }
+            + (if $alarm_email != "" then {alarm_email: $alarm_email} else {} end)
+            + (if $acm_certificate_arn != "" then {acm_certificate_arn: $acm_certificate_arn} else {} end)' \
+            > ci.auto.tfvars.json
+
       - name: Write Terraform infra-only runtime config
         if: steps.context.outputs.deployment_mode == 'infra_only'
         working-directory: secureflow_dashboard_infra
@@ -398,6 +434,28 @@ jobs:
         run: |
           set -euo pipefail
           terraform output -json > "${ARTIFACT_DIR}/dashboard-existing-outputs.json"
+
+      - name: Plan WAF-only changes
+        if: steps.context.outputs.deployment_mode == 'waf_only'
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          terraform plan -no-color \
+            -target=aws_wafv2_web_acl.alb \
+            -target=aws_wafv2_web_acl_association.alb \
+            -target=aws_wafv2_web_acl_logging_configuration.alb \
+            -target=aws_wafv2_web_acl.cloudfront \
+            -target=aws_wafv2_web_acl_logging_configuration.cloudfront \
+            -target=aws_cloudfront_distribution.app \
+            -out=tfplan-waf 2>&1 | tee "${ARTIFACT_DIR}/dashboard-waf-plan.log"
+          terraform show -no-color tfplan-waf > "${ARTIFACT_DIR}/dashboard-waf-plan.txt"
+
+      - name: Apply WAF-only changes
+        if: steps.context.outputs.deployment_mode == 'waf_only'
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          terraform apply -no-color -auto-approve tfplan-waf 2>&1 | tee "${ARTIFACT_DIR}/dashboard-waf-apply.log"
 
       - name: Plan base dashboard infrastructure
         if: steps.context.outputs.deployment_mode == 'infra_only'
@@ -556,7 +614,7 @@ jobs:
 
       - name: Collect deployment outputs
         id: deploy_outputs
-        if: steps.context.outputs.deployment_mode == 'infra_only' || steps.service_apply.outcome != 'failure'
+        if: steps.context.outputs.deployment_mode != 'service' || steps.service_apply.outcome != 'failure'
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
@@ -795,6 +853,9 @@ jobs:
             echo "- \`bootstrap-apply.log\`"
             echo "- \`dashboard-init.log\`"
             echo "- \`dashboard-validate.log\`"
+            echo "- \`dashboard-waf-plan.log\`"
+            echo "- \`dashboard-waf-plan.txt\`"
+            echo "- \`dashboard-waf-apply.log\`"
             echo "- \`dashboard-plan.log\`"
             echo "- \`dashboard-plan.txt\`"
             echo "- \`dashboard-apply.log\`"
@@ -840,6 +901,9 @@ jobs:
               echo "- Worker service: \`${{ steps.deploy_outputs.outputs.worker_service_name }}\`"
               echo ""
               echo "The current project folders were built and deployed as ECS services."
+            elif [ "${{ steps.context.outputs.deployment_mode }}" = "waf_only" ]; then
+              echo "Only the WAF-related Terraform resources were targeted in this run."
+              echo "Frontend, backend, and worker container images were not rebuilt or redeployed."
             else
               echo "This workflow only provisions AWS infrastructure."
               echo "Frontend, backend, and worker desired counts are forced to \`0\`, so no application containers are deployed."

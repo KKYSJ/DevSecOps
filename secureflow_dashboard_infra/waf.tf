@@ -1,3 +1,9 @@
+locals {
+  actions_upload_bypass_header_name  = "x-secureflow-upload-key"
+  actions_upload_bypass_header_value = trimspace(coalesce(var.actions_upload_bypass_key, ""))
+  actions_upload_bypass_enabled      = trimspace(nonsensitive(coalesce(var.actions_upload_bypass_key, ""))) != ""
+}
+
 resource "aws_wafv2_web_acl" "alb" {
   count = var.enable_waf ? 1 : 0
 
@@ -27,6 +33,83 @@ resource "aws_wafv2_web_acl" "alb" {
       cloudwatch_metrics_enabled = true
       metric_name                = "${local.name}-rate-limit"
       sampled_requests_enabled   = true
+    }
+  }
+
+  dynamic "rule" {
+    for_each = local.actions_upload_bypass_enabled ? [1] : []
+
+    content {
+      name     = "github-actions-upload-bypass"
+      priority = 5
+
+      action {
+        allow {}
+      }
+
+      statement {
+        and_statement {
+          statement {
+            byte_match_statement {
+              field_to_match {
+                single_header {
+                  name = local.actions_upload_bypass_header_name
+                }
+              }
+
+              positional_constraint = "EXACTLY"
+              search_string         = local.actions_upload_bypass_header_value
+
+              text_transformation {
+                priority = 0
+                type     = "NONE"
+              }
+            }
+          }
+
+          statement {
+            or_statement {
+              statement {
+                byte_match_statement {
+                  field_to_match {
+                    uri_path {}
+                  }
+
+                  positional_constraint = "STARTS_WITH"
+                  search_string         = "/api/v1/scans"
+
+                  text_transformation {
+                    priority = 0
+                    type     = "NONE"
+                  }
+                }
+              }
+
+              statement {
+                byte_match_statement {
+                  field_to_match {
+                    uri_path {}
+                  }
+
+                  positional_constraint = "STARTS_WITH"
+                  search_string         = "/api/v1/isms"
+
+                  text_transformation {
+                    priority = 0
+                    type     = "NONE"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${local.name}-upload-bypass"
+        sampled_requests_enabled   = true
+      }
     }
   }
 
@@ -191,6 +274,83 @@ resource "aws_wafv2_web_acl" "cloudfront" {
       cloudwatch_metrics_enabled = true
       metric_name                = "${local.name}-cloudfront-rate-limit"
       sampled_requests_enabled   = true
+    }
+  }
+
+  dynamic "rule" {
+    for_each = local.actions_upload_bypass_enabled ? [1] : []
+
+    content {
+      name     = "github-actions-upload-bypass"
+      priority = 5
+
+      action {
+        allow {}
+      }
+
+      statement {
+        and_statement {
+          statement {
+            byte_match_statement {
+              field_to_match {
+                single_header {
+                  name = local.actions_upload_bypass_header_name
+                }
+              }
+
+              positional_constraint = "EXACTLY"
+              search_string         = local.actions_upload_bypass_header_value
+
+              text_transformation {
+                priority = 0
+                type     = "NONE"
+              }
+            }
+          }
+
+          statement {
+            or_statement {
+              statement {
+                byte_match_statement {
+                  field_to_match {
+                    uri_path {}
+                  }
+
+                  positional_constraint = "STARTS_WITH"
+                  search_string         = "/api/v1/scans"
+
+                  text_transformation {
+                    priority = 0
+                    type     = "NONE"
+                  }
+                }
+              }
+
+              statement {
+                byte_match_statement {
+                  field_to_match {
+                    uri_path {}
+                  }
+
+                  positional_constraint = "STARTS_WITH"
+                  search_string         = "/api/v1/isms"
+
+                  text_transformation {
+                    priority = 0
+                    type     = "NONE"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${local.name}-cloudfront-upload-bypass"
+        sampled_requests_enabled   = true
+      }
     }
   }
 

@@ -21,6 +21,7 @@ db_multi_az                = false
 
 enable_cloudfront_https = true
 acm_certificate_arn     = null
+actions_upload_bypass_key = "replace-with-a-long-random-upload-key"
 
 alarm_email = "security@example.com"
 

@@ -83,11 +83,14 @@ Recommended repository secrets for service deployment:
 - `SONAR_TOKEN`
 - `OPENAI_API_KEY`
 - `API_SERVER_URL`
+- `SECUREFLOW_UPLOAD_KEY`
 
 Notes:
 
 - `API_SERVER_URL` is passed into the frontend image as `REACT_APP_API_BASE_URL` during the GitHub Actions build.
 - If `API_SERVER_URL` is not set, the frontend falls back to `/api/v1`.
+- When CloudFront and WAF are enabled, set Terraform variable `actions_upload_bypass_key` and GitHub secret `SECUREFLOW_UPLOAD_KEY` to the same long random value so GitHub Actions scan uploads can pass WAF safely.
+- Because `actions_upload_bypass_key` is a Terraform variable, protect your remote state and do not commit real values into the repository.
 
 The deployment workflow runs automatically on every push to the `SUN` branch in `service` mode.
 
@@ -110,6 +113,7 @@ Important limitation:
 - Client to CloudFront is HTTPS.
 - CloudFront to the ALB is HTTPS only if you later attach an ACM certificate to the ALB.
 - Without an ACM certificate, the CloudFront origin connection uses HTTP inside AWS.
+- WAF rules can block security scan payloads sent through CloudFront unless you configure the upload bypass key described above.
 
 ## Usage
 

@@ -121,6 +121,7 @@ def main():
         (os.getenv("API_SERVER_URL", "") or os.getenv("BACKEND_URL", "")).strip()
     )
     commit_hash = os.getenv("COMMIT_SHA", "").strip()
+    upload_key = os.getenv("SECUREFLOW_UPLOAD_KEY", "").strip()
 
     if not backend_url:
         print("API_SERVER_URL 미설정, 스킵")
@@ -246,7 +247,10 @@ def main():
         }).encode("utf-8")
 
         url = f"{backend_url}/scans/gate-result"
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        headers = {"Content-Type": "application/json"}
+        if upload_key:
+            headers["X-SecureFlow-Upload-Key"] = upload_key
+        req = urllib.request.Request(url, data=payload, headers=headers)
         try:
             resp = urllib.request.urlopen(req, timeout=30)
             print(f"\n개별 판정 결과 EC2 전송 완료: {resp.read().decode()}")

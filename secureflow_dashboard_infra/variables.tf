@@ -318,6 +318,13 @@ variable "waf_rate_limit" {
   default     = 2000
 }
 
+variable "actions_upload_bypass_key" {
+  description = "Optional shared secret value for allowing GitHub Actions scan uploads through WAF when sent as the X-SecureFlow-Upload-Key header."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Additional tags."
   type        = map(string)
