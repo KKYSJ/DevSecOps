@@ -1,0 +1,217 @@
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  ~ update in-place
+-/+ destroy and then create replacement
+
+Terraform will perform the following actions:
+
+  # aws_cloudfront_distribution.app[0] will be updated in-place
+  ~ resource "aws_cloudfront_distribution" "app" {
+        id                              = "E1DRQP1PDERQKY"
+        tags                            = {
+            "Environment" = "dev"
+            "ManagedBy"   = "admin-dev"
+            "Project"     = "secureflow-dashboard"
+            "Service"     = "secureflow-dashboard"
+        }
+        # (23 unchanged attributes hidden)
+
+      ~ viewer_certificate {
+          ~ minimum_protocol_version       = "TLSv1" -> "TLSv1.2_2021"
+            # (4 unchanged attributes hidden)
+        }
+
+        # (3 unchanged blocks hidden)
+    }
+
+  # aws_cloudwatch_metric_alarm.backend_cpu will be updated in-place
+  ~ resource "aws_cloudwatch_metric_alarm" "backend_cpu" {
+      ~ alarm_actions                         = [
+          - "arn:aws:sns:ap-northeast-2:213026893250:secureflow-dev-alerts",
+        ]
+      - datapoints_to_alarm                   = 2 -> null
+        id                                    = "secureflow-dashboard-dev-backend-cpu-high"
+        tags                                  = {}
+        # (20 unchanged attributes hidden)
+    }
+
+  # aws_cloudwatch_metric_alarm.backend_memory will be updated in-place
+  ~ resource "aws_cloudwatch_metric_alarm" "backend_memory" {
+      ~ alarm_actions                         = [
+          - "arn:aws:sns:ap-northeast-2:213026893250:secureflow-dev-alerts",
+        ]
+      - datapoints_to_alarm                   = 2 -> null
+        id                                    = "secureflow-dashboard-dev-backend-memory-high"
+        tags                                  = {}
+        # (20 unchanged attributes hidden)
+    }
+
+  # aws_db_instance.postgres will be updated in-place
+  ~ resource "aws_db_instance" "postgres" {
+        id                                    = "db-W7KYUFYGF6MJJ26ELVZ4YPEX6E"
+      ~ multi_az                              = true -> false
+        tags                                  = {}
+        # (71 unchanged attributes hidden)
+    }
+
+  # aws_db_parameter_group.postgres will be updated in-place
+  ~ resource "aws_db_parameter_group" "postgres" {
+        id           = "secureflow-dashboard-dev-postgres16"
+        name         = "secureflow-dashboard-dev-postgres16"
+        tags         = {}
+        # (6 unchanged attributes hidden)
+
+      - parameter {
+          - apply_method = "pending-reboot" -> null
+          - name         = "rds.force_ssl" -> null
+          - value        = "1" -> null
+        }
+      + parameter {
+          + apply_method = "immediate"
+          + name         = "rds.force_ssl"
+          + value        = "1"
+        }
+    }
+
+  # aws_ecs_service.backend will be updated in-place
+  ~ resource "aws_ecs_service" "backend" {
+        id                                 = "arn:aws:ecs:ap-northeast-2:213026893250:service/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-backend"
+        name                               = "secureflow-dashboard-dev-backend"
+        tags                               = {}
+      ~ task_definition                    = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:5" -> (known after apply)
+        # (16 unchanged attributes hidden)
+
+        # (4 unchanged blocks hidden)
+    }
+
+  # aws_ecs_service.frontend will be updated in-place
+  ~ resource "aws_ecs_service" "frontend" {
+        id                                 = "arn:aws:ecs:ap-northeast-2:213026893250:service/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-frontend"
+        name                               = "secureflow-dashboard-dev-frontend"
+        tags                               = {}
+      ~ task_definition                    = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-frontend:6" -> (known after apply)
+        # (16 unchanged attributes hidden)
+
+        # (4 unchanged blocks hidden)
+    }
+
+  # aws_ecs_service.worker will be updated in-place
+  ~ resource "aws_ecs_service" "worker" {
+        id                                 = "arn:aws:ecs:ap-northeast-2:213026893250:service/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-worker"
+        name                               = "secureflow-dashboard-dev-worker"
+        tags                               = {}
+      ~ task_definition                    = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-worker:6" -> (known after apply)
+        # (16 unchanged attributes hidden)
+
+        # (3 unchanged blocks hidden)
+    }
+
+  # aws_ecs_task_definition.backend must be replaced
+-/+ resource "aws_ecs_task_definition" "backend" {
+      ~ arn                      = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:6" -> (known after apply)
+      ~ arn_without_revision     = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend" -> (known after apply)
+      ~ container_definitions    = jsonencode(
+          ~ [
+              ~ {
+                  ~ image                  = "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/backend:d1b82a3ca7ff-2" -> "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/backend:cfd56ec082fd-1"
+                    name                   = "backend"
+                  - systemControls         = []
+                  - volumesFrom            = []
+                    # (8 unchanged attributes hidden)
+                },
+            ] # forces replacement
+        )
+      ~ enable_fault_injection   = false -> (known after apply)
+      ~ id                       = "secureflow-dashboard-dev-backend" -> (known after apply)
+      ~ revision                 = 6 -> (known after apply)
+      - tags                     = {} -> null
+        # (12 unchanged attributes hidden)
+
+      - volume {
+          - configure_at_launch = false -> null
+          - name                = "backend-tmp" -> null
+            # (1 unchanged attribute hidden)
+        }
+      + volume {
+          + configure_at_launch = (known after apply)
+          + name                = "backend-tmp"
+            # (1 unchanged attribute hidden)
+        }
+
+        # (1 unchanged block hidden)
+    }
+
+  # aws_ecs_task_definition.frontend must be replaced
+-/+ resource "aws_ecs_task_definition" "frontend" {
+      ~ arn                      = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-frontend:6" -> (known after apply)
+      ~ arn_without_revision     = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-frontend" -> (known after apply)
+      ~ container_definitions    = jsonencode(
+          ~ [
+              ~ {
+                  - environment            = []
+                  ~ image                  = "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/frontend:d1b82a3ca7ff-2" -> "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/frontend:cfd56ec082fd-1"
+                    name                   = "frontend"
+                  - systemControls         = []
+                  - volumesFrom            = []
+                    # (7 unchanged attributes hidden)
+                },
+            ] # forces replacement
+        )
+      ~ enable_fault_injection   = false -> (known after apply)
+      ~ id                       = "secureflow-dashboard-dev-frontend" -> (known after apply)
+      ~ revision                 = 6 -> (known after apply)
+      - tags                     = {} -> null
+        # (12 unchanged attributes hidden)
+
+      - volume {
+          - configure_at_launch = false -> null
+          - name                = "nginx-tmp" -> null
+            # (1 unchanged attribute hidden)
+        }
+      + volume {
+          + configure_at_launch = (known after apply)
+          + name                = "nginx-tmp"
+            # (1 unchanged attribute hidden)
+        }
+
+        # (1 unchanged block hidden)
+    }
+
+  # aws_ecs_task_definition.worker must be replaced
+-/+ resource "aws_ecs_task_definition" "worker" {
+      ~ arn                      = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-worker:6" -> (known after apply)
+      ~ arn_without_revision     = "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-worker" -> (known after apply)
+      ~ container_definitions    = jsonencode(
+          ~ [
+              ~ {
+                  ~ image                  = "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/worker:d1b82a3ca7ff-2" -> "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/worker:cfd56ec082fd-1"
+                    name                   = "worker"
+                  - portMappings           = []
+                  - systemControls         = []
+                  - volumesFrom            = []
+                    # (7 unchanged attributes hidden)
+                },
+            ] # forces replacement
+        )
+      ~ enable_fault_injection   = false -> (known after apply)
+      ~ id                       = "secureflow-dashboard-dev-worker" -> (known after apply)
+      ~ revision                 = 6 -> (known after apply)
+      - tags                     = {} -> null
+        # (12 unchanged attributes hidden)
+
+      - volume {
+          - configure_at_launch = false -> null
+          - name                = "worker-tmp" -> null
+            # (1 unchanged attribute hidden)
+        }
+      + volume {
+          + configure_at_launch = (known after apply)
+          + name                = "worker-tmp"
+            # (1 unchanged attribute hidden)
+        }
+
+        # (1 unchanged block hidden)
+    }
+
+Plan: 3 to add, 8 to change, 3 to destroy.

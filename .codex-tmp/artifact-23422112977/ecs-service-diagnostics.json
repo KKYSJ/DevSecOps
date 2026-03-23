@@ -1,0 +1,1698 @@
+{
+    "services": [
+        {
+            "serviceArn": "arn:aws:ecs:ap-northeast-2:213026893250:service/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-frontend",
+            "serviceName": "secureflow-dashboard-dev-frontend",
+            "clusterArn": "arn:aws:ecs:ap-northeast-2:213026893250:cluster/secureflow-dashboard-dev-cluster",
+            "loadBalancers": [
+                {
+                    "targetGroupArn": "arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0",
+                    "containerName": "frontend",
+                    "containerPort": 80
+                }
+            ],
+            "serviceRegistries": [],
+            "status": "ACTIVE",
+            "desiredCount": 1,
+            "runningCount": 1,
+            "pendingCount": 0,
+            "launchType": "FARGATE",
+            "platformVersion": "LATEST",
+            "platformFamily": "Linux",
+            "taskDefinition": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-frontend:7",
+            "deploymentConfiguration": {
+                "deploymentCircuitBreaker": {
+                    "enable": true,
+                    "rollback": true
+                },
+                "maximumPercent": 200,
+                "minimumHealthyPercent": 100,
+                "strategy": "ROLLING",
+                "bakeTimeInMinutes": 0
+            },
+            "deployments": [
+                {
+                    "id": "ecs-svc/7511326421983144859",
+                    "status": "PRIMARY",
+                    "taskDefinition": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-frontend:7",
+                    "desiredCount": 1,
+                    "pendingCount": 0,
+                    "runningCount": 1,
+                    "failedTasks": 0,
+                    "createdAt": "2026-03-23T05:00:05.109000+00:00",
+                    "updatedAt": "2026-03-23T05:03:07.486000+00:00",
+                    "launchType": "FARGATE",
+                    "platformVersion": "1.4.0",
+                    "platformFamily": "Linux",
+                    "networkConfiguration": {
+                        "awsvpcConfiguration": {
+                            "subnets": [
+                                "subnet-00cdfa3a86f0cfd67",
+                                "subnet-0551666c7a0f0fa8e"
+                            ],
+                            "securityGroups": [
+                                "sg-01abf16aa68526174"
+                            ],
+                            "assignPublicIp": "DISABLED"
+                        }
+                    },
+                    "rolloutState": "COMPLETED",
+                    "rolloutStateReason": "ECS deployment ecs-svc/7511326421983144859 completed."
+                }
+            ],
+            "roleArn": "arn:aws:iam::213026893250:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+            "events": [
+                {
+                    "id": "20339f52-781a-4c94-b893-bd488eec955e",
+                    "createdAt": "2026-03-23T05:03:07.495000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "cd8d692f-b7ec-4c41-80ac-8e7d39ec906f",
+                    "createdAt": "2026-03-23T05:03:07.494000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) (deployment ecs-svc/7511326421983144859) deployment completed."
+                },
+                {
+                    "id": "1540809d-5440-4a7c-9667-4e898e3416b1",
+                    "createdAt": "2026-03-23T05:02:04.951000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/7481878056803655157) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "bbe4696f-cc7c-4293-9c8c-b04891a2b23b",
+                    "createdAt": "2026-03-23T05:02:04.946000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "14153aae-f480-432f-95bc-a7d487284d4b",
+                    "createdAt": "2026-03-23T05:01:54.931000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has stopped 1 running tasks: (task 8625884b726d4e3a9ec1419ee07636d6)."
+                },
+                {
+                    "id": "9f9e35c4-49c6-4fac-81a6-7aa567d5e078",
+                    "createdAt": "2026-03-23T05:01:02.132000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "fee5a64e-84b7-4e4e-a846-eab0d036e0a7",
+                    "createdAt": "2026-03-23T05:00:32.753000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task be1d0aaed3f343aca92443be9f9708b1)."
+                },
+                {
+                    "id": "2215c438-780a-43a0-be99-43b5dfc41053",
+                    "createdAt": "2026-03-23T03:45:46.097000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "3e9db1e5-2fa8-447d-a8b5-a991630d52f3",
+                    "createdAt": "2026-03-23T03:45:46.096000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) (deployment ecs-svc/7481878056803655157) deployment completed."
+                },
+                {
+                    "id": "243b89c1-4246-4a54-a2b3-02a4c09348a9",
+                    "createdAt": "2026-03-23T03:44:42.678000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/2548516287165436254) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "c76a2696-37dd-4026-8421-0b084036f9c5",
+                    "createdAt": "2026-03-23T03:44:42.674000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "a211e656-04c8-495e-b740-bef1b9966ad6",
+                    "createdAt": "2026-03-23T03:44:32.587000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has stopped 1 running tasks: (task cc590dfbfef1410ba55fba72117c788a)."
+                },
+                {
+                    "id": "ccabdf19-b1d8-42a0-a65d-279bbd289d9c",
+                    "createdAt": "2026-03-23T03:43:40.457000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "72b675d6-533e-41a7-baa9-47024e584b5d",
+                    "createdAt": "2026-03-23T03:43:10.845000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 8625884b726d4e3a9ec1419ee07636d6)."
+                },
+                {
+                    "id": "3e31514d-369d-4706-b7ce-5532faffb698",
+                    "createdAt": "2026-03-23T02:10:34.164000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "83b868f5-9d81-4a0f-8480-82cef5ac6223",
+                    "createdAt": "2026-03-22T20:09:48.324000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "9298dd30-f8b9-4ba6-a6e9-04eab9414a40",
+                    "createdAt": "2026-03-22T14:09:23.322000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "931f3dfb-db29-4553-a486-554afd3904c7",
+                    "createdAt": "2026-03-22T08:08:43.167000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "fe9963f8-53ff-4334-9cf6-c8c4cbdc4c64",
+                    "createdAt": "2026-03-22T02:08:19.047000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "1228fa1f-100b-48ff-9dac-487029344424",
+                    "createdAt": "2026-03-21T20:08:06.006000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "4b78f96d-4562-4198-9977-870b21b17223",
+                    "createdAt": "2026-03-21T14:07:24.844000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "1d16f1b0-301d-4e9f-b878-3157d8959b5e",
+                    "createdAt": "2026-03-21T14:07:15.017000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "1ef2ee82-a39b-4be5-b21f-dd24d4a3a197",
+                    "createdAt": "2026-03-21T14:06:47.208000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task cc590dfbfef1410ba55fba72117c788a)."
+                },
+                {
+                    "id": "6c0b27e8-d085-4dc7-82b4-e6a494dc420f",
+                    "createdAt": "2026-03-21T14:03:17.760000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "a5de8466-78dc-425b-b80c-7b582c792b51",
+                    "createdAt": "2026-03-21T14:03:17.759000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) (deployment ecs-svc/2548516287165436254) deployment completed."
+                },
+                {
+                    "id": "282c42a8-aa56-49ce-b79f-d190abaab2a7",
+                    "createdAt": "2026-03-21T13:59:24.578000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/1325556014336570705) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "5ea56bcf-5d00-49d4-adc1-8354ccadd0f7",
+                    "createdAt": "2026-03-21T13:59:24.571000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "98d71b67-5d84-4dc3-a6c8-3ed6062a0c14",
+                    "createdAt": "2026-03-21T13:58:43.211000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "72ad129f-189c-4603-9ac7-4676e8cd6c42",
+                    "createdAt": "2026-03-21T13:58:05.254000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 5b5ae236f28a44b3a1031cea342e1621)."
+                },
+                {
+                    "id": "8ea4454a-425d-48d7-96f3-9b3790427225",
+                    "createdAt": "2026-03-21T13:57:24.055000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/1325556014336570705) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "bc9da79c-6277-46f2-bdb2-cadbada0b204",
+                    "createdAt": "2026-03-21T13:57:24.049000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "9a93fd86-cedf-4476-80fd-1439fdf94f4d",
+                    "createdAt": "2026-03-21T13:57:04.832000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "5f133ef7-80b3-40c0-9942-2ac579be6221",
+                    "createdAt": "2026-03-21T13:56:34.879000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 5e65aa2251e646e18bb1127eff592e62)."
+                },
+                {
+                    "id": "a94ba744-5a03-4968-a4c7-a4cdd0330e27",
+                    "createdAt": "2026-03-21T13:52:47.462000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/1325556014336570705) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "3ff5401e-ed0e-4dfc-a30b-285d2ab2a713",
+                    "createdAt": "2026-03-21T13:52:47.457000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "505d695f-717a-4c01-8765-9e7b57a8703a",
+                    "createdAt": "2026-03-21T13:51:57.932000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "db485071-223a-467d-aaca-cce5b363e660",
+                    "createdAt": "2026-03-21T13:51:28.937000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 1fecc91cf06644b289c14bf5a0165c6c)."
+                },
+                {
+                    "id": "24358542-5a88-4ee1-90da-344ec46aa68d",
+                    "createdAt": "2026-03-21T13:51:17.554000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/1325556014336570705) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "883f637e-b9bb-4bab-9e80-970f59a0fe38",
+                    "createdAt": "2026-03-21T13:51:17.545000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "2816cfcf-3c7d-4807-b5a3-61d672516a97",
+                    "createdAt": "2026-03-21T13:50:58.830000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "bd124b8a-3a6f-4a0c-af86-2b905313d9a6",
+                    "createdAt": "2026-03-21T13:50:38.778000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 98b78a07b0704552b711530046c99caf)."
+                },
+                {
+                    "id": "5ed4aea4-5970-4a96-9c74-77caed068608",
+                    "createdAt": "2026-03-21T13:46:12.703000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/1325556014336570705) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "de5c4faa-d62d-4e94-829f-ae3c733c9e49",
+                    "createdAt": "2026-03-21T13:46:12.696000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "e9fb3d5a-7335-408b-95aa-2504ea3c2f18",
+                    "createdAt": "2026-03-21T13:45:54.260000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "cb758701-f20d-458a-8db9-9a03523a7091",
+                    "createdAt": "2026-03-21T13:45:24.811000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task dcd74ac865c44f6a8005a0e671df2d3c)."
+                },
+                {
+                    "id": "1268a463-c705-4edc-906a-e5d8406b8234",
+                    "createdAt": "2026-03-21T13:45:23.925000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/1325556014336570705) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "a8a3ad47-6396-44b6-ac81-952a20f561cb",
+                    "createdAt": "2026-03-21T13:45:23.918000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "d2c53315-1d4d-4938-afd9-15b81474cf20",
+                    "createdAt": "2026-03-21T13:45:03.532000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "4ae401db-8279-437f-8c2c-b7b39bdb5f05",
+                    "createdAt": "2026-03-21T13:44:43.389000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task f08549081658449c8301e5eb48c06bea)."
+                },
+                {
+                    "id": "a15b83d4-658e-4f18-a0f8-700e192b3f3a",
+                    "createdAt": "2026-03-21T13:41:24.786000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has reached a steady state."
+                },
+                {
+                    "id": "f16caca9-8410-44ae-8c7a-1c679e67a65c",
+                    "createdAt": "2026-03-21T13:41:24.785000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) (deployment ecs-svc/1325556014336570705) deployment completed."
+                },
+                {
+                    "id": "c9a3c287-ba4c-430b-ad41-5e8fc33b6fd1",
+                    "createdAt": "2026-03-21T13:40:01.235000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "09100746-70d2-4d79-86f0-cd2d51f3169e",
+                    "createdAt": "2026-03-21T13:40:01.228000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "28c9511b-f9b8-46ce-87bb-3969172f9f2b",
+                    "createdAt": "2026-03-21T13:39:51.352000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "134475d1-43d1-46ea-8811-358a303bccf6",
+                    "createdAt": "2026-03-21T13:39:24.089000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task a986fb7cbe504c618af3121d42372de0)."
+                },
+                {
+                    "id": "3611856d-e8e4-44c4-9a40-20c007960a5f",
+                    "createdAt": "2026-03-21T13:38:34.851000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "2b9b1597-21bb-4327-bec1-70bc66a67252",
+                    "createdAt": "2026-03-21T13:38:34.844000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "3dfdadab-6367-41c8-9b44-3b30471eabab",
+                    "createdAt": "2026-03-21T13:37:55.933000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "455f76b6-bb07-407a-af6c-6677856fa38c",
+                    "createdAt": "2026-03-21T13:37:25.895000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task b31e304dbb584fa3a060d9d8042ed950)."
+                },
+                {
+                    "id": "32d2a8eb-294d-4c71-a138-e656c0e22a79",
+                    "createdAt": "2026-03-21T13:33:58.091000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "59fa39e4-1672-4226-9834-08db4d3e1bd3",
+                    "createdAt": "2026-03-21T13:33:58.085000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "aa8a2dd0-cbd8-48df-a7d6-b7be44ad39cf",
+                    "createdAt": "2026-03-21T13:33:16.599000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "31840b3b-b559-4789-8b78-a29120e3a5bc",
+                    "createdAt": "2026-03-21T13:32:46.909000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task a3b8577fac3043ef8b29d6e04966a001)."
+                },
+                {
+                    "id": "6620cf29-18cc-4138-9b2b-b706eb7a4db1",
+                    "createdAt": "2026-03-21T13:32:06.375000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "b7ca3853-5adc-428c-8e76-366f3c1e6a1b",
+                    "createdAt": "2026-03-21T13:32:06.370000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "2521420a-5871-444e-a470-a61610f32d2d",
+                    "createdAt": "2026-03-21T13:31:23.687000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "cdc3b9bf-1137-4663-bf57-3cd966b18854",
+                    "createdAt": "2026-03-21T13:30:55.111000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 57fe95bdaf9b4961872f37e09dcb0208)."
+                },
+                {
+                    "id": "e25b4480-5955-4787-b4d8-5d4e1700233a",
+                    "createdAt": "2026-03-21T13:27:34.035000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "330c2610-20f7-4993-a0ec-ef44399fdbb1",
+                    "createdAt": "2026-03-21T13:27:34.028000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "117da40c-19e5-4217-81c3-d7911e5e2eb6",
+                    "createdAt": "2026-03-21T13:27:14.476000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "fb0425dc-fd17-4f8e-acd6-eb73028588bf",
+                    "createdAt": "2026-03-21T13:26:45.264000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 761854fe03fe4224a1e5f24314c5ed52)."
+                },
+                {
+                    "id": "e0573b54-85b5-43fd-a8a3-8c576d9f7b3b",
+                    "createdAt": "2026-03-21T13:25:34.554000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "7779d98b-a5d1-445a-b4ff-e7dcddddc5ca",
+                    "createdAt": "2026-03-21T13:25:34.548000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "496503b0-f4d8-4c04-9642-46eafb44fec0",
+                    "createdAt": "2026-03-21T13:25:15.201000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "0ff9890f-76f1-49ea-a0e4-f3e5c60ddf1a",
+                    "createdAt": "2026-03-21T13:24:56.584000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task a93e72299a7c4451a6626ea7884f4c85)."
+                },
+                {
+                    "id": "51cf4a5d-8ebf-4235-908a-3b975365d224",
+                    "createdAt": "2026-03-21T13:21:25.532000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "de346938-2aba-4942-bd57-1292e081b900",
+                    "createdAt": "2026-03-21T13:21:25.526000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "1349e0fb-b7fb-4f41-bd88-64578432f9b2",
+                    "createdAt": "2026-03-21T13:20:46.529000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "5522d3e8-fb83-4830-8357-0498ff2e069d",
+                    "createdAt": "2026-03-21T13:20:17.353000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 92a6b2e0166a40d98033a6a33fa3a99e)."
+                },
+                {
+                    "id": "a1abedfb-cbc7-44f8-90cc-43b6acf719d9",
+                    "createdAt": "2026-03-21T13:19:28.004000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "878800a7-d5ea-4236-a985-aaab435946f1",
+                    "createdAt": "2026-03-21T13:19:27.974000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "574a3723-9940-4113-ac90-3c6d0d10b40f",
+                    "createdAt": "2026-03-21T13:19:08.401000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "c80fab3f-efe9-448b-a4cb-35e8faff62ed",
+                    "createdAt": "2026-03-21T13:18:39.471000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 2896b31d014e4313972f3a1c836ce2a9)."
+                },
+                {
+                    "id": "08372668-d26d-4d42-ae67-8160e3718a6b",
+                    "createdAt": "2026-03-21T13:14:58.836000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "32b23705-b4dd-43d5-b112-3813c41f10df",
+                    "createdAt": "2026-03-21T13:14:58.831000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "08f6f23a-f36e-4ead-974e-fcf9ced7f92d",
+                    "createdAt": "2026-03-21T13:14:38.497000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "0acd2d60-6420-4f06-b28b-8e64b93c7f55",
+                    "createdAt": "2026-03-21T13:14:09.832000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 39b16f8c98d0461587cd359b3e3920e0)."
+                },
+                {
+                    "id": "af129d26-bc4e-4e70-8d56-68aa2ced76ad",
+                    "createdAt": "2026-03-21T13:13:27.933000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "31015738-a4b5-43b3-b8e9-1b746f031852",
+                    "createdAt": "2026-03-21T13:13:27.928000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "d387f42d-7a40-4fc6-94c0-43c0d9e533da",
+                    "createdAt": "2026-03-21T13:13:07.893000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "4b54ecbe-ceee-4ed1-ab41-585928bc55d4",
+                    "createdAt": "2026-03-21T13:12:37.331000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 36d7c46a8e644f78a8a35c7dc60eca42)."
+                },
+                {
+                    "id": "3f25628d-9cd6-4503-a90b-577c00bf9091",
+                    "createdAt": "2026-03-21T13:08:56.700000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "4831bfe5-58c9-434b-9c5a-54b2cf1cfa2a",
+                    "createdAt": "2026-03-21T13:08:56.694000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "83eff0bf-3d64-4192-8c65-3bca6fe2d882",
+                    "createdAt": "2026-03-21T13:08:17.273000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "376ad7e3-3fcf-4b2c-bfe3-cc6f895e2fdf",
+                    "createdAt": "2026-03-21T13:07:48.962000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task c40f8fdef60c4b81984b32472a9e38dc)."
+                },
+                {
+                    "id": "8da308df-1cf6-428b-b5ad-59384601daee",
+                    "createdAt": "2026-03-21T13:07:19.514000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "004d59bf-3b10-4f9d-ae61-459f5f15a478",
+                    "createdAt": "2026-03-21T13:07:19.508000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "2229033d-f75b-46d9-962e-f6d18f980dfc",
+                    "createdAt": "2026-03-21T13:06:39.623000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-fe-tg/aef7f08cf41f71c0)"
+                },
+                {
+                    "id": "f91d0496-9468-4c95-a8e6-a96c507f0237",
+                    "createdAt": "2026-03-21T13:06:10.448000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend) has started 1 tasks: (task 56ced903e0b04df9b510e0e595b8ef11)."
+                },
+                {
+                    "id": "3f925079-7c8f-4b13-bb0e-d88d39c61251",
+                    "createdAt": "2026-03-21T13:02:30.124000+00:00",
+                    "message": "(service secureflow-dashboard-dev-frontend, taskSet ecs-svc/9326062805890962747) has begun draining connections on 1 tasks."
+                }
+            ],
+            "createdAt": "2026-03-21T11:36:43.680000+00:00",
+            "currentServiceRevisions": [
+                {
+                    "arn": "arn:aws:ecs:ap-northeast-2:213026893250:service-revision/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-frontend/7511326421983144859",
+                    "requestedTaskCount": 1,
+                    "runningTaskCount": 1,
+                    "pendingTaskCount": 0
+                }
+            ],
+            "placementConstraints": [],
+            "placementStrategy": [],
+            "networkConfiguration": {
+                "awsvpcConfiguration": {
+                    "subnets": [
+                        "subnet-00cdfa3a86f0cfd67",
+                        "subnet-0551666c7a0f0fa8e"
+                    ],
+                    "securityGroups": [
+                        "sg-01abf16aa68526174"
+                    ],
+                    "assignPublicIp": "DISABLED"
+                }
+            },
+            "healthCheckGracePeriodSeconds": 60,
+            "schedulingStrategy": "REPLICA",
+            "deploymentController": {
+                "type": "ECS"
+            },
+            "createdBy": "arn:aws:iam::213026893250:role/secureflow-dev-github-actions",
+            "enableECSManagedTags": false,
+            "propagateTags": "NONE",
+            "enableExecuteCommand": true,
+            "availabilityZoneRebalancing": "DISABLED",
+            "resourceManagementType": "CUSTOMER"
+        },
+        {
+            "serviceArn": "arn:aws:ecs:ap-northeast-2:213026893250:service/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-backend",
+            "serviceName": "secureflow-dashboard-dev-backend",
+            "clusterArn": "arn:aws:ecs:ap-northeast-2:213026893250:cluster/secureflow-dashboard-dev-cluster",
+            "loadBalancers": [
+                {
+                    "targetGroupArn": "arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795",
+                    "containerName": "backend",
+                    "containerPort": 8000
+                }
+            ],
+            "serviceRegistries": [],
+            "status": "ACTIVE",
+            "desiredCount": 1,
+            "runningCount": 1,
+            "pendingCount": 0,
+            "launchType": "FARGATE",
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "taskDefinition": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:5",
+            "deploymentConfiguration": {
+                "deploymentCircuitBreaker": {
+                    "enable": true,
+                    "rollback": true
+                },
+                "maximumPercent": 200,
+                "minimumHealthyPercent": 100,
+                "strategy": "ROLLING",
+                "bakeTimeInMinutes": 0
+            },
+            "deployments": [
+                {
+                    "id": "ecs-svc/3009601870015573834",
+                    "status": "PRIMARY",
+                    "taskDefinition": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:5",
+                    "desiredCount": 1,
+                    "pendingCount": 0,
+                    "runningCount": 1,
+                    "failedTasks": 0,
+                    "createdAt": "2026-03-21T14:02:24.553000+00:00",
+                    "updatedAt": "2026-03-23T05:19:57.797000+00:00",
+                    "launchType": "FARGATE",
+                    "platformVersion": "1.4.0",
+                    "platformFamily": "Linux",
+                    "networkConfiguration": {
+                        "awsvpcConfiguration": {
+                            "subnets": [
+                                "subnet-00cdfa3a86f0cfd67",
+                                "subnet-0551666c7a0f0fa8e"
+                            ],
+                            "securityGroups": [
+                                "sg-01475e92fa08edfff"
+                            ],
+                            "assignPublicIp": "DISABLED"
+                        }
+                    },
+                    "rolloutState": "IN_PROGRESS",
+                    "rolloutStateReason": "ECS deployment circuit breaker: rolling back to deploymentId ecs-svc/3009601870015573834."
+                },
+                {
+                    "id": "ecs-svc/3493600757199754728",
+                    "status": "ACTIVE",
+                    "taskDefinition": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:7",
+                    "desiredCount": 0,
+                    "pendingCount": 0,
+                    "runningCount": 0,
+                    "failedTasks": 3,
+                    "createdAt": "2026-03-23T05:00:05.097000+00:00",
+                    "updatedAt": "2026-03-23T05:19:57.789000+00:00",
+                    "launchType": "FARGATE",
+                    "platformVersion": "1.4.0",
+                    "platformFamily": "Linux",
+                    "networkConfiguration": {
+                        "awsvpcConfiguration": {
+                            "subnets": [
+                                "subnet-00cdfa3a86f0cfd67",
+                                "subnet-0551666c7a0f0fa8e"
+                            ],
+                            "securityGroups": [
+                                "sg-01475e92fa08edfff"
+                            ],
+                            "assignPublicIp": "DISABLED"
+                        }
+                    },
+                    "rolloutState": "FAILED",
+                    "rolloutStateReason": "ECS deployment circuit breaker: tasks failed to start."
+                }
+            ],
+            "roleArn": "arn:aws:iam::213026893250:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+            "events": [
+                {
+                    "id": "b75db2d7-4d7f-4bf1-9047-85378bb6953d",
+                    "createdAt": "2026-03-23T05:19:57.888000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "27faf130-573a-4acc-aaf5-f2204f8c39ea",
+                    "createdAt": "2026-03-23T05:19:55.702000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) rolling back to deployment ecs-svc/3009601870015573834."
+                },
+                {
+                    "id": "8fd00cc9-fa24-418a-831e-5951cd89c0cf",
+                    "createdAt": "2026-03-23T05:19:55.701000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/3493600757199754728) deployment failed: tasks failed to start."
+                },
+                {
+                    "id": "cacd17a2-0e8e-4d24-b1aa-0864b6ae7812",
+                    "createdAt": "2026-03-23T05:19:37.373000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "5625c9a2-a08b-48d7-b334-9596fe2e5513",
+                    "createdAt": "2026-03-23T05:19:05.663000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task a0b77bc7b6eb4a488bc682924833f192)."
+                },
+                {
+                    "id": "fcd8ee0d-238a-46c7-9b3a-a472a028648c",
+                    "createdAt": "2026-03-23T05:13:51.668000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/3493600757199754728) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "5e2e9aa9-e53a-4e1b-b36d-ada01ef9af45",
+                    "createdAt": "2026-03-23T05:13:51.662000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "fb0d52e3-612f-4473-99a8-a75d079a84cb",
+                    "createdAt": "2026-03-23T05:13:31.767000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "8b991d12-192e-47c3-b0e4-d04715565c45",
+                    "createdAt": "2026-03-23T05:13:00.696000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task 2d273f5330504352a29589610f17b0c3)."
+                },
+                {
+                    "id": "70460ead-00b5-430e-b174-ab02e3137a20",
+                    "createdAt": "2026-03-23T05:07:47.793000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/3493600757199754728) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "f3a039f4-4c36-4609-885d-b81aa9c7193f",
+                    "createdAt": "2026-03-23T05:07:47.787000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "3be0b4ec-df41-43f6-89cb-49cf87fc9ba5",
+                    "createdAt": "2026-03-23T05:07:27.001000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "be51f92e-8cd0-401d-8520-0d80365acb8d",
+                    "createdAt": "2026-03-23T05:06:46.518000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task a1daedc2b9d14c27a69f01c682be51e6)."
+                },
+                {
+                    "id": "ea347f4c-0cb5-4641-a985-775e6b7e1493",
+                    "createdAt": "2026-03-23T05:01:31.358000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/3493600757199754728) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "4aeaa2d4-c04b-4f30-9df6-00fb0be80e6e",
+                    "createdAt": "2026-03-23T05:01:31.352000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "39897c28-fc59-4171-b571-ae5126ec046b",
+                    "createdAt": "2026-03-23T05:01:10.910000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "f6e915f3-a412-4df2-9bf1-170300fc2369",
+                    "createdAt": "2026-03-23T05:00:29.603000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task 27d3b9fb1c0c4af6898d590e45c49bf5)."
+                },
+                {
+                    "id": "78137fcb-86f9-4450-8aa8-637b2a9b4143",
+                    "createdAt": "2026-03-23T04:04:13.539000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "ca878fb2-53a3-4ab0-a85d-fbab8613f8ad",
+                    "createdAt": "2026-03-23T04:04:13.538000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/3009601870015573834) deployment completed."
+                },
+                {
+                    "id": "c8d3fc3d-951c-45b5-ba6f-f7f893d698ad",
+                    "createdAt": "2026-03-23T04:03:43.857000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) rolling back to deployment ecs-svc/3009601870015573834."
+                },
+                {
+                    "id": "d1826d73-b8b0-4f22-aaaf-1950a9831e79",
+                    "createdAt": "2026-03-23T04:03:43.856000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/7628065081443105326) deployment failed: tasks failed to start."
+                },
+                {
+                    "id": "d78f0c08-e795-4018-8841-2c027225c314",
+                    "createdAt": "2026-03-23T04:02:55.712000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/7628065081443105326) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "138cc0f6-27f9-4a75-bf81-6956595a1b8e",
+                    "createdAt": "2026-03-23T04:02:55.705000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "8398c320-44e3-4229-97c9-146c732dde4f",
+                    "createdAt": "2026-03-23T04:02:26.203000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "4f60983e-bef0-468a-a5b2-fa80a146bd01",
+                    "createdAt": "2026-03-23T04:01:58.265000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task fb08301d80384ac79140fe5ca241d94b)."
+                },
+                {
+                    "id": "918da910-82c6-4724-8811-d967ddb9ccd8",
+                    "createdAt": "2026-03-23T03:56:32.584000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/7628065081443105326) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "fe32a3b4-8285-4be9-a49e-fe0de70195fd",
+                    "createdAt": "2026-03-23T03:56:32.579000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "e101e683-7154-4c2e-86c7-54772860709c",
+                    "createdAt": "2026-03-23T03:55:42.231000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "aaa5a4ce-e7aa-4755-a5ae-8a67db2401e7",
+                    "createdAt": "2026-03-23T03:55:10.801000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task 0613b522732446c98b8aaed49f85dedc)."
+                },
+                {
+                    "id": "57e1727e-6a05-426a-8e60-abd9fb4a7828",
+                    "createdAt": "2026-03-23T03:49:57.835000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/7628065081443105326) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "30f1fe13-1559-43a2-b52c-13da758d60e0",
+                    "createdAt": "2026-03-23T03:49:57.829000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "9ea041cb-4264-4eb4-a826-02b7d47e9567",
+                    "createdAt": "2026-03-23T03:49:48.538000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "03e6981d-2ff9-4ed9-989f-aba301f55299",
+                    "createdAt": "2026-03-23T03:49:06.339000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task 97629bba3ad14550ac3d7a5c5041e2db)."
+                },
+                {
+                    "id": "03f85dec-4b8b-4043-8056-63588dc631ae",
+                    "createdAt": "2026-03-23T03:43:52.273000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/7628065081443105326) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "cf1c8788-6ff4-4457-b54d-523dea56111f",
+                    "createdAt": "2026-03-23T03:43:52.267000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "9f872bed-6e0e-4a4f-855c-4faac5126686",
+                    "createdAt": "2026-03-23T03:43:42.252000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "8b362c58-a62d-42b9-a9a1-1bd0dcc88f3a",
+                    "createdAt": "2026-03-23T03:43:02.260000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task eddc320c3eab48fa909f1c49faa42719)."
+                },
+                {
+                    "id": "caa3748b-aa4f-4a0a-967b-2aaac81acac8",
+                    "createdAt": "2026-03-23T02:09:58.761000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "28f98c16-74a3-4f08-ad85-a045abc3d01f",
+                    "createdAt": "2026-03-22T20:09:22.575000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "f8c1c603-f284-41d5-9910-e3b55125f045",
+                    "createdAt": "2026-03-22T14:08:43.630000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "188d1564-b9c4-4f6d-b104-9d40f6664722",
+                    "createdAt": "2026-03-22T08:08:07.200000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "e5607417-6e8f-403f-8610-3ef04e8f2b0c",
+                    "createdAt": "2026-03-22T02:08:06.604000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "a15b30bb-e185-4178-a0aa-4fc133e2b031",
+                    "createdAt": "2026-03-21T20:08:01.597000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "8c315cd0-7f04-4cf0-8d8f-b6beca6b4ab8",
+                    "createdAt": "2026-03-21T14:07:35.755000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "31e3a0e1-4b33-4dcd-9871-8b53416c150d",
+                    "createdAt": "2026-03-21T14:07:26.511000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "0c43a1ef-8023-40f9-9b00-d262481769d7",
+                    "createdAt": "2026-03-21T14:06:44.360000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task e46e2dcd7f7146c5afa41489c69e4d51)."
+                },
+                {
+                    "id": "0fb77c90-ae11-446d-8a31-c600eb2cf5e6",
+                    "createdAt": "2026-03-21T14:03:45.050000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "7d2732ba-3b0d-471b-b8e1-91d344f7031e",
+                    "createdAt": "2026-03-21T14:03:45.049000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/3009601870015573834) deployment completed."
+                },
+                {
+                    "id": "42efdf84-8fa9-4d71-b806-5315e9b18c94",
+                    "createdAt": "2026-03-21T14:02:43.988000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/7930486965416938606) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "9a0a03df-1082-4f75-a1b0-8f935238a684",
+                    "createdAt": "2026-03-21T14:02:43.983000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "23d8e77b-2d91-4da2-891b-aab05e2e0219",
+                    "createdAt": "2026-03-21T14:02:33.905000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has stopped 1 running tasks: (task 6ea6f8c07c3b467c975bd4bcd1e6700f)."
+                },
+                {
+                    "id": "d6037117-3c4d-45ec-85c1-9432dfbe5ebf",
+                    "createdAt": "2026-03-21T13:45:35.874000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "480820e0-cc32-4082-a419-b2b9be6bf90c",
+                    "createdAt": "2026-03-21T13:45:26.101000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "735c593c-601c-4da0-ba9e-72d402a79828",
+                    "createdAt": "2026-03-21T13:44:39.098000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task 6ea6f8c07c3b467c975bd4bcd1e6700f)."
+                },
+                {
+                    "id": "4236f62d-9140-4962-98fa-fd697b2c4540",
+                    "createdAt": "2026-03-21T13:41:49.964000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "bfbd2e59-536f-430f-98ff-a2d251c13876",
+                    "createdAt": "2026-03-21T13:41:49.963000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/7930486965416938606) deployment completed."
+                },
+                {
+                    "id": "abe47ec2-54a8-4094-8b8c-b52eee1b563e",
+                    "createdAt": "2026-03-21T13:40:47.773000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/2399050419069030444) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "db7af891-01d3-42cb-a8ef-8f7cc6c1b6eb",
+                    "createdAt": "2026-03-21T13:40:47.767000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "79d04a4c-6c35-4056-b25f-a011c0bbc323",
+                    "createdAt": "2026-03-21T13:40:38.924000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has stopped 1 running tasks: (task 532be70c8492421e899d1a38bc667c4e)."
+                },
+                {
+                    "id": "c801f5a6-a62b-4a25-aa00-c0dbc2df2051",
+                    "createdAt": "2026-03-21T12:55:17.956000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "84ce9e3e-28ce-42c6-b183-52b6f9c32d46",
+                    "createdAt": "2026-03-21T12:54:40.956000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "3d0b55f5-e337-44bd-b614-02272b9852a9",
+                    "createdAt": "2026-03-21T12:54:02.776000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task 532be70c8492421e899d1a38bc667c4e)."
+                },
+                {
+                    "id": "e5287c39-0e39-4aed-9811-7e80de57f26d",
+                    "createdAt": "2026-03-21T12:51:04.828000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "8635841d-cef1-4f72-b399-991f7e4cbb41",
+                    "createdAt": "2026-03-21T12:51:04.827000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/2399050419069030444) deployment completed."
+                },
+                {
+                    "id": "108ef5da-5e0b-4c15-bec8-53129c3427b6",
+                    "createdAt": "2026-03-21T12:49:51.895000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend, taskSet ecs-svc/4457209870232497461) has begun draining connections on 1 tasks."
+                },
+                {
+                    "id": "b00c5ef1-a950-4b7e-97b6-4d7d60d94d13",
+                    "createdAt": "2026-03-21T12:49:51.889000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "174bbaeb-1c50-4680-aa32-254b5f879b57",
+                    "createdAt": "2026-03-21T12:49:44.731000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has stopped 1 running tasks: (task a2586b5b4f864a46b79ec9168042fe09)."
+                },
+                {
+                    "id": "27fd322e-07bb-4c9a-aa3e-95ddfd892666",
+                    "createdAt": "2026-03-21T12:14:39.432000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "229e1b96-11b4-466f-a3f9-8213d41b77b5",
+                    "createdAt": "2026-03-21T12:13:58.539000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) registered 1 targets in (target-group arn:aws:elasticloadbalancing:ap-northeast-2:213026893250:targetgroup/secureflow-dashboard-dev-be-tg/9450663e2744f795)"
+                },
+                {
+                    "id": "acb857d9-814a-4d58-bcd5-82f0c0490ad9",
+                    "createdAt": "2026-03-21T12:13:20.993000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has started 1 tasks: (task a2586b5b4f864a46b79ec9168042fe09)."
+                },
+                {
+                    "id": "cbdab66c-67cc-467a-ad10-eb7c8efa13ca",
+                    "createdAt": "2026-03-21T12:10:22.856000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "c58d88dc-ea16-4e3c-bcb6-47ffd043ee57",
+                    "createdAt": "2026-03-21T12:10:22.855000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/4457209870232497461) deployment completed."
+                },
+                {
+                    "id": "00c2ce87-2383-4811-b501-128c2ae60501",
+                    "createdAt": "2026-03-21T11:36:57.789000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) has reached a steady state."
+                },
+                {
+                    "id": "82939791-d0a9-4e38-83d4-e3d84ed75add",
+                    "createdAt": "2026-03-21T11:36:57.788000+00:00",
+                    "message": "(service secureflow-dashboard-dev-backend) (deployment ecs-svc/8802238414981740603) deployment completed."
+                }
+            ],
+            "createdAt": "2026-03-21T11:36:44.036000+00:00",
+            "currentServiceDeployment": "arn:aws:ecs:ap-northeast-2:213026893250:service-deployment/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-backend/Bixyj8Gb8FiufkVtT5_sR",
+            "currentServiceRevisions": [
+                {
+                    "arn": "arn:aws:ecs:ap-northeast-2:213026893250:service-revision/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-backend/3009601870015573834",
+                    "requestedTaskCount": 1,
+                    "runningTaskCount": 1,
+                    "pendingTaskCount": 0
+                },
+                {
+                    "arn": "arn:aws:ecs:ap-northeast-2:213026893250:service-revision/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-backend/3493600757199754728",
+                    "requestedTaskCount": 0,
+                    "runningTaskCount": 0,
+                    "pendingTaskCount": 0
+                }
+            ],
+            "placementConstraints": [],
+            "placementStrategy": [],
+            "networkConfiguration": {
+                "awsvpcConfiguration": {
+                    "subnets": [
+                        "subnet-00cdfa3a86f0cfd67",
+                        "subnet-0551666c7a0f0fa8e"
+                    ],
+                    "securityGroups": [
+                        "sg-01475e92fa08edfff"
+                    ],
+                    "assignPublicIp": "DISABLED"
+                }
+            },
+            "healthCheckGracePeriodSeconds": 60,
+            "schedulingStrategy": "REPLICA",
+            "deploymentController": {
+                "type": "ECS"
+            },
+            "createdBy": "arn:aws:iam::213026893250:role/secureflow-dev-github-actions",
+            "enableECSManagedTags": false,
+            "propagateTags": "NONE",
+            "enableExecuteCommand": true,
+            "availabilityZoneRebalancing": "DISABLED",
+            "resourceManagementType": "CUSTOMER"
+        },
+        {
+            "serviceArn": "arn:aws:ecs:ap-northeast-2:213026893250:service/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-worker",
+            "serviceName": "secureflow-dashboard-dev-worker",
+            "clusterArn": "arn:aws:ecs:ap-northeast-2:213026893250:cluster/secureflow-dashboard-dev-cluster",
+            "loadBalancers": [],
+            "serviceRegistries": [],
+            "status": "ACTIVE",
+            "desiredCount": 1,
+            "runningCount": 1,
+            "pendingCount": 0,
+            "launchType": "FARGATE",
+            "platformVersion": "LATEST",
+            "platformFamily": "Linux",
+            "taskDefinition": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-worker:7",
+            "deploymentConfiguration": {
+                "deploymentCircuitBreaker": {
+                    "enable": true,
+                    "rollback": true
+                },
+                "maximumPercent": 200,
+                "minimumHealthyPercent": 100,
+                "strategy": "ROLLING",
+                "bakeTimeInMinutes": 0
+            },
+            "deployments": [
+                {
+                    "id": "ecs-svc/4321922955306811162",
+                    "status": "PRIMARY",
+                    "taskDefinition": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-worker:7",
+                    "desiredCount": 1,
+                    "pendingCount": 0,
+                    "runningCount": 1,
+                    "failedTasks": 0,
+                    "createdAt": "2026-03-23T05:00:04.993000+00:00",
+                    "updatedAt": "2026-03-23T05:04:14.017000+00:00",
+                    "launchType": "FARGATE",
+                    "platformVersion": "1.4.0",
+                    "platformFamily": "Linux",
+                    "networkConfiguration": {
+                        "awsvpcConfiguration": {
+                            "subnets": [
+                                "subnet-00cdfa3a86f0cfd67",
+                                "subnet-0551666c7a0f0fa8e"
+                            ],
+                            "securityGroups": [
+                                "sg-01475e92fa08edfff"
+                            ],
+                            "assignPublicIp": "DISABLED"
+                        }
+                    },
+                    "rolloutState": "COMPLETED",
+                    "rolloutStateReason": "ECS deployment ecs-svc/4321922955306811162 completed."
+                }
+            ],
+            "roleArn": "arn:aws:iam::213026893250:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+            "events": [
+                {
+                    "id": "f63969dc-7bcc-4e1b-8de8-9630c8a23c5c",
+                    "createdAt": "2026-03-23T05:04:14.027000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "85e49ecd-25b6-4388-b59b-14f2a6a08aba",
+                    "createdAt": "2026-03-23T05:04:14.026000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) (deployment ecs-svc/4321922955306811162) deployment completed."
+                },
+                {
+                    "id": "f9e6642c-5260-44f9-b52d-94bc42f3daa2",
+                    "createdAt": "2026-03-23T05:01:45.912000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has stopped 1 running tasks: (task a2a9d7edb1224b9395e31274296596eb)."
+                },
+                {
+                    "id": "99a96882-8f87-4fab-b75a-41107ac2f6a6",
+                    "createdAt": "2026-03-23T05:00:33.608000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 16204427e55b40308df00ca0869002e0)."
+                },
+                {
+                    "id": "40414e08-b7c2-4b1c-8ea9-f2d248532ba7",
+                    "createdAt": "2026-03-23T03:46:50.558000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "787e62db-3e27-44d9-a69e-868038a92615",
+                    "createdAt": "2026-03-23T03:46:50.557000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) (deployment ecs-svc/0505361567246753415) deployment completed."
+                },
+                {
+                    "id": "7e687fbe-e272-4961-b631-7e4db3a94c3d",
+                    "createdAt": "2026-03-23T03:44:16.290000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has stopped 1 running tasks: (task eb82d9947bdd468f89c908e0bf9841c1)."
+                },
+                {
+                    "id": "1610fb52-3ac7-4473-8c47-910c20658302",
+                    "createdAt": "2026-03-23T03:43:04.032000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task a2a9d7edb1224b9395e31274296596eb)."
+                },
+                {
+                    "id": "f38a6938-3b38-42a9-b484-e3c4db14ef95",
+                    "createdAt": "2026-03-23T02:10:48.096000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "3fa1384a-e51a-4681-bc93-248c7d0becde",
+                    "createdAt": "2026-03-22T20:10:33.499000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "61720f54-3b75-4c93-a9ea-2c892116bf2e",
+                    "createdAt": "2026-03-22T14:10:09.546000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "ce34bf8f-3c87-4125-988a-94a085b6a000",
+                    "createdAt": "2026-03-22T08:09:41.294000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "7405dff2-49ef-46c3-ab22-dbed386b1949",
+                    "createdAt": "2026-03-22T02:09:36.430000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "f2e75d83-0783-4337-904a-fc425e832c8b",
+                    "createdAt": "2026-03-21T20:09:27.612000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "3e8f0d47-58d7-4027-a4c8-b868603eebc3",
+                    "createdAt": "2026-03-21T14:09:16.851000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "353716f2-1771-47a0-9f8c-6077f774c85b",
+                    "createdAt": "2026-03-21T14:06:44.251000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task eb82d9947bdd468f89c908e0bf9841c1)."
+                },
+                {
+                    "id": "b183dda3-149f-4e8a-9301-d875301aaba8",
+                    "createdAt": "2026-03-21T14:04:05.658000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "745e65b5-8685-4e7c-97b8-87f952c57bf6",
+                    "createdAt": "2026-03-21T14:04:05.657000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) (deployment ecs-svc/0179699479967049678) deployment completed."
+                },
+                {
+                    "id": "060e210b-0667-4710-8664-96fb4fd55d39",
+                    "createdAt": "2026-03-21T14:02:34.141000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has stopped 1 running tasks: (task 2b2ee385c8854eecabf671a05f72eb8c)."
+                },
+                {
+                    "id": "5414f3f0-f863-415f-97b6-909b9129ae77",
+                    "createdAt": "2026-03-21T13:47:27.890000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "b412067a-4c57-4570-b2ca-0e47ceca35bc",
+                    "createdAt": "2026-03-21T13:44:41.347000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 2b2ee385c8854eecabf671a05f72eb8c)."
+                },
+                {
+                    "id": "89ac98aa-1216-454a-82c6-ab0fcfdad84c",
+                    "createdAt": "2026-03-21T13:42:14.781000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "57ad264b-2762-4425-b3df-d5976490ac52",
+                    "createdAt": "2026-03-21T13:42:14.780000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) (deployment ecs-svc/5877275317799692360) deployment completed."
+                },
+                {
+                    "id": "9d93bbde-bba7-48d5-989a-e2d0be0b239d",
+                    "createdAt": "2026-03-21T13:39:45.296000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 3e645d8a12014fafa17a1e8a0da72d97)."
+                },
+                {
+                    "id": "d99710f0-5890-4450-8046-e71ecbc33547",
+                    "createdAt": "2026-03-21T13:38:47.391000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 0568e776888a423ea042113300dc20ff)."
+                },
+                {
+                    "id": "6bb778ff-276f-49ae-b4da-c637098dcc2b",
+                    "createdAt": "2026-03-21T13:37:18.266000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 0999849d9edf44f4880d0d6bf7cedd9f)."
+                },
+                {
+                    "id": "ed3b39d3-4ed6-4c20-a09a-279939e552aa",
+                    "createdAt": "2026-03-21T13:36:18.034000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 541adcc60e974dc6a11b0a9adc4b69d9)."
+                },
+                {
+                    "id": "c16e5817-e3cc-4c8d-a15e-c55584158d7d",
+                    "createdAt": "2026-03-21T13:35:16.451000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 87fe9183f64a4d11a0103941cb329711)."
+                },
+                {
+                    "id": "6e10a7db-de5e-4a1e-b5ee-26bc1311dbe4",
+                    "createdAt": "2026-03-21T13:34:15.766000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 589e8b38d80d4a4dbfdc527679b0ef4f)."
+                },
+                {
+                    "id": "5c6afbba-6e1f-4646-84ea-97c7cf076f3e",
+                    "createdAt": "2026-03-21T13:33:16.270000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 320a492d930c42e592b042c6c4bf312c)."
+                },
+                {
+                    "id": "f2ba4bf5-df9f-4b97-95a6-867aab7580a7",
+                    "createdAt": "2026-03-21T13:32:15.558000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 7c752a99e79c499eb2191dca04890847)."
+                },
+                {
+                    "id": "a09c7de3-7e8a-49bc-bd94-e0e02ee68c17",
+                    "createdAt": "2026-03-21T13:31:17.845000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task fb2af05c5a9b4a5b875281f4b94f26e1)."
+                },
+                {
+                    "id": "b8bf1d25-e733-4baa-b10d-e3b00cfdfc1d",
+                    "createdAt": "2026-03-21T13:30:09.739000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task e6585867a17d4b84a87a53e6469ec0ad)."
+                },
+                {
+                    "id": "6dca0d2a-ec8d-41dc-88ca-69a91e319953",
+                    "createdAt": "2026-03-21T13:29:07.754000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 9d7f50f8775c48668311e41411dde0b1)."
+                },
+                {
+                    "id": "1b2d6a33-9de5-4a10-98f6-521e67f65057",
+                    "createdAt": "2026-03-21T13:28:08.185000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 7b96ca7e4e2643a3b33be536f8191d13)."
+                },
+                {
+                    "id": "dca5ad47-e3cf-4602-8c4c-b025f2a30c7a",
+                    "createdAt": "2026-03-21T13:27:07.540000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 31e562a1538b4ee5bc5f13ef8948a2b1)."
+                },
+                {
+                    "id": "5cdfd0af-7479-4180-8096-7f5c5b17985b",
+                    "createdAt": "2026-03-21T13:26:07.828000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task b8eda1a7fa3d41af97b635cde417b275)."
+                },
+                {
+                    "id": "d1cdbb3c-17d8-4900-b7d3-97cf8d53adc2",
+                    "createdAt": "2026-03-21T13:24:57.528000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task a2ff1c0f5c8741b1a716ea74f98f0a50)."
+                },
+                {
+                    "id": "07647aa8-6b1b-4360-a20f-13cd58ffc9c9",
+                    "createdAt": "2026-03-21T13:23:56.242000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task d9d12db627f34da698ec6aebd1e26ab9)."
+                },
+                {
+                    "id": "1f69f07f-120d-4baf-b70c-3a1ed77e3a63",
+                    "createdAt": "2026-03-21T13:22:55.758000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 2c057f04ea3747d79d9c8a37b6767d75)."
+                },
+                {
+                    "id": "cd721edd-7286-481b-80a3-604fc26ea77e",
+                    "createdAt": "2026-03-21T13:21:56.002000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 8e1a9915f3e34ed285b537a3ab03d615)."
+                },
+                {
+                    "id": "c88433de-3093-4c18-b80d-a0cc211190ee",
+                    "createdAt": "2026-03-21T13:20:56.157000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task fb2c19ab0af945eab16e64f288702dda)."
+                },
+                {
+                    "id": "789e2db2-12f7-4a40-8ae6-02991a203e93",
+                    "createdAt": "2026-03-21T13:19:57.939000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 4b08d9194c914ff0b69133fe8918a735)."
+                },
+                {
+                    "id": "e4b9e136-9e38-48c1-a8ea-ce384cb9a3ed",
+                    "createdAt": "2026-03-21T13:18:57.311000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task eb26fe7228bf46ca937a236ffb6d68de)."
+                },
+                {
+                    "id": "c18ab899-b073-47e1-aa31-fe528985bb74",
+                    "createdAt": "2026-03-21T13:17:57.593000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 69551d0bbbd84f9e8151e7523ad1c5d5)."
+                },
+                {
+                    "id": "61df4b3b-03b0-4173-8181-1f99e5b21ab7",
+                    "createdAt": "2026-03-21T13:16:55.992000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 04d113b50bfb4b3282f27f05c05ba121)."
+                },
+                {
+                    "id": "2a1172a7-21de-40f7-9309-56888e05aa44",
+                    "createdAt": "2026-03-21T13:15:45.880000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 994fc969e83c4f6486a02568bc50795a)."
+                },
+                {
+                    "id": "5fb9d85a-33ee-412a-9ed3-adeaad2b7b2a",
+                    "createdAt": "2026-03-21T13:14:47.776000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task b266b7a88b5347b8bbad3a4b6efb817f)."
+                },
+                {
+                    "id": "b3cc96a4-848f-41bc-9155-ca0aca879fd1",
+                    "createdAt": "2026-03-21T13:13:46.828000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 53a9a29979dc4f4e8901219a18116d26)."
+                },
+                {
+                    "id": "46d4102b-8739-417b-926d-c12e4948cae0",
+                    "createdAt": "2026-03-21T13:12:37.271000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task a9e11f5f154848a68ed07eca5f83a5d1)."
+                },
+                {
+                    "id": "9837f775-df9c-4776-b058-4d3f3b846b4b",
+                    "createdAt": "2026-03-21T13:11:36.972000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 3bc388d931cf4f28ad5e8e71fbab128f)."
+                },
+                {
+                    "id": "8cfa2aaa-3efe-478a-9240-6b56c0eef68d",
+                    "createdAt": "2026-03-21T13:10:37.572000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 8ddd716e402e42558c870571c9048b23)."
+                },
+                {
+                    "id": "27270969-178e-4541-937f-c7fdb91250b0",
+                    "createdAt": "2026-03-21T13:09:36.819000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 10e0cd3dce214fa58bd2ce0e69fc5c80)."
+                },
+                {
+                    "id": "4fd7499b-db41-41c4-9579-c18039bd27f9",
+                    "createdAt": "2026-03-21T13:08:36.873000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task ad39e84d145245738ec5f6f9cf449ccd)."
+                },
+                {
+                    "id": "5c5aecb6-c56f-4c9b-8c9c-e3af0595e69a",
+                    "createdAt": "2026-03-21T13:07:33.756000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task ac51906322a141c28d44b77a2b50d221)."
+                },
+                {
+                    "id": "7aeda679-ef90-4291-b4c9-c153e3023eaf",
+                    "createdAt": "2026-03-21T13:06:35.166000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task fa9e1c05b84944ab95f5f61c83292495)."
+                },
+                {
+                    "id": "569c7abf-6906-4d6a-b3cc-05346266819c",
+                    "createdAt": "2026-03-21T13:05:26.025000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task a8d11916a4594541a4be6a31ca5872e0)."
+                },
+                {
+                    "id": "c7424ceb-5fab-4914-8b00-53aefb1f5dfc",
+                    "createdAt": "2026-03-21T13:04:26.016000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task fdf5f32c89f14544833974ac26d48930)."
+                },
+                {
+                    "id": "8c63accb-e267-427d-b0ab-a8dfb4303dfa",
+                    "createdAt": "2026-03-21T13:03:25.639000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task e93a0f5acd6e4ce88c0484debe691a13)."
+                },
+                {
+                    "id": "6561f4ba-1489-4b20-804f-098f83920d67",
+                    "createdAt": "2026-03-21T13:02:26.546000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 739895353a354b4a87c3c89f64db1543)."
+                },
+                {
+                    "id": "b3bf940b-53a7-4a91-bdd3-56666b656e7e",
+                    "createdAt": "2026-03-21T13:01:24.224000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 0668544f3a484226b1e6c7cd34225d50)."
+                },
+                {
+                    "id": "8e1fe1db-6171-4b39-ac9b-30a18c666c86",
+                    "createdAt": "2026-03-21T13:00:26.113000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 4bdd258103a54652998886faa534e015)."
+                },
+                {
+                    "id": "16e2241f-651b-4dbd-9c5a-713fec520236",
+                    "createdAt": "2026-03-21T12:59:17.307000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task f3ea01cd38f64c20b6e085332eb53c9d)."
+                },
+                {
+                    "id": "dda3fdc8-422b-43f4-83fc-f7a6b34521cc",
+                    "createdAt": "2026-03-21T12:58:06.761000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 82aa078b91334f898f910732a7722283)."
+                },
+                {
+                    "id": "96ed0492-7941-4dfd-8d54-b6354bd3ef68",
+                    "createdAt": "2026-03-21T12:57:06.885000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task e49e5011052c437e9e8a270287c5c446)."
+                },
+                {
+                    "id": "9f6ed7cb-edec-495d-8d4e-8193be1f8d46",
+                    "createdAt": "2026-03-21T12:56:05.299000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 2ad463440c6d4801b5611e3da540a606)."
+                },
+                {
+                    "id": "b6bb7792-c1c1-43ca-aaab-b603f8a45473",
+                    "createdAt": "2026-03-21T12:55:03.397000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 91f00e32f121436dbace4fb249b4b0c3)."
+                },
+                {
+                    "id": "6642cae1-9ef5-4428-acee-43bc934e8623",
+                    "createdAt": "2026-03-21T12:54:00.310000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 00f8018c04a7442590083b2b369cb6cb)."
+                },
+                {
+                    "id": "eacf1c9b-b7cd-4fc5-8129-784272e0d1e7",
+                    "createdAt": "2026-03-21T12:51:22.879000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has reached a steady state."
+                },
+                {
+                    "id": "c5bd7771-ee64-45aa-af80-27bfd4a1f736",
+                    "createdAt": "2026-03-21T12:51:22.878000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) (deployment ecs-svc/5391497100373735208) deployment completed."
+                },
+                {
+                    "id": "89d7985d-1a94-4051-bcf5-8f5e0cf5e869",
+                    "createdAt": "2026-03-21T12:49:10.362000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 73952f0e405941caa2094f90f6275686)."
+                },
+                {
+                    "id": "860bf2f1-bff8-4ed2-92bc-b6b7fd57bdd8",
+                    "createdAt": "2026-03-21T12:48:12.230000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task f7f0763b784e41029447ee2aebe61dba)."
+                },
+                {
+                    "id": "04223219-afc7-4563-9a8e-19ca13903f6d",
+                    "createdAt": "2026-03-21T12:47:11.704000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 9d37157d5dbe4dfdaf4637d0433d24df)."
+                },
+                {
+                    "id": "381412a0-5275-40e5-8b23-e3581c3b14b1",
+                    "createdAt": "2026-03-21T12:46:12.338000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 4572977d9593477189337ddd6f509507)."
+                },
+                {
+                    "id": "e4f78838-85ae-431c-af26-401cc377a9eb",
+                    "createdAt": "2026-03-21T12:45:01.481000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 02feb517dac94450b5169c947dd21da8)."
+                },
+                {
+                    "id": "f9a68ff6-c66e-4157-a063-8cb0f878e71b",
+                    "createdAt": "2026-03-21T12:44:00.238000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 6eb60fed14fe4d0583f971654161384a)."
+                },
+                {
+                    "id": "35582fec-8f51-4a1c-94b8-35f18a58793a",
+                    "createdAt": "2026-03-21T12:42:59.657000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task a6f7974325da411ea1e5ab7eed6fe401)."
+                },
+                {
+                    "id": "8808ccf0-d4c2-409b-92de-d65a7e6ee85a",
+                    "createdAt": "2026-03-21T12:42:01.198000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 227c9af2511047418762f51f3ab686e5)."
+                },
+                {
+                    "id": "10650a50-b5e6-44e7-960c-55c1589d2e3a",
+                    "createdAt": "2026-03-21T12:41:00.039000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 1f959bffed6345209df4c4cf4fc44c7a)."
+                },
+                {
+                    "id": "f2ffce88-e736-4f12-8bd7-0e1aa52ac63a",
+                    "createdAt": "2026-03-21T12:40:01.623000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task d793ce9df6be46aabc8f4acb85c55b1c)."
+                },
+                {
+                    "id": "16e6f116-1fe2-4274-b36b-7d9a086319ed",
+                    "createdAt": "2026-03-21T12:39:01.439000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 60f837bbb1df47968430d891bb7dd390)."
+                },
+                {
+                    "id": "294f921d-e954-4a25-b9cb-f4545e8d0d39",
+                    "createdAt": "2026-03-21T12:38:01.190000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 59e6befac0d14d489f32ecd87ebbd6a8)."
+                },
+                {
+                    "id": "2db8757f-7bd0-4bc1-8569-44d7d4dd6899",
+                    "createdAt": "2026-03-21T12:37:01.220000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task d891989d640c405f9f59c986b35c99f9)."
+                },
+                {
+                    "id": "d9bcf5a3-901c-4fcf-8324-2d520f5be24a",
+                    "createdAt": "2026-03-21T12:36:00.719000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 2d2903f3ae7842809d31c222f25fa57b)."
+                },
+                {
+                    "id": "a9780fe1-fdb5-40b2-a6b5-9252942eca15",
+                    "createdAt": "2026-03-21T12:34:59.459000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task f78baf5f25ea42fe8c72528a83d9fad1)."
+                },
+                {
+                    "id": "f1fec850-c0cf-46ce-bf6d-4b2135ee6e80",
+                    "createdAt": "2026-03-21T12:34:00.311000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task a1f57db315b3488ca19435bcc3601789)."
+                },
+                {
+                    "id": "9d136e3d-831a-4b51-a04e-eae3f44281c5",
+                    "createdAt": "2026-03-21T12:32:58+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 4839c434e28b4a4cbca75a4757b77a64)."
+                },
+                {
+                    "id": "f28bf6b6-23d5-41cf-9cbb-91d49d2e8c42",
+                    "createdAt": "2026-03-21T12:31:57.742000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task d52a2da56dd848888469194d6623e4c9)."
+                },
+                {
+                    "id": "eaf9a51c-85c8-4df5-a2fb-3a489b5a2589",
+                    "createdAt": "2026-03-21T12:30:55.189000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 2fb49e3280454857bcb52a44d9eafd11)."
+                },
+                {
+                    "id": "2a5251c4-3a2e-45a4-a1b0-413f7727815f",
+                    "createdAt": "2026-03-21T12:29:45.445000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 1a9979cef7d34b80a9508bf3b6e0e6dd)."
+                },
+                {
+                    "id": "5d71e9e5-a9f8-4490-90f3-765b3e057296",
+                    "createdAt": "2026-03-21T12:28:44.386000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 5613814a844f4edaa43b900eab9aadc4)."
+                },
+                {
+                    "id": "0c100385-0cee-4343-b8a6-4b9621557af5",
+                    "createdAt": "2026-03-21T12:27:46.020000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 0adfd22ed9d34b999df61dcd36cfa5d9)."
+                },
+                {
+                    "id": "9257c6eb-dc18-4488-8cae-61dd0cbb9890",
+                    "createdAt": "2026-03-21T12:26:45.235000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 5357fef25f314643becacf0f12d9266d)."
+                },
+                {
+                    "id": "3f283edc-3b1e-41fd-bf3a-c45bb05420ad",
+                    "createdAt": "2026-03-21T12:25:44.890000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task abe1afe78d76404ba4201ed587bf9469)."
+                },
+                {
+                    "id": "b7784388-a897-4f4e-858f-8878f2a59540",
+                    "createdAt": "2026-03-21T12:24:34.875000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task ca24c15cf13446f7a626943eb1f323e4)."
+                },
+                {
+                    "id": "50b6925c-a710-44c4-a802-27d28016ee6c",
+                    "createdAt": "2026-03-21T12:23:34.963000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 1d813063e97e495cb024a3402049de98)."
+                },
+                {
+                    "id": "3ad596ae-e101-4f8f-ad57-58f04083a879",
+                    "createdAt": "2026-03-21T12:22:36.140000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 63feb6b256ae4228a2b73ac46b40a790)."
+                },
+                {
+                    "id": "879ff78b-f3ca-4224-8620-5997bd3f0a3f",
+                    "createdAt": "2026-03-21T12:21:37.838000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task ed11ca3be22c44838413327a6c3f1bab)."
+                },
+                {
+                    "id": "16dc4c6b-3195-4ac6-ab09-95b7a141c1ac",
+                    "createdAt": "2026-03-21T12:20:37.090000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task fad8c926d7624a3a8b59d066022ec699)."
+                },
+                {
+                    "id": "e6de2168-d1b4-4d66-a13a-20e9f146aa89",
+                    "createdAt": "2026-03-21T12:19:35.475000+00:00",
+                    "message": "(service secureflow-dashboard-dev-worker) has started 1 tasks: (task 4f5ffdef838a4832b86e8e742c3c44b7)."
+                }
+            ],
+            "createdAt": "2026-03-21T11:34:14.302000+00:00",
+            "currentServiceRevisions": [
+                {
+                    "arn": "arn:aws:ecs:ap-northeast-2:213026893250:service-revision/secureflow-dashboard-dev-cluster/secureflow-dashboard-dev-worker/4321922955306811162",
+                    "requestedTaskCount": 1,
+                    "runningTaskCount": 1,
+                    "pendingTaskCount": 0
+                }
+            ],
+            "placementConstraints": [],
+            "placementStrategy": [],
+            "networkConfiguration": {
+                "awsvpcConfiguration": {
+                    "subnets": [
+                        "subnet-00cdfa3a86f0cfd67",
+                        "subnet-0551666c7a0f0fa8e"
+                    ],
+                    "securityGroups": [
+                        "sg-01475e92fa08edfff"
+                    ],
+                    "assignPublicIp": "DISABLED"
+                }
+            },
+            "healthCheckGracePeriodSeconds": 0,
+            "schedulingStrategy": "REPLICA",
+            "deploymentController": {
+                "type": "ECS"
+            },
+            "createdBy": "arn:aws:iam::213026893250:role/secureflow-dev-github-actions",
+            "enableECSManagedTags": false,
+            "propagateTags": "NONE",
+            "enableExecuteCommand": true,
+            "availabilityZoneRebalancing": "DISABLED",
+            "resourceManagementType": "CUSTOMER"
+        }
+    ],
+    "failures": []
+}

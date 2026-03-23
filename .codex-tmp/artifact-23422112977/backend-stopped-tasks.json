@@ -1,0 +1,599 @@
+{
+    "tasks": [
+        {
+            "attachments": [
+                {
+                    "id": "ed9966cc-0da2-4361-ab70-6c39ed2d931b",
+                    "type": "ElasticNetworkInterface",
+                    "status": "DELETED",
+                    "details": [
+                        {
+                            "name": "subnetId",
+                            "value": "subnet-0551666c7a0f0fa8e"
+                        },
+                        {
+                            "name": "networkInterfaceId",
+                            "value": "eni-059081265c08dba73"
+                        },
+                        {
+                            "name": "macAddress",
+                            "value": "06:c5:5d:e2:15:83"
+                        },
+                        {
+                            "name": "privateDnsName",
+                            "value": "ip-10-50-85-80.ap-northeast-2.compute.internal"
+                        },
+                        {
+                            "name": "privateIPv4Address",
+                            "value": "10.50.85.80"
+                        }
+                    ]
+                }
+            ],
+            "attributes": [
+                {
+                    "name": "ecs.cpu-architecture",
+                    "value": "x86_64"
+                }
+            ],
+            "availabilityZone": "ap-northeast-2b",
+            "clusterArn": "arn:aws:ecs:ap-northeast-2:213026893250:cluster/secureflow-dashboard-dev-cluster",
+            "connectivity": "CONNECTED",
+            "connectivityAt": "2026-03-23T05:00:38.076000+00:00",
+            "containers": [
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/27d3b9fb1c0c4af6898d590e45c49bf5/08531386-27c4-460f-b7d6-f5b9952c197c",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/27d3b9fb1c0c4af6898d590e45c49bf5",
+                    "name": "aws-guardduty-agent-Bng4EK",
+                    "imageDigest": "sha256:fd9acaa2326f180f0ed0c5a25d8ff0a2d0498a6e900c34c68d4e973ea7fb26a8",
+                    "runtimeId": "27d3b9fb1c0c4af6898d590e45c49bf5-3960205882",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 0,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "ed9966cc-0da2-4361-ab70-6c39ed2d931b",
+                            "privateIpv4Address": "10.50.85.80"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN"
+                },
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/27d3b9fb1c0c4af6898d590e45c49bf5/f4bed3d5-80d2-4c33-ad0c-2ea051213432",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/27d3b9fb1c0c4af6898d590e45c49bf5",
+                    "name": "backend",
+                    "image": "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/backend:cfd56ec082fd-1",
+                    "imageDigest": "sha256:fe6b8dba1c0a90bb4eacaaf025fc4af39622b6a386285f2c1ae706ae031b5310",
+                    "runtimeId": "27d3b9fb1c0c4af6898d590e45c49bf5-2750272591",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 1,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "ed9966cc-0da2-4361-ab70-6c39ed2d931b",
+                            "privateIpv4Address": "10.50.85.80"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN",
+                    "managedAgents": [
+                        {
+                            "name": "ExecuteCommandAgent",
+                            "lastStatus": "STOPPED"
+                        }
+                    ],
+                    "cpu": "0"
+                }
+            ],
+            "cpu": "512",
+            "createdAt": "2026-03-23T05:00:29.543000+00:00",
+            "desiredStatus": "STOPPED",
+            "enableExecuteCommand": true,
+            "executionStoppedAt": "2026-03-23T05:01:09.422000+00:00",
+            "group": "service:secureflow-dashboard-dev-backend",
+            "healthStatus": "UNKNOWN",
+            "lastStatus": "STOPPED",
+            "launchType": "FARGATE",
+            "memory": "1024",
+            "overrides": {
+                "containerOverrides": [
+                    {
+                        "name": "aws-guardduty-agent-Bng4EK",
+                        "environment": [
+                            {
+                                "name": "CLUSTER_NAME",
+                                "value": "secureflow-dashboard-dev-cluster"
+                            },
+                            {
+                                "name": "REGION",
+                                "value": "ap-northeast-2"
+                            },
+                            {
+                                "name": "HOST_PROC",
+                                "value": "/host_proc"
+                            },
+                            {
+                                "name": "AGENT_RUNTIME_ENVIRONMENT",
+                                "value": "ecsfargate"
+                            },
+                            {
+                                "name": "STAGE",
+                                "value": "prod"
+                            }
+                        ],
+                        "memory": 128
+                    },
+                    {
+                        "name": "backend"
+                    }
+                ],
+                "inferenceAcceleratorOverrides": []
+            },
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "pullStartedAt": "2026-03-23T05:00:50.058000+00:00",
+            "pullStoppedAt": "2026-03-23T05:00:58.625000+00:00",
+            "startedAt": "2026-03-23T05:01:17.609000+00:00",
+            "startedBy": "ecs-svc/3493600757199754728",
+            "stopCode": "EssentialContainerExited",
+            "stoppedAt": "2026-03-23T05:06:43.635000+00:00",
+            "stoppedReason": "Essential container in task exited",
+            "stoppingAt": "2026-03-23T05:01:20.202000+00:00",
+            "tags": [],
+            "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/27d3b9fb1c0c4af6898d590e45c49bf5",
+            "taskDefinitionArn": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:7",
+            "version": 7,
+            "ephemeralStorage": {
+                "sizeInGiB": 20
+            },
+            "fargateEphemeralStorage": {
+                "sizeInGiB": 20
+            }
+        },
+        {
+            "attachments": [
+                {
+                    "id": "60ea911f-4277-4919-a7a0-553e74a48be7",
+                    "type": "ElasticNetworkInterface",
+                    "status": "DELETED",
+                    "details": [
+                        {
+                            "name": "subnetId",
+                            "value": "subnet-0551666c7a0f0fa8e"
+                        },
+                        {
+                            "name": "networkInterfaceId",
+                            "value": "eni-07668bc0bf29f12fa"
+                        },
+                        {
+                            "name": "macAddress",
+                            "value": "06:57:72:74:ad:65"
+                        },
+                        {
+                            "name": "privateDnsName",
+                            "value": "ip-10-50-83-219.ap-northeast-2.compute.internal"
+                        },
+                        {
+                            "name": "privateIPv4Address",
+                            "value": "10.50.83.219"
+                        }
+                    ]
+                }
+            ],
+            "attributes": [
+                {
+                    "name": "ecs.cpu-architecture",
+                    "value": "x86_64"
+                }
+            ],
+            "availabilityZone": "ap-northeast-2b",
+            "clusterArn": "arn:aws:ecs:ap-northeast-2:213026893250:cluster/secureflow-dashboard-dev-cluster",
+            "connectivity": "CONNECTED",
+            "connectivityAt": "2026-03-23T05:13:06.052000+00:00",
+            "containers": [
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/2d273f5330504352a29589610f17b0c3/c126d8e9-ae0d-4534-abc4-8d24825fd2d9",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/2d273f5330504352a29589610f17b0c3",
+                    "name": "aws-guardduty-agent-Bng4EK",
+                    "imageDigest": "sha256:fd9acaa2326f180f0ed0c5a25d8ff0a2d0498a6e900c34c68d4e973ea7fb26a8",
+                    "runtimeId": "2d273f5330504352a29589610f17b0c3-3960205882",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 0,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "60ea911f-4277-4919-a7a0-553e74a48be7",
+                            "privateIpv4Address": "10.50.83.219"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN"
+                },
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/2d273f5330504352a29589610f17b0c3/c66e9c10-3f4b-4deb-81fb-a67b6b5857f1",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/2d273f5330504352a29589610f17b0c3",
+                    "name": "backend",
+                    "image": "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/backend:cfd56ec082fd-1",
+                    "imageDigest": "sha256:fe6b8dba1c0a90bb4eacaaf025fc4af39622b6a386285f2c1ae706ae031b5310",
+                    "runtimeId": "2d273f5330504352a29589610f17b0c3-2750272591",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 1,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "60ea911f-4277-4919-a7a0-553e74a48be7",
+                            "privateIpv4Address": "10.50.83.219"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN",
+                    "managedAgents": [
+                        {
+                            "name": "ExecuteCommandAgent",
+                            "lastStatus": "STOPPED"
+                        }
+                    ],
+                    "cpu": "0"
+                }
+            ],
+            "cpu": "512",
+            "createdAt": "2026-03-23T05:13:00.627000+00:00",
+            "desiredStatus": "STOPPED",
+            "enableExecuteCommand": true,
+            "executionStoppedAt": "2026-03-23T05:13:32.862000+00:00",
+            "group": "service:secureflow-dashboard-dev-backend",
+            "healthStatus": "UNKNOWN",
+            "lastStatus": "STOPPED",
+            "launchType": "FARGATE",
+            "memory": "1024",
+            "overrides": {
+                "containerOverrides": [
+                    {
+                        "name": "aws-guardduty-agent-Bng4EK",
+                        "environment": [
+                            {
+                                "name": "CLUSTER_NAME",
+                                "value": "secureflow-dashboard-dev-cluster"
+                            },
+                            {
+                                "name": "REGION",
+                                "value": "ap-northeast-2"
+                            },
+                            {
+                                "name": "HOST_PROC",
+                                "value": "/host_proc"
+                            },
+                            {
+                                "name": "AGENT_RUNTIME_ENVIRONMENT",
+                                "value": "ecsfargate"
+                            },
+                            {
+                                "name": "STAGE",
+                                "value": "prod"
+                            }
+                        ],
+                        "memory": 128
+                    },
+                    {
+                        "name": "backend"
+                    }
+                ],
+                "inferenceAcceleratorOverrides": []
+            },
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "pullStartedAt": "2026-03-23T05:13:15.712000+00:00",
+            "pullStoppedAt": "2026-03-23T05:13:23.927000+00:00",
+            "startedAt": "2026-03-23T05:13:40.934000+00:00",
+            "startedBy": "ecs-svc/3493600757199754728",
+            "stopCode": "EssentialContainerExited",
+            "stoppedAt": "2026-03-23T05:19:04.330000+00:00",
+            "stoppedReason": "Essential container in task exited",
+            "stoppingAt": "2026-03-23T05:13:43.683000+00:00",
+            "tags": [],
+            "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/2d273f5330504352a29589610f17b0c3",
+            "taskDefinitionArn": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:7",
+            "version": 7,
+            "ephemeralStorage": {
+                "sizeInGiB": 20
+            },
+            "fargateEphemeralStorage": {
+                "sizeInGiB": 20
+            }
+        },
+        {
+            "attachments": [
+                {
+                    "id": "d582389f-b199-4b06-b598-ddfa1a682a25",
+                    "type": "ElasticNetworkInterface",
+                    "status": "DETACHING",
+                    "details": [
+                        {
+                            "name": "subnetId",
+                            "value": "subnet-0551666c7a0f0fa8e"
+                        },
+                        {
+                            "name": "networkInterfaceId",
+                            "value": "eni-05766f5ac3d9ae712"
+                        },
+                        {
+                            "name": "macAddress",
+                            "value": "06:db:b3:e1:c3:1b"
+                        },
+                        {
+                            "name": "privateDnsName",
+                            "value": "ip-10-50-86-7.ap-northeast-2.compute.internal"
+                        },
+                        {
+                            "name": "privateIPv4Address",
+                            "value": "10.50.86.7"
+                        }
+                    ]
+                }
+            ],
+            "attributes": [
+                {
+                    "name": "ecs.cpu-architecture",
+                    "value": "x86_64"
+                }
+            ],
+            "availabilityZone": "ap-northeast-2b",
+            "clusterArn": "arn:aws:ecs:ap-northeast-2:213026893250:cluster/secureflow-dashboard-dev-cluster",
+            "connectivity": "CONNECTED",
+            "connectivityAt": "2026-03-23T05:19:09.180000+00:00",
+            "containers": [
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/a0b77bc7b6eb4a488bc682924833f192/59e25973-9da2-4b06-8a80-428495aeb956",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/a0b77bc7b6eb4a488bc682924833f192",
+                    "name": "aws-guardduty-agent-Bng4EK",
+                    "imageDigest": "sha256:fd9acaa2326f180f0ed0c5a25d8ff0a2d0498a6e900c34c68d4e973ea7fb26a8",
+                    "runtimeId": "a0b77bc7b6eb4a488bc682924833f192-3960205882",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 0,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "d582389f-b199-4b06-b598-ddfa1a682a25",
+                            "privateIpv4Address": "10.50.86.7"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN"
+                },
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/a0b77bc7b6eb4a488bc682924833f192/99ca1df2-43a7-4e7f-acb6-9f7c676353ab",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/a0b77bc7b6eb4a488bc682924833f192",
+                    "name": "backend",
+                    "image": "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/backend:cfd56ec082fd-1",
+                    "imageDigest": "sha256:fe6b8dba1c0a90bb4eacaaf025fc4af39622b6a386285f2c1ae706ae031b5310",
+                    "runtimeId": "a0b77bc7b6eb4a488bc682924833f192-2750272591",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 1,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "d582389f-b199-4b06-b598-ddfa1a682a25",
+                            "privateIpv4Address": "10.50.86.7"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN",
+                    "managedAgents": [
+                        {
+                            "name": "ExecuteCommandAgent",
+                            "lastStatus": "STOPPED"
+                        }
+                    ],
+                    "cpu": "0"
+                }
+            ],
+            "cpu": "512",
+            "createdAt": "2026-03-23T05:19:05.599000+00:00",
+            "desiredStatus": "STOPPED",
+            "enableExecuteCommand": true,
+            "executionStoppedAt": "2026-03-23T05:19:34.668000+00:00",
+            "group": "service:secureflow-dashboard-dev-backend",
+            "healthStatus": "UNKNOWN",
+            "lastStatus": "DEPROVISIONING",
+            "launchType": "FARGATE",
+            "memory": "1024",
+            "overrides": {
+                "containerOverrides": [
+                    {
+                        "name": "aws-guardduty-agent-Bng4EK",
+                        "environment": [
+                            {
+                                "name": "CLUSTER_NAME",
+                                "value": "secureflow-dashboard-dev-cluster"
+                            },
+                            {
+                                "name": "REGION",
+                                "value": "ap-northeast-2"
+                            },
+                            {
+                                "name": "HOST_PROC",
+                                "value": "/host_proc"
+                            },
+                            {
+                                "name": "AGENT_RUNTIME_ENVIRONMENT",
+                                "value": "ecsfargate"
+                            },
+                            {
+                                "name": "STAGE",
+                                "value": "prod"
+                            }
+                        ],
+                        "memory": 128
+                    },
+                    {
+                        "name": "backend"
+                    }
+                ],
+                "inferenceAcceleratorOverrides": []
+            },
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "pullStartedAt": "2026-03-23T05:19:16.468000+00:00",
+            "pullStoppedAt": "2026-03-23T05:19:25.099000+00:00",
+            "startedBy": "ecs-svc/3493600757199754728",
+            "stopCode": "EssentialContainerExited",
+            "stoppedReason": "Essential container in task exited",
+            "stoppingAt": "2026-03-23T05:19:45.388000+00:00",
+            "tags": [],
+            "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/a0b77bc7b6eb4a488bc682924833f192",
+            "taskDefinitionArn": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:7",
+            "version": 5,
+            "ephemeralStorage": {
+                "sizeInGiB": 20
+            },
+            "fargateEphemeralStorage": {
+                "sizeInGiB": 20
+            }
+        },
+        {
+            "attachments": [
+                {
+                    "id": "4bada0c1-fc2a-486a-8b66-575164ab2d06",
+                    "type": "ElasticNetworkInterface",
+                    "status": "DELETED",
+                    "details": [
+                        {
+                            "name": "subnetId",
+                            "value": "subnet-00cdfa3a86f0cfd67"
+                        },
+                        {
+                            "name": "networkInterfaceId",
+                            "value": "eni-06520e6a65e058c55"
+                        },
+                        {
+                            "name": "macAddress",
+                            "value": "02:dd:d2:01:d0:69"
+                        },
+                        {
+                            "name": "privateDnsName",
+                            "value": "ip-10-50-77-175.ap-northeast-2.compute.internal"
+                        },
+                        {
+                            "name": "privateIPv4Address",
+                            "value": "10.50.77.175"
+                        }
+                    ]
+                }
+            ],
+            "attributes": [
+                {
+                    "name": "ecs.cpu-architecture",
+                    "value": "x86_64"
+                }
+            ],
+            "availabilityZone": "ap-northeast-2a",
+            "clusterArn": "arn:aws:ecs:ap-northeast-2:213026893250:cluster/secureflow-dashboard-dev-cluster",
+            "connectivity": "CONNECTED",
+            "connectivityAt": "2026-03-23T05:06:50.048000+00:00",
+            "containers": [
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/a1daedc2b9d14c27a69f01c682be51e6/0556f9cc-f7b7-40e0-80ab-08f5abe4c7bc",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/a1daedc2b9d14c27a69f01c682be51e6",
+                    "name": "aws-guardduty-agent-Bng4EK",
+                    "imageDigest": "sha256:fd9acaa2326f180f0ed0c5a25d8ff0a2d0498a6e900c34c68d4e973ea7fb26a8",
+                    "runtimeId": "a1daedc2b9d14c27a69f01c682be51e6-3960205882",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 0,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "4bada0c1-fc2a-486a-8b66-575164ab2d06",
+                            "privateIpv4Address": "10.50.77.175"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN"
+                },
+                {
+                    "containerArn": "arn:aws:ecs:ap-northeast-2:213026893250:container/secureflow-dashboard-dev-cluster/a1daedc2b9d14c27a69f01c682be51e6/da91516d-e552-4265-bdcc-1f2df852e927",
+                    "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/a1daedc2b9d14c27a69f01c682be51e6",
+                    "name": "backend",
+                    "image": "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/backend:cfd56ec082fd-1",
+                    "imageDigest": "sha256:fe6b8dba1c0a90bb4eacaaf025fc4af39622b6a386285f2c1ae706ae031b5310",
+                    "runtimeId": "a1daedc2b9d14c27a69f01c682be51e6-2750272591",
+                    "lastStatus": "STOPPED",
+                    "exitCode": 1,
+                    "networkBindings": [],
+                    "networkInterfaces": [
+                        {
+                            "attachmentId": "4bada0c1-fc2a-486a-8b66-575164ab2d06",
+                            "privateIpv4Address": "10.50.77.175"
+                        }
+                    ],
+                    "healthStatus": "UNKNOWN",
+                    "managedAgents": [
+                        {
+                            "name": "ExecuteCommandAgent",
+                            "lastStatus": "STOPPED"
+                        }
+                    ],
+                    "cpu": "0"
+                }
+            ],
+            "cpu": "512",
+            "createdAt": "2026-03-23T05:06:46.454000+00:00",
+            "desiredStatus": "STOPPED",
+            "enableExecuteCommand": true,
+            "executionStoppedAt": "2026-03-23T05:07:28.359000+00:00",
+            "group": "service:secureflow-dashboard-dev-backend",
+            "healthStatus": "UNKNOWN",
+            "lastStatus": "STOPPED",
+            "launchType": "FARGATE",
+            "memory": "1024",
+            "overrides": {
+                "containerOverrides": [
+                    {
+                        "name": "aws-guardduty-agent-Bng4EK",
+                        "environment": [
+                            {
+                                "name": "CLUSTER_NAME",
+                                "value": "secureflow-dashboard-dev-cluster"
+                            },
+                            {
+                                "name": "REGION",
+                                "value": "ap-northeast-2"
+                            },
+                            {
+                                "name": "HOST_PROC",
+                                "value": "/host_proc"
+                            },
+                            {
+                                "name": "AGENT_RUNTIME_ENVIRONMENT",
+                                "value": "ecsfargate"
+                            },
+                            {
+                                "name": "STAGE",
+                                "value": "prod"
+                            }
+                        ],
+                        "memory": 128
+                    },
+                    {
+                        "name": "backend"
+                    }
+                ],
+                "inferenceAcceleratorOverrides": []
+            },
+            "platformVersion": "1.4.0",
+            "platformFamily": "Linux",
+            "pullStartedAt": "2026-03-23T05:07:04.799000+00:00",
+            "pullStoppedAt": "2026-03-23T05:07:18.439000+00:00",
+            "startedAt": "2026-03-23T05:07:30.823000+00:00",
+            "startedBy": "ecs-svc/3493600757199754728",
+            "stopCode": "EssentialContainerExited",
+            "stoppedAt": "2026-03-23T05:12:59.674000+00:00",
+            "stoppedReason": "Essential container in task exited",
+            "stoppingAt": "2026-03-23T05:07:39.104000+00:00",
+            "tags": [],
+            "taskArn": "arn:aws:ecs:ap-northeast-2:213026893250:task/secureflow-dashboard-dev-cluster/a1daedc2b9d14c27a69f01c682be51e6",
+            "taskDefinitionArn": "arn:aws:ecs:ap-northeast-2:213026893250:task-definition/secureflow-dashboard-dev-backend:7",
+            "version": 7,
+            "ephemeralStorage": {
+                "sizeInGiB": 20
+            },
+            "fargateEphemeralStorage": {
+                "sizeInGiB": 20
+            }
+        }
+    ],
+    "failures": []
+}

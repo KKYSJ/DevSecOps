@@ -1,0 +1,126 @@
+{
+  "alb_dns_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "secureflow-dashboard-dev-alb-1010242181.ap-northeast-2.elb.amazonaws.com"
+  },
+  "alb_frontend_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "http://secureflow-dashboard-dev-alb-1010242181.ap-northeast-2.elb.amazonaws.com"
+  },
+  "backend_api_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://d3eale3ig0c02a.cloudfront.net/api/v1"
+  },
+  "backend_ecr_repository_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/backend"
+  },
+  "backend_service_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "secureflow-dashboard-dev-backend"
+  },
+  "cloudfront_domain_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "d3eale3ig0c02a.cloudfront.net"
+  },
+  "db_secret_arn": {
+    "sensitive": true,
+    "type": "string",
+    "value": "arn:aws:secretsmanager:ap-northeast-2:213026893250:secret:secureflow-dashboard-dev/db-fbFkFK"
+  },
+  "ecs_cluster_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "secureflow-dashboard-dev-cluster"
+  },
+  "external_api_secret_arn": {
+    "sensitive": true,
+    "type": "string",
+    "value": "arn:aws:secretsmanager:ap-northeast-2:213026893250:secret:secureflow-dashboard-dev/external-api-iHEWa1"
+  },
+  "external_api_secret_template": {
+    "sensitive": false,
+    "type": "string",
+    "value": "{\"GEMINI_API_KEY\":\"set-me\",\"OPENAI_API_KEY\":\"set-me-or-empty\",\"SONAR_TOKEN\":\"set-me\"}"
+  },
+  "frontend_ecr_repository_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/frontend"
+  },
+  "frontend_service_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "secureflow-dashboard-dev-frontend"
+  },
+  "frontend_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://d3eale3ig0c02a.cloudfront.net"
+  },
+  "github_repository_variables": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "AWS_ACCOUNT_ID": "string",
+        "AWS_REGION": "string",
+        "DAST_STAGING_TARGET_URL": "string",
+        "GEMINI_MODEL": "string",
+        "SONAR_HOST_URL": "string",
+        "SONAR_ORGANIZATION": "string",
+        "SONAR_PROJECT_KEY": "string"
+      }
+    ],
+    "value": {
+      "AWS_ACCOUNT_ID": "213026893250",
+      "AWS_REGION": "ap-northeast-2",
+      "DAST_STAGING_TARGET_URL": "https://d3eale3ig0c02a.cloudfront.net",
+      "GEMINI_MODEL": "gemini-3.1-flash-lite-preview",
+      "SONAR_HOST_URL": "https://sonarcloud.io",
+      "SONAR_ORGANIZATION": "kkysj",
+      "SONAR_PROJECT_KEY": "KKYSJ_DevSecOps"
+    }
+  },
+  "github_secret_backend_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://d3eale3ig0c02a.cloudfront.net/api/v1"
+  },
+  "rds_endpoint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "secureflow-dashboard-dev-postgres.cxqqm0ai2707.ap-northeast-2.rds.amazonaws.com"
+  },
+  "redis_endpoint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "master.secureflowdashboarddevredis.tgv35s.apn2.cache.amazonaws.com"
+  },
+  "redis_secret_arn": {
+    "sensitive": true,
+    "type": "string",
+    "value": "arn:aws:secretsmanager:ap-northeast-2:213026893250:secret:secureflow-dashboard-dev/redis-UqR98m"
+  },
+  "reports_bucket_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "secureflow-dashboard-dev-213026893250-reports"
+  },
+  "worker_ecr_repository_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "213026893250.dkr.ecr.ap-northeast-2.amazonaws.com/secureflow-dashboard-dev/worker"
+  },
+  "worker_service_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "secureflow-dashboard-dev-worker"
+  }
+}
