@@ -207,12 +207,19 @@ def upload_results(api_base: str, commit_hash: str, upload_key: str, payload: di
 
 
 def main() -> None:
-    api_base = normalize_api_base(os.getenv("API_SERVER_URL", "") or os.getenv("BACKEND_URL", ""))
+    api_base = normalize_api_base(
+        os.getenv("ACTIONS_API_SERVER_URL", "")
+        or os.getenv("API_SERVER_URL", "")
+        or os.getenv("BACKEND_URL", "")
+    )
     commit_hash = os.getenv("COMMIT_SHA", "").strip()
     upload_key = os.getenv("SECUREFLOW_UPLOAD_KEY", "").strip()
 
     if not api_base:
-        print("API_SERVER_URL is not configured; skipping individual judgments upload.")
+        print(
+            "ACTIONS_API_SERVER_URL or API_SERVER_URL is not configured; "
+            "skipping individual judgments upload."
+        )
         return
 
     stages = {

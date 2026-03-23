@@ -210,7 +210,7 @@ jobs:
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
-      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+      API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
       SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
     steps:
       - name: Check out source
@@ -334,7 +334,7 @@ jobs:
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
-      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+      API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
     steps:
@@ -423,7 +423,7 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           PYTHONPATH: ${{ github.workspace }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
           SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
         run: |
           mkdir -p scan-results/image-llm-gate
@@ -641,7 +641,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     env:
-      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+      API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
       SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
 
     steps:
@@ -685,7 +685,7 @@ jobs:
       - name: Upload DAST gate result to SecureFlow
         if: always()
         env:
-          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
@@ -717,7 +717,7 @@ jobs:
       - name: Upload DAST results to SecureFlow
         if: always() && env.API_SERVER_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
@@ -765,7 +765,7 @@ jobs:
       - name: Wait for SecureFlow DAST parsing
         if: always() && env.API_SERVER_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Refresh the existing backend dashboard report after DAST uploads complete.
@@ -796,7 +796,7 @@ jobs:
       - name: Refresh SecureFlow Phase 2 dashboard report
         if: always() && env.API_SERVER_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
@@ -819,7 +819,7 @@ jobs:
       - name: DAST 개별 취약점 LLM 판정 (한국어)
         if: always() && env.API_SERVER_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
@@ -913,7 +913,7 @@ jobs:
       - name: Upload ISMS-P result to SecureFlow
         if: always()
         env:
-          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
           SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
