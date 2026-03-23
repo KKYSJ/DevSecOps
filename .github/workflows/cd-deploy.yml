@@ -585,7 +585,9 @@ jobs:
           docker run --rm -v "${PWD}:/workspace" -v "/tmp/targets.txt:/targets.txt" projectdiscovery/nuclei:latest \
             -l /targets.txt \
             -severity info,low,medium,high,critical \
-            -as -json-export /workspace/nuclei-results.json || true
+            -tags cve,exposure,misconfiguration,default-login,tech,headers,security,xss,sqli,ssrf,lfi \
+            -timeout 5 -max-host-error 10 \
+            -json-export /workspace/nuclei-results.json || true
 
       - name: Ensure Nuclei report exists
         if: always()
