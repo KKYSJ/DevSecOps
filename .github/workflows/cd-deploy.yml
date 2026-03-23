@@ -592,13 +592,12 @@ jobs:
             -l /targets.txt \
             -severity info,low,medium,high,critical \
             -tags tech,headers,security,misconfiguration,exposure,default-login,cve,xss,sqli,ssrf,lfi \
-            -timeout 5 -max-host-error 30 -rate-limit 100 \
+            -rate-limit 50 \
             -json-export /workspace/nuclei-results.json || true
           # 2차: 추가 HTTP 탐지 (타겟 루트만)
           docker run --rm -v "${PWD}:/workspace" projectdiscovery/nuclei:latest \
             -u "${TARGET}" \
             -t http/misconfiguration/ -t http/technologies/ -t http/exposures/ -t http/vulnerabilities/ \
-            -timeout 5 -max-host-error 30 \
             -json-export /workspace/nuclei-results-extra.json || true
           # 결과 합치기 (JSONL 파일들을 하나로)
           if [ -f nuclei-results-extra.json ] && [ -s nuclei-results-extra.json ]; then
