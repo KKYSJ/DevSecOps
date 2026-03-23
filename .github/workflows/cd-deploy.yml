@@ -582,12 +582,23 @@ jobs:
           ${TARGET}/api/v1/reports
           URLS
           sed -i 's/^[[:space:]]*//' /tmp/targets.txt
+          # 1차: 헤더/기술 탐지 (빠름)
           docker run --rm -v "${PWD}:/workspace" -v "/tmp/targets.txt:/targets.txt" projectdiscovery/nuclei:latest \
             -l /targets.txt \
             -severity info,low,medium,high,critical \
-            -tags cve,exposure,misconfiguration,default-login,tech,headers,security,xss,sqli,ssrf,lfi \
-            -timeout 5 -max-host-error 10 \
+            -tags tech,headers,security,misconfiguration,exposure,default-login,cve,xss,sqli,ssrf,lfi \
+            -timeout 5 -max-host-error 30 -rate-limit 100 \
             -json-export /workspace/nuclei-results.json || true
+          # 2차: 추가 HTTP 탐지 (타겟 루트만)
+          docker run --rm -v "${PWD}:/workspace" projectdiscovery/nuclei:latest \
+            -u "${TARGET}" \
+            -t http/misconfiguration/ -t http/technologies/ -t http/exposures/ -t http/vulnerabilities/ \
+            -timeout 5 -max-host-error 30 \
+            -json-export /workspace/nuclei-results-extra.json || true
+          # 결과 합치기
+          if [ -f nuclei-results-extra.json ]; then
+            cat nuclei-results.json nuclei-results-extra.json 2>/dev/null > nuclei-combined.json && mv nuclei-combined.json nuclei-results.json
+          fi
 
       - name: Ensure Nuclei report exists
         if: always()
