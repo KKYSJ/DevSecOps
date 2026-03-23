@@ -2,14 +2,24 @@
 ISMS-P 점검 결과 엔드포인트
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
 
 router = APIRouter()
+
+
+class IsmsSubmitRequest(BaseModel):
+    name: str | None = None
+    status: str = "completed"
+    environment: str | None = None
+    commit_hash: str | None = None
+    branch: str | None = None
+    data: Any
 
 _EMPTY_ISMS = {
     "check_id": None,
@@ -43,6 +53,37 @@ def get_isms_result(db: Session = Depends(get_db)):
         pass
 
     return _EMPTY_ISMS
+
+
+@router.post("")
+def submit_isms_result(body: IsmsSubmitRequest, db: Session = Depends(get_db)):
+    """CI?먯꽌 ?앹꽦???듯빀 ISMS-P 寃곌낵瑜?저장?⑸땲??"""
+    from backend.app.models.isms_check import IsmsCheck
+
+    payload = body.data if isinstance(body.data, dict) else {"result": body.data}
+    metadata = {
+        "environment": body.environment,
+        "commit_hash": body.commit_hash,
+        "branch": body.branch,
+    }
+    metadata = {key: value for key, value in metadata.items() if value}
+    if metadata:
+        payload = {**metadata, **payload}
+
+    record = IsmsCheck(
+        name=body.name or "isms-gate",
+        status=body.status or "completed",
+        data=payload,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    return {
+        "isms_check_id": record.id,
+        "status": record.status,
+        "message": "ISMS-P result saved.",
+    }
 
 
 @router.post("/run")

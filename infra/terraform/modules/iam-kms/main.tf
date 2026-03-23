@@ -7,7 +7,14 @@ locals {
 
   deployment_bucket_arns = compact([var.frontend_bucket_arn, var.uploads_bucket_arn])
   deployment_object_arns = [for arn in local.deployment_bucket_arns : "${arn}/*"]
+  github_oidc_provider_arn = var.create_github_oidc_role ? (
+    var.create_github_oidc_provider
+    ? aws_iam_openid_connect_provider.github[0].arn
+    : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+  ) : null
 }
+
+data "aws_caller_identity" "current" {}
 
 resource "aws_kms_key" "this" {
   description             = "Application KMS key for ${local.name_prefix}"
@@ -143,7 +150,7 @@ resource "aws_iam_role_policy" "ecs_task_permissions" {
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
-  count = var.create_github_oidc_role ? 1 : 0
+  count = var.create_github_oidc_role && var.create_github_oidc_provider ? 1 : 0
 
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
@@ -158,7 +165,7 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github[0].arn]
+      identifiers = [local.github_oidc_provider_arn]
     }
 
     condition {

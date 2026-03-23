@@ -44,6 +44,21 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Detect unresolved merge markers in deploy paths
+        run: |
+          set -euo pipefail
+
+          if rg -n "^(<<<<<<<|=======|>>>>>>>)" \
+            .github/workflows \
+            backend \
+            frontend \
+            infra/docker \
+            secureflow_dashboard_infra \
+            -g '!backend/venv/**'; then
+            echo "Unresolved merge markers were found in the current deployment paths."
+            exit 1
+          fi
+
       - name: Prepare log directory
         run: mkdir -p "${ARTIFACT_DIR}"
 
@@ -302,12 +317,9 @@ jobs:
             exit 1
           fi
 
-      - name: Write Terraform runtime config
+      - name: Write Terraform backend config
         working-directory: secureflow_dashboard_infra
         env:
-          DEPLOY_ENVIRONMENT: ${{ steps.context.outputs.deploy_environment }}
-          DEPLOYMENT_MODE: ${{ steps.context.outputs.deployment_mode }}
-          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
           STATE_BUCKET: ${{ steps.backend.outputs.state_bucket }}
           LOCK_TABLE: ${{ steps.backend.outputs.lock_table }}
         run: |
@@ -319,6 +331,15 @@ jobs:
           dynamodb_table = "${LOCK_TABLE}"
           encrypt        = true
           EOF
+
+      - name: Write Terraform infra-only runtime config
+        if: steps.context.outputs.deployment_mode == 'infra_only'
+        working-directory: secureflow_dashboard_infra
+        env:
+          DEPLOY_ENVIRONMENT: ${{ steps.context.outputs.deploy_environment }}
+          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
+        run: |
+          set -euo pipefail
 
           jq -n \
             --arg project_name "${PROJECT_NAME}" \
@@ -371,7 +392,15 @@ jobs:
           set -euo pipefail
           terraform validate -no-color 2>&1 | tee "${ARTIFACT_DIR}/dashboard-validate.log"
 
+      - name: Verify existing dashboard state for service deploy
+        if: steps.context.outputs.deployment_mode == 'service'
+        working-directory: secureflow_dashboard_infra
+        run: |
+          set -euo pipefail
+          terraform output -json > "${ARTIFACT_DIR}/dashboard-existing-outputs.json"
+
       - name: Plan base dashboard infrastructure
+        if: steps.context.outputs.deployment_mode == 'infra_only'
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
@@ -379,6 +408,7 @@ jobs:
           terraform show -no-color tfplan > "${ARTIFACT_DIR}/dashboard-plan.txt"
 
       - name: Apply base dashboard infrastructure
+        if: steps.context.outputs.deployment_mode == 'infra_only'
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
@@ -431,6 +461,7 @@ jobs:
           docker build \
             -f frontend/Dockerfile \
             --build-arg "REACT_APP_API_BASE_URL=${frontend_api_base_url}" \
+            --build-arg "VITE_API_BASE_URL=${frontend_api_base_url}" \
             -t "${FRONTEND_REPO}:${IMAGE_TAG}" \
             frontend 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-build.log"
           docker push "${FRONTEND_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-push.log"

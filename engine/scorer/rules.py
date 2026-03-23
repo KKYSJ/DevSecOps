@@ -4,19 +4,27 @@ matched_pair 목록에 row_score와 judgement_code를 계산합니다.
 점수 공식:
   row_score = severity_base × judgement_weight × confidence_weight
 
-심각도 기준:
-  CRITICAL=100, HIGH=40, MEDIUM=15, LOW=5, INFO=0
+심각도 기준 (직관적 단순 설계):
+  CRITICAL=100, HIGH=10, MEDIUM=1, LOW=0, INFO=0
+
+  → Critical TRUE_POSITIVE 1건  = 100점 → 즉시 BLOCK
+  → High    TRUE_POSITIVE 10건  = 100점 → BLOCK
+  → Medium  TRUE_POSITIVE 100건 = 100점 → BLOCK
 
 판정 가중치:
-  TRUE_POSITIVE=1.0, REVIEW_NEEDED=0.6, FALSE_POSITIVE=0.0
+  TRUE_POSITIVE=1.0  (두 도구 동시 탐지 — LLM이 실제 취약점으로 확인)
+  REVIEW_NEEDED=0.5  (단독 탐지 — LLM이 오탐 가능성 있다고 판단)
+  FALSE_POSITIVE=0.0 (오탐 — 점수 없음)
 
 신뢰도 가중치:
-  HIGH=1.0, MED=0.8, LOW=0.5
+  HIGH=1.0 (두 도구 동시 탐지)
+  MED=0.8
+  LOW=0.5  (단독 탐지)
 
 게이트 결정:
-  BLOCK:  CRITICAL TRUE_POSITIVE >= 1, 또는 total_score >= 100, 또는 HIGH TRUE_POSITIVE >= 3
-  REVIEW: total_score 40~100, 또는 HIGH REVIEW_NEEDED >= 1
-  ALLOW:  total_score < 40, CRITICAL = 0, HIGH TRUE_POSITIVE = 0
+  BLOCK:  CRITICAL TRUE_POSITIVE >= 1, 또는 total_score >= 100
+  REVIEW: total_score >= 10  (High 1건 이상)
+  ALLOW:  total_score < 10
 """
 
 import logging
@@ -26,15 +34,15 @@ logger = logging.getLogger(__name__)
 
 SEVERITY_BASE = {
     "CRITICAL": 100,
-    "HIGH": 40,
-    "MEDIUM": 15,
-    "LOW": 5,
+    "HIGH": 10,
+    "MEDIUM": 1,
+    "LOW": 0,
     "INFO": 0,
 }
 
 JUDGEMENT_WEIGHT = {
     "TRUE_POSITIVE": 1.0,
-    "REVIEW_NEEDED": 0.6,
+    "REVIEW_NEEDED": 0.5,
     "FALSE_POSITIVE": 0.0,
 }
 
@@ -154,12 +162,12 @@ def compute_gate_decision(scored_pairs: list[dict]) -> str:
         if p.get("severity") == "HIGH" and p.get("judgement_code") == "REVIEW_NEEDED"
     )
 
-    # BLOCK 조건
-    if critical_tp >= 1 or total_score >= 100 or high_tp >= 3:
+    # BLOCK 조건: Critical TRUE_POSITIVE 1건 = 100점 → 즉시 차단
+    if critical_tp >= 1 or total_score >= 100:
         return "BLOCK"
 
-    # REVIEW 조건
-    if 40 <= total_score < 100 or high_rn >= 1:
+    # REVIEW 조건: High 1건(10점) 이상
+    if total_score >= 10:
         return "REVIEW"
 
     # ALLOW 조건

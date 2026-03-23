@@ -23,7 +23,7 @@ provider "aws" {
       {
         Project     = var.project_name
         Environment = var.environment
-        ManagedBy   = "admin-user"
+        ManagedBy   = "Terraform"
         Stack       = "bootstrap"
       }
     )

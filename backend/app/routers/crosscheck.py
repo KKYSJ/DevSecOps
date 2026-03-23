@@ -4,15 +4,17 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
-from app.core.models import CrosscheckReport, LLMCrosscheckResult
-from app.services.crosscheck_service import run_crosscheck
-from app.schemas.cross_validation import CrosscheckReport as CrosscheckReportSchema
-from app.schemas.crosscheck import (
+from backend.app.core.database import get_db
+from backend.app.core.models import CrosscheckReport, LLMCrosscheckResult
+from backend.app.schemas.cross_validation import (
+    CrosscheckReport as CrosscheckReportSchema,
+)
+from backend.app.schemas.crosscheck import (
+    CrosscheckResultResponse,
     CrosscheckRunRequest,
     CrosscheckRunResponse,
-    CrosscheckResultResponse,
 )
+from backend.app.services.crosscheck_service import run_crosscheck
 
 router = APIRouter(prefix="/crosscheck", tags=["crosscheck"])
 
@@ -22,12 +24,12 @@ def get_crosscheck_reports(db: Session = Depends(get_db)) -> List[dict]:
     results = db.query(CrosscheckReport).all()
     return [
         {
-            "id": r.id,
-            "report_id": r.report_id,
-            "generated_at": r.generated_at,
-            "raw_data": r.raw_data,
+            "id": row.id,
+            "report_id": row.report_id,
+            "generated_at": row.generated_at,
+            "raw_data": row.raw_data,
         }
-        for r in results
+        for row in results
     ]
 
 
@@ -60,27 +62,25 @@ def run_crosscheck_api(
             tool_category=request.tool_category,
             workflow_run_id=request.workflow_run_id,
         )
-
         return CrosscheckRunResponse(
-            message="LLM 교차검증이 완료되었습니다.",
+            message="LLM crosscheck completed.",
             result_id=saved.id,
             project_name=saved.project_name,
             tool_category=saved.tool_category,
             workflow_run_id=saved.workflow_run_id,
         )
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except json.JSONDecodeError:
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=500,
-            detail="LLM 응답이 올바른 JSON 형식이 아닙니다.",
-        )
-    except Exception as e:
+            detail="The LLM response was not valid JSON.",
+        ) from exc
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"교차검증 실행 중 오류가 발생했습니다: {str(e)}",
-        )
+            detail=f"Crosscheck failed: {str(exc)}",
+        ) from exc
 
 
 @router.get("/{result_id}", response_model=CrosscheckResultResponse)
@@ -92,7 +92,7 @@ def get_crosscheck_result(result_id: int, db: Session = Depends(get_db)):
     )
 
     if not row:
-        raise HTTPException(status_code=404, detail="결과를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="Crosscheck result not found.")
 
     return CrosscheckResultResponse(
         id=row.id,

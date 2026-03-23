@@ -20,6 +20,7 @@ TOOL_CATEGORY = {
     "tfsec": "IaC",
     "checkov": "IaC",
     "zap": "DAST",
+    "nuclei": "DAST",
 }
 
 

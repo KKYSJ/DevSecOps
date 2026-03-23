@@ -20,6 +20,8 @@ from engine.normalizer.parsers import (
     checkov   as _p_checkov,
     zap       as _p_zap,
 )
+from backend.app.services.parsers.nuclei_parser import NucleiParser
+from backend.app.services.parsers.grype_parser import GrypeParser
 
 logger = logging.getLogger(__name__)
 
@@ -42,20 +44,23 @@ PARSERS = {
     "tfsec":     _Adapter(_p_tfsec),
     "checkov":   _Adapter(_p_checkov),
     "zap":       _Adapter(_p_zap),
+    "nuclei":    NucleiParser(),
+    "trivy-image": _Adapter(_p_trivy),
+    "grype": GrypeParser(),
 }
 
 # ── 스코어링 상수 ─────────────────────────────────────────────────────────────
 SEVERITY_BASE = {
     "CRITICAL": 100,
-    "HIGH": 40,
-    "MEDIUM": 15,
-    "LOW": 5,
-    "INFO": 1,
+    "HIGH": 10,
+    "MEDIUM": 1,
+    "LOW": 0,
+    "INFO": 0,
 }
 
 JUDGEMENT_WEIGHT = {
     "TRUE_POSITIVE": 1.0,
-    "REVIEW_NEEDED": 0.6,
+    "REVIEW_NEEDED": 0.5,
     "FALSE_POSITIVE": 0.0,
 }
 
@@ -172,7 +177,20 @@ def process_tool_result(tool: str, raw: dict) -> dict:
     parser = PARSERS.get(tool)
     if not parser:
         raise ValueError(f"지원하지 않는 도구: {tool}. 지원 목록: {list(PARSERS.keys())}")
-    return parser.parse(raw)
+    result = parser.parse(raw)
+    # trivy-image는 tool/category 오버라이드
+    if tool == "trivy-image":
+        result["tool"] = "trivy-image"
+        result["category"] = "IMAGE"
+        for f in result.get("findings", []):
+            f["tool"] = "trivy-image"
+            f["category"] = "IMAGE"
+            # file_path를 패키지명으로 교체
+            pkg = f.get("package_name") or ""
+            ver = f.get("package_version") or ""
+            if pkg:
+                f["file_path"] = f"{pkg}@{ver}" if ver else pkg
+    return result
 
 
 def match_findings(tool_results: list[dict]) -> list[dict]:
@@ -505,9 +523,9 @@ def get_gate_decision(scored_pairs: list[dict]) -> str:
         if p.get("severity") == "HIGH" and p.get("judgement_code") == "TRUE_POSITIVE"
     )
 
-    if total_score >= 100 or critical_tp >= 1 or high_tp >= 3:
+    if critical_tp >= 1 or total_score >= 100:
         return "BLOCK"
-    elif total_score >= 40:
+    elif total_score >= 10:
         return "REVIEW"
     else:
         return "ALLOW"

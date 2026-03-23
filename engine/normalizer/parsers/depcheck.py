@@ -8,6 +8,7 @@ MODERATE → MEDIUM 으로 정규화합니다.
 import hashlib
 import logging
 from datetime import datetime, timezone
+from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
 
@@ -83,19 +84,29 @@ def _extract_pkg_info(dependency: dict) -> tuple[str, str]:
     # packages 배열에서 purl 파싱
     packages = dependency.get("packages") or []
     for pkg in packages:
-        purl = pkg.get("id") or ""
+        purl = str(pkg.get("id") or "").strip()
         if purl.startswith("pkg:"):
-            # purl 형식: pkg:ecosystem/name@version
             try:
-                rest = purl.split("/", 1)
-                if len(rest) > 1:
-                    name_ver = rest[1]
-                    if "@" in name_ver:
-                        name, version = name_ver.rsplit("@", 1)
-                        # 버전에서 쿼리 파라미터 제거
-                        version = version.split("?")[0].split("#")[0]
-                        return name.strip(), version.strip()
-                    return name_ver.strip(), ""
+                body = unquote(purl[4:]).split("#", 1)[0]
+                purl_type, _, remainder = body.partition("/")
+                if not remainder:
+                    continue
+
+                name_part, _, version = remainder.rpartition("@")
+                if not name_part:
+                    name_part = remainder
+                    version = ""
+
+                version = version.split("?")[0].split("#")[0].strip()
+                name_part = name_part.strip()
+                if not name_part:
+                    continue
+
+                if purl_type == "maven" and "/" in name_part:
+                    namespace, artifact = name_part.rsplit("/", 1)
+                    return f"{namespace}:{artifact}", version
+
+                return name_part, version
             except Exception:
                 pass
 

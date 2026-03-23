@@ -4,3 +4,4 @@ npm-debug.log
 uploads/
 data/*.db
 data/*.db-*
+vulnerable_example.js

@@ -14,6 +14,12 @@ variable "create_github_oidc_role" {
   default     = false
 }
 
+variable "create_github_oidc_provider" {
+  description = "Whether to create the shared GitHub Actions OIDC provider."
+  type        = bool
+  default     = true
+}
+
 variable "github_org" {
   description = "GitHub organization or user name."
   type        = string
