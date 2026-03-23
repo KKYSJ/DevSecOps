@@ -21,6 +21,7 @@ from engine.normalizer.parsers import (
     zap       as _p_zap,
 )
 from backend.app.services.parsers.nuclei_parser import NucleiParser
+from backend.app.services.parsers.grype_parser import GrypeParser
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ PARSERS = {
     "zap":       _Adapter(_p_zap),
     "nuclei":    NucleiParser(),
     "trivy-image": _Adapter(_p_trivy),
+    "grype": GrypeParser(),
 }
 
 # ── 스코어링 상수 ─────────────────────────────────────────────────────────────
@@ -183,6 +185,11 @@ def process_tool_result(tool: str, raw: dict) -> dict:
         for f in result.get("findings", []):
             f["tool"] = "trivy-image"
             f["category"] = "IMAGE"
+            # file_path를 패키지명으로 교체
+            pkg = f.get("package_name") or ""
+            ver = f.get("package_version") or ""
+            if pkg:
+                f["file_path"] = f"{pkg}@{ver}" if ver else pkg
     return result
 
 

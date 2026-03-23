@@ -15,7 +15,7 @@ router = APIRouter()
 
 _TOOL_CATEGORY = {
     "sonarqube": "SAST", "semgrep": "SAST",
-    "trivy": "SCA",      "depcheck": "SCA",      "trivy-image": "IMAGE",
+    "trivy": "SCA",      "depcheck": "SCA",      "trivy-image": "IMAGE",      "grype": "IMAGE",
     "tfsec": "IaC",      "checkov": "IaC",
     "zap": "DAST",       "nuclei": "DAST",
 }

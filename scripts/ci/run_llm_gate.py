@@ -21,6 +21,7 @@ from backend.app.services.parsers.sonarqube_parser import SonarqubeParser
 from backend.app.services.parsers.tfsec_parser import TfsecParser
 from backend.app.services.parsers.trivy_parser import TrivyParser
 from backend.app.services.parsers.zap_parser import ZapParser
+from backend.app.services.parsers.grype_parser import GrypeParser
 
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
@@ -114,6 +115,8 @@ TOOL_PARSERS = {
     "trivy": TrivyParser(),
     "zap": ZapParser(),
     "nuclei": NucleiParser(),
+    "trivy-image": TrivyParser(),
+    "grype": GrypeParser(),
 }
 
 
@@ -951,7 +954,7 @@ def match_score_iac(left: dict[str, Any], right: dict[str, Any]) -> tuple[float,
 
 
 def match_score(stage: str, left: dict[str, Any], right: dict[str, Any]) -> tuple[float, str]:
-    if stage == "sca":
+    if stage in ("sca", "image"):
         return match_score_sca(left, right)
     if stage == "dast":
         return match_score_dast(left, right)

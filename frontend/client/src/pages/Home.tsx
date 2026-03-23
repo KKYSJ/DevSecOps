@@ -39,7 +39,7 @@ const PIPELINE_STAGES = [
   { id: 'sca', label: 'SCA', subtitle: 'Trivy + Dep-Check', icon: ShieldCheck },
   { id: 'cross', label: '교차 검증', subtitle: '', icon: GitBranch },
   // { id: 'normalize', label: '정규화 + 스코어링', subtitle: '', icon: SlidersHorizontal },
-  { id: 'image', label: '이미지 스캔', subtitle: 'Trivy', icon: Image },
+  { id: 'image', label: '이미지 스캔', subtitle: 'Trivy + Grype', icon: Image },
   { id: 'deploy', label: '배포', subtitle: 'ECS Fargate', icon: Server },
   { id: 'dast', label: 'DAST', subtitle: 'OWASP ZAP + Nuclei', icon: Bug },
 ];
@@ -284,58 +284,140 @@ function DeploySection() {
 }
 
 // 이미지 스캔 섹션
-function ImageScanSection({ judgments, summaries }: { judgments?: any[]; summaries?: Record<string, any> }) {
-  const [vulns, setVulns] = useState<any[]>([]);
+function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; summaries?: Record<string, any>; gates?: Record<string, any> }) {
+  const [apiVulns, setApiVulns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetchJson<any>('/vulns?tool=trivy-image&limit=50').then(res => {
+    // trivy-image + grype 둘 다 가져오기
+    Promise.all([
+      fetchJson<any>('/vulns?tool=trivy-image&limit=50').catch(() => ({ vulnerabilities: [] })),
+      fetchJson<any>('/vulns?tool=grype&limit=50').catch(() => ({ vulnerabilities: [] })),
+    ]).then(([trivyRes, grypeRes]) => {
       const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-      const v = (res?.vulnerabilities || [])
+      const allVulns = [...(trivyRes.vulnerabilities || []), ...(grypeRes.vulnerabilities || [])]
         .sort((a: any, b: any) => (_s[(a.severity || 'LOW').toUpperCase()] ?? 9) - (_s[(b.severity || 'LOW').toUpperCase()] ?? 9))
         .map((v: any, i: number) => ({
-          id: `img-${i}`,
+          id: `img-api-${i}`,
           severity: (v.severity || 'MEDIUM').toUpperCase(),
           category: 'IMAGE',
-          tool: 'trivy-image',
-          file: v.file_path || v.package_name || '',
+          tool: v.tool || 'trivy-image',
+          file: v.package_name || v.file_path || '',
           line: 0,
           cwe: v.cve_id || v.cwe_id || '',
-          description: v.title || v.description || '',
+          description: (v.title || '').slice(0, 100),
           confidence: 'MED',
           detectedAt: v.created_at || new Date().toISOString(),
-          _originalDesc: v.description || v.title || '',
+          _originalDesc: ((v.description || v.title || '') as string).slice(0, 300),
         }));
-      setVulns(v);
-    }).catch(() => {}).finally(() => setLoading(false));
+      setApiVulns(allVulns);
+    }).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="text-center py-10 text-muted-foreground">이미지 스캔 데이터 로딩 중...</div>;
+  const imgJ = judgments || [];
+  const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
-  if (vulns.length === 0) {
+  // judgments 기반 vulns (있으면 우선)
+  const jVulns = imgJ.map((j: any, i: number) => {
+    const fa = j.finding_a || {};
+    return {
+      id: `img-j-${i}`,
+      severity: (j.reassessed_severity || j.severity || fa.severity || 'MEDIUM').toUpperCase(),
+      category: 'IMAGE',
+      tool: fa.tool || 'trivy-image',
+      file: fa.package_name || fa.file_path || '',
+      line: 0,
+      cwe: fa.cve_id || fa.cwe_id || '',
+      description: j.title_ko || (fa.title || '').slice(0, 100),
+      confidence: j.finding_b ? 'HIGH' : (j.confidence || 'MED'),
+      detectedAt: new Date().toISOString(),
+      _originalDesc: ((fa.description || fa.title || '') as string).slice(0, 300),
+      _judgment: j,
+    };
+  });
+
+  // 합치기
+  const jKeys = new Set(jVulns.map((v: any) => `${v.tool}|${v.cwe}`));
+  const extra = apiVulns.filter(v => !jKeys.has(`${v.tool}|${v.cwe}`));
+  const imgVulns = [...jVulns, ...extra].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
+
+  if (loading && imgJ.length === 0) return <div className="text-center py-10 text-muted-foreground">이미지 스캔 데이터 로딩 중...</div>;
+
+  if (imgVulns.length === 0) {
     return (
       <div className="bg-card rounded-lg border border-border p-8 text-center">
         <div className="text-lg font-semibold text-foreground mb-2">이미지 스캔</div>
-        <p className="text-sm text-muted-foreground mb-1">Docker 빌드 후 컨테이너 이미지 내부의 취약점을 Trivy로 스캔합니다.</p>
-        <p className="text-sm text-muted-foreground">CD 파이프라인에서 이미지 빌드 → ECR 푸시 → 이미지 스캔 순서로 실행됩니다.</p>
-        <div className="mt-4 text-xs text-muted-foreground bg-muted rounded p-3">
-          다음 CD 파이프라인 실행 시 이미지 스캔 결과가 여기에 표시됩니다.
-        </div>
+        <p className="text-sm text-muted-foreground mb-1">Docker 빌드 후 컨테이너 이미지 내부의 취약점을 Trivy + Grype로 스캔합니다.</p>
+        <div className="mt-4 text-xs text-muted-foreground bg-muted rounded p-3">다음 CD 파이프라인 실행 시 이미지 스캔 결과가 여기에 표시됩니다.</div>
       </div>
     );
   }
 
   const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
-  vulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
+  imgVulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
+  const confirmed = imgJ.filter((j: any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b);
+  const review = imgJ.filter((j: any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b));
+  const sm = summaries?.['image'];
+  const gate = gates?.['image'];
 
   return (
     <>
+      {/* Severity 카드 */}
       <div className="grid grid-cols-4 gap-3">
         {Object.entries(counts).map(([sev, count]) => {
           const colors: Record<string, string> = { CRITICAL: 'text-red-600 bg-red-50 border-red-200', HIGH: 'text-orange-600 bg-orange-50 border-orange-200', MEDIUM: 'text-yellow-600 bg-yellow-50 border-yellow-200', LOW: 'text-blue-600 bg-blue-50 border-blue-200' };
-          return <div key={sev} className={`rounded-lg border p-4 ${colors[sev]}`}><div className="text-xs font-semibold uppercase">{sev}</div><div className="text-2xl font-bold mt-1">{count}</div></div>;
+          const labels: Record<string, string> = { CRITICAL: '긴급 조치 필요', HIGH: '즉시 조치 필요', MEDIUM: '우선 검토 필요', LOW: '모니터링 권장' };
+          return <div key={sev} className={`rounded-lg border p-4 ${colors[sev]}`}><div className="text-xs font-semibold uppercase">{sev}</div><div className="text-2xl font-bold mt-1">{count}</div><div className="text-xs mt-1">{labels[sev]}</div></div>;
         })}
       </div>
-      <VulnerabilityTable vulnerabilities={vulns} category="IMAGE" />
+
+      {/* CI 교차검증 분석 결과 */}
+      <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">이미지 스캔 교차검증 분석 결과</span></>}>
+        {(() => {
+          const fallbackSummary = sm?.summary || gate?.llm_analysis?.summary;
+          const fallbackReasons = sm?.reasons?.length > 0 ? sm.reasons : (gate?.llm_analysis?.reasons || []);
+          return (<div className="space-y-3 pt-3">
+            {imgJ.length > 0 && <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{confirmed.length}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{review.length}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>}
+            {fallbackSummary && <div className="bg-muted rounded-lg p-4"><div className="text-sm font-semibold text-foreground mb-2">LLM 분석 요약</div><div className="text-sm text-foreground leading-relaxed">{fallbackSummary}</div></div>}
+            {fallbackReasons.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold text-foreground">판정 근거</div>{fallbackReasons.map((r: string, i: number) => <div key={i} className="text-sm text-muted-foreground flex gap-2"><span className="text-foreground font-bold">•</span> {r}</div>)}</div>}
+            {!fallbackSummary && imgVulns.length > 0 && <div className="bg-muted rounded-lg p-4"><div className="text-sm text-muted-foreground">이미지 스캔 {imgVulns.length}건이 확인되었습니다. 다음 CI/CD 실행 후 LLM 분석이 표시됩니다.</div></div>}
+          </div>);
+        })()}
+      </Accordion>
+
+      {/* 동시 탐지 */}
+      {confirmed.length > 0 && (
+        <Accordion title={<><span className="text-sm font-bold bg-red-600 text-white px-3 py-1 rounded">동시 탐지</span><span className="text-base font-semibold text-foreground">두 도구가 동시에 발견한 취약점</span></>}>
+          <div className="space-y-4 pt-3">{confirmed.sort((a: any, b: any) => (_s[(a.reassessed_severity||a.severity||'LOW').toUpperCase()]??9)-(_s[(b.reassessed_severity||b.severity||'LOW').toUpperCase()]??9)).map((j: any, i: number) => {
+            const sev = (j.reassessed_severity||j.severity||'HIGH').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':'bg-yellow-600'; const fa=j.finding_a||{}; const fb=j.finding_b||{};
+            return <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-4"><div className="flex items-center gap-2 mb-1"><span className={`text-sm font-bold text-white px-2 py-0.5 rounded ${sc}`}>{sev}</span>{fa.cve_id && <span className="text-sm font-bold text-blue-700">{fa.cve_id}</span>}</div><div className="text-base font-semibold text-foreground mb-1">{j.title_ko || fa.title}</div><div className="grid grid-cols-2 gap-3 mb-3"><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700">✓ {fa.tool} 탐지</div></div><div className="bg-white rounded-lg border border-red-100 p-3"><div className="text-sm font-bold text-red-700">✓ {fb.tool} 탐지</div></div></div>{j.risk_summary && <div className="bg-red-100 rounded-lg p-3 space-y-1"><div className="text-sm text-red-800"><strong>위험:</strong> {j.risk_summary}</div>{j.action_text && <div className="text-sm text-blue-800"><strong>수정 방법:</strong> {j.action_text}</div>}</div>}</div>;
+          })}</div>
+        </Accordion>
+      )}
+
+      {/* 단독 탐지 */}
+      {review.length > 0 && (
+        <Accordion title={<><span className="text-sm font-bold bg-amber-600 text-white px-3 py-1 rounded">단독 탐지</span><span className="text-base font-semibold text-foreground">한 도구에서만 발견 — 오탐 가능성</span></>} defaultOpen={false}>
+          {(() => {
+            const dedup = (items: any[]) => { const seen = new Set<string>(); return items.filter(j => { const k = j.title_ko || j.finding_a?.title || ''; if (seen.has(k)) return false; seen.add(k); return true; }); };
+            const rA = dedup(review.filter((j: any) => (j.finding_a?.tool||'').includes('trivy')));
+            const rB = dedup(review.filter((j: any) => (j.finding_a?.tool||'') === 'grype'));
+            const renderItem = (j: any, i: number) => { const sev = (j.reassessed_severity||j.severity||'MEDIUM').toUpperCase(); const sc = sev==='CRITICAL'?'bg-red-600':sev==='HIGH'?'bg-orange-600':sev==='MEDIUM'?'bg-yellow-600':'bg-gray-500'; return <div key={i} className="bg-amber-50 border border-amber-100 rounded p-3"><div className="flex items-center gap-2 mb-1"><span className={`text-xs font-bold text-white px-1.5 py-0.5 rounded ${sc}`}>{sev}</span></div><div className="text-sm font-medium">{j.title_ko||j.finding_a?.title}</div></div>; };
+            return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">Trivy ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">Grype ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div></div>;
+          })()}
+        </Accordion>
+      )}
+
+      {/* 도구별 탐지 현황 */}
+      <div className="bg-card rounded-lg border border-border shadow-sm p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Trivy</span><span className="text-xs text-muted-foreground">총 {imgVulns.filter(v => v.tool?.includes('trivy')).length}건</span></div></div>
+          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Grype</span><span className="text-xs text-muted-foreground">총 {imgVulns.filter(v => v.tool === 'grype').length}건</span></div></div>
+        </div>
+      </div>
+
+      {/* 취약점 목록 */}
+      <VulnerabilityTable vulnerabilities={imgVulns} judgments={imgJ} category="SCA" />
     </>
   );
 }
@@ -1507,7 +1589,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'image' && (
             <div className="space-y-5">
-              <ImageScanSection judgments={llmJudgments['image']} summaries={llmSummaries} />
+              <ImageScanSection judgments={llmJudgments['image']} summaries={llmSummaries} gates={llmGates} />
             </div>
           )}
 

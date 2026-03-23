@@ -269,15 +269,49 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
         continue-on-error: true
 
+      - name: Scan FastAPI image with Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json > grype-fastapi.json || true
+        continue-on-error: true
+
+      - name: Scan Node image with Grype
+        run: |
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json > grype-node.json || true
+        continue-on-error: true
+
+      - name: Scan Spring image with Grype
+        run: |
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json > grype-spring.json || true
+        continue-on-error: true
+
       - name: Upload image scan results to SecureFlow
         if: env.BACKEND_URL != ''
         run: |
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
+          # Trivy 이미지 스캔 업로드
           for service in fastapi node spring; do
             FILE="trivy-image-${service}.json"
             if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-              echo "이미지 스캔 업로드: ${service}"
+              echo "이미지 스캔 업로드: trivy-image ${service}"
               jq -n --arg tool "trivy-image" \
+                    --arg commit "$COMMIT_SHA" \
+                    --arg project "secureflow" \
+                    --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                    --slurpfile raw "$FILE" \
+                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
+              | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -H "Content-Type: application/json" \
+                -d @- || echo "  전송 실패"
+            fi
+          done
+          # Grype 이미지 스캔 업로드
+          for service in fastapi node spring; do
+            FILE="grype-${service}.json"
+            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
+              echo "이미지 스캔 업로드: grype ${service}"
+              jq -n --arg tool "grype" \
                     --arg commit "$COMMIT_SHA" \
                     --arg project "secureflow" \
                     --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
@@ -294,7 +328,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: image-scan-results
-          path: trivy-image-*.json
+          path: |
+            trivy-image-*.json
+            grype-*.json
         continue-on-error: true
 
   # ── 이미지 스캔 LLM Gate ─────────────────────────────
@@ -330,12 +366,13 @@ jobs:
           COMBINED="artifacts/image/trivy-image-combined.json"
           python3 -c "
           import json, glob
-          all_vulns = []
+          # Trivy 결과 합치기
+          trivy_vulns = []
           for f in glob.glob('artifacts/image/trivy-image-*.json'):
               data = json.load(open(f))
               for r in data.get('Results', []):
                   for v in r.get('Vulnerabilities', []):
-                      all_vulns.append({
+                      trivy_vulns.append({
                           'VulnerabilityID': v.get('VulnerabilityID', ''),
                           'PkgName': v.get('PkgName', ''),
                           'InstalledVersion': v.get('InstalledVersion', ''),
@@ -344,12 +381,21 @@ jobs:
                           'Title': v.get('Title', ''),
                           'Description': (v.get('Description') or '')[:200],
                       })
-          json.dump({'Results': [{'Vulnerabilities': all_vulns}]}, open('$COMBINED', 'w'))
-          print(f'Combined {len(all_vulns)} image vulnerabilities')
+          json.dump({'Results': [{'Vulnerabilities': trivy_vulns}]}, open('artifacts/image/trivy-combined.json', 'w'))
+          print(f'Trivy image: {len(trivy_vulns)} vulnerabilities')
+
+          # Grype 결과 합치기
+          grype_matches = []
+          for f in glob.glob('artifacts/image/grype-*.json'):
+              data = json.load(open(f))
+              grype_matches.extend(data.get('matches', []))
+          json.dump({'matches': grype_matches}, open('artifacts/image/grype-combined.json', 'w'))
+          print(f'Grype image: {len(grype_matches)} vulnerabilities')
           "
           python scripts/ci/run_llm_gate.py \
             --stage image \
-            --tool-input "trivy-image=$COMBINED" \
+            --tool-input "trivy-image=artifacts/image/trivy-combined.json" \
+            --tool-input "grype=artifacts/image/grype-combined.json" \
             --output artifacts/image/image-llm-gate.json || echo "Image LLM gate failed (ignored)"
 
       - name: Upload image gate result to SecureFlow
