@@ -595,9 +595,14 @@ jobs:
             -t http/misconfiguration/ -t http/technologies/ -t http/exposures/ -t http/vulnerabilities/ \
             -timeout 5 -max-host-error 30 \
             -json-export /workspace/nuclei-results-extra.json || true
-          # 결과 합치기
-          if [ -f nuclei-results-extra.json ]; then
-            cat nuclei-results.json nuclei-results-extra.json 2>/dev/null > nuclei-combined.json && mv nuclei-combined.json nuclei-results.json
+          # 결과 합치기 (JSONL 파일들을 하나로)
+          if [ -f nuclei-results-extra.json ] && [ -s nuclei-results-extra.json ]; then
+            # 둘 다 JSONL이므로 줄 단위로 합치기
+            jq -s 'flatten' nuclei-results.json nuclei-results-extra.json > nuclei-merged.json 2>/dev/null \
+              || cat nuclei-results.json >> /dev/null
+            if [ -f nuclei-merged.json ] && [ -s nuclei-merged.json ]; then
+              mv nuclei-merged.json nuclei-results.json
+            fi
           fi
 
       - name: Ensure Nuclei report exists
