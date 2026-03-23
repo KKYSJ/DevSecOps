@@ -37,7 +37,7 @@ class GrypeParser:
                 "fixed_version": ",".join(vuln.get("fix", {}).get("versions", [])) if vuln.get("fix", {}).get("versions") else None,
                 "cvss_score": None,
                 "remediation": None,
-                "references": [u.get("url", "") for u in vuln.get("urls", []) if u.get("url")],
+                "references": [u for u in vuln.get("urls", []) if isinstance(u, str)] if vuln.get("urls") else [],
             })
 
         summary = {"total": len(findings), "critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
