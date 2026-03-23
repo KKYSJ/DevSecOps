@@ -110,7 +110,7 @@ def _parse_alert(alert: dict, site_name: str) -> list[dict]:
             "rule_id": plugin_id,
             "cwe_id": cwe_id,
             "cve_id": None,
-            "file_path": None,
+            "file_path": uri,
             "line_number": None,
             "url": uri,
             "http_method": method or None,

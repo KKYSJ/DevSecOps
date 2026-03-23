@@ -473,9 +473,19 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
       }).sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
 
   // judgments에 없는 vulns API 데이터 추가 (nuclei 등)
-  const jTools = new Set(jVulns.map((v: any) => `${v.tool}|${v.description}`));
-  const extraVulns = dastVulnsApi.filter(v => !jTools.has(`${v.tool}|${v.description}`));
-  const dastVulns = [...jVulns, ...extraVulns].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
+  // judgment의 영어 title 기준으로 매칭
+  const jTitles = new Set(jVulns.map((v: any) => `${v.tool}|${v._originalDesc}`));
+  const extraVulns = dastVulnsApi.filter(v => !jTitles.has(`${v.tool}|${v._originalDesc}`));
+  // extraVulns에도 CWE 기반 judgment 매칭 시도
+  const extraWithJ = extraVulns.map(v => {
+    if (v._judgment) return v;
+    const j = (dastJ || []).find((j: any) => {
+      const fa = j.finding_a || {};
+      return fa.tool === v.tool && (fa.title || '') === (v._originalDesc || v.description);
+    });
+    return j ? { ...v, _judgment: j, description: j.title_ko || v.description } : v;
+  });
+  const dastVulns = [...jVulns, ...extraWithJ].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
 
   if (loading && dastJ.length === 0) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
   const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };

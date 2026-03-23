@@ -360,6 +360,8 @@ jobs:
         continue-on-error: true
 
       - name: Run Image LLM gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pip install -q httpx 2>/dev/null
           # trivy 결과를 합치기
@@ -416,6 +418,9 @@ jobs:
         if: always()
         env:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+          PYTHONPATH: ${{ github.workspace }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
         run: |
           mkdir -p scan-results/image-llm-gate
           cp artifacts/image/image-llm-gate.json scan-results/image-llm-gate/image-llm-gate.json 2>/dev/null || true
@@ -570,13 +575,17 @@ jobs:
           ${TARGET}/api/v1/health
           ${TARGET}/docs
           ${TARGET}/openapi.json
+          ${TARGET}/api/v1/scans
+          ${TARGET}/api/v1/vulns
+          ${TARGET}/api/v1/tools
+          ${TARGET}/api/v1/pipelines
+          ${TARGET}/api/v1/reports
           URLS
           sed -i 's/^[[:space:]]*//' /tmp/targets.txt
           docker run --rm -v "${PWD}:/workspace" -v "/tmp/targets.txt:/targets.txt" projectdiscovery/nuclei:latest \
             -l /targets.txt \
             -severity info,low,medium,high,critical \
-            -tags cve,exposure,misconfiguration,default-login,tech,headers,security \
-            -json-export /workspace/nuclei-results.json || true
+            -as -json-export /workspace/nuclei-results.json || true
 
       - name: Ensure Nuclei report exists
         if: always()
