@@ -90,59 +90,19 @@ data "aws_iam_policy_document" "backend_task" {
     ]
     resources = [aws_kms_key.app.arn]
   }
-
-  statement {
-    sid    = "ISMSReadOnlyChecks"
-    effect = "Allow"
-    actions = [
-      "cloudtrail:DescribeTrails",
-      "cloudtrail:GetTrailStatus",
-      "cloudwatch:DescribeAlarms",
-      "config:DescribeConfigurationRecorderStatus",
-      "config:DescribeConfigurationRecorders",
-      "config:GetComplianceSummaryByConfigRule",
-      "ec2:DescribeFlowLogs",
-      "ec2:DescribeInstances",
-      "ec2:DescribeNetworkAcls",
-      "ec2:DescribeSecurityGroups",
-      "ec2:DescribeSubnets",
-      "ec2:DescribeVpcs",
-      "ec2:GetEbsEncryptionByDefault",
-      "elasticloadbalancing:DescribeListeners",
-      "elasticloadbalancing:DescribeLoadBalancers",
-      "guardduty:GetDetector",
-      "guardduty:ListDetectors",
-      "guardduty:ListFindings",
-      "iam:GetAccountPasswordPolicy",
-      "iam:GetAccountSummary",
-      "iam:ListAccessKeys",
-      "iam:ListMFADevices",
-      "iam:ListUsers",
-      "inspector2:BatchGetAccountStatus",
-      "inspector2:ListFindings",
-      "kms:DescribeKey",
-      "kms:GetKeyRotationStatus",
-      "kms:ListKeys",
-      "logs:DescribeLogGroups",
-      "rds:DescribeDBInstances",
-      "s3:GetBucketAcl",
-      "s3:GetBucketEncryption",
-      "s3:GetBucketPublicAccessBlock",
-      "s3:GetBucketVersioning",
-      "s3:ListAllMyBuckets",
-      "securityhub:DescribeHub",
-      "securityhub:GetEnabledStandards",
-      "ssm:DescribeInstanceInformation",
-      "ssm:DescribeInstancePatchStates"
-    ]
-    resources = ["*"]
-  }
 }
 
 resource "aws_iam_role_policy" "backend_task" {
   name   = "${local.name}-backend-task"
   role   = aws_iam_role.backend_task.id
   policy = data.aws_iam_policy_document.backend_task.json
+
+  depends_on = [aws_iam_role_policy_attachment.backend_task_ismsp_readonly]
+}
+
+resource "aws_iam_role_policy_attachment" "backend_task_ismsp_readonly" {
+  role       = aws_iam_role.backend_task.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/ISMSP-ReadOnly-Policy"
 }
 
 data "aws_iam_policy_document" "rds_enhanced_monitoring_assume_role" {
