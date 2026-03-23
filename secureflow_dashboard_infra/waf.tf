@@ -115,7 +115,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
   rule {
     name     = "aws-common"
-    priority = 10
+    priority = 20
 
     override_action {
       none {}
@@ -137,7 +137,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
   rule {
     name     = "aws-known-bad-inputs"
-    priority = 20
+    priority = 30
 
     override_action {
       none {}
@@ -159,7 +159,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
   rule {
     name     = "aws-sqli"
-    priority = 30
+    priority = 40
 
     override_action {
       none {}
@@ -181,7 +181,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
   rule {
     name     = "aws-ip-reputation"
-    priority = 40
+    priority = 50
 
     override_action {
       none {}
@@ -203,7 +203,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
   rule {
     name     = "aws-anonymous-ip"
-    priority = 50
+    priority = 60
 
     override_action {
       none {}
@@ -356,7 +356,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 
   rule {
     name     = "aws-common"
-    priority = 10
+    priority = 20
 
     override_action {
       none {}
@@ -378,7 +378,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 
   rule {
     name     = "aws-known-bad-inputs"
-    priority = 20
+    priority = 30
 
     override_action {
       none {}
@@ -400,7 +400,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 
   rule {
     name     = "aws-sqli"
-    priority = 30
+    priority = 40
 
     override_action {
       none {}
@@ -422,7 +422,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 
   rule {
     name     = "aws-ip-reputation"
-    priority = 40
+    priority = 50
 
     override_action {
       none {}
@@ -444,7 +444,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 
   rule {
     name     = "aws-anonymous-ip"
-    priority = 50
+    priority = 60
 
     override_action {
       none {}
