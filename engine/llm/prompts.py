@@ -61,8 +61,8 @@ def _format_finding_compact(finding: dict | None, category: str) -> str:
         if finding.get("resource"):
             parts.append(f"resource={finding['resource']}")
         if finding.get("description"):
-            desc = str(finding["description"])[:100]
-            parts.append(f'desc="{desc}"')
+            description = str(finding["description"])[:100]
+            parts.append(f'desc="{description}"')
     elif category == "DAST":
         if finding.get("url"):
             parts.append(f"url={finding['url']}")
@@ -127,10 +127,10 @@ def _build_output_schema(matched_pairs: list[dict], category: str) -> dict:
                 "judgement_code": "TRUE_POSITIVE | REVIEW_NEEDED | FALSE_POSITIVE",
                 "confidence_level": "HIGH | MED | LOW",
                 "reassessed_severity": "CRITICAL | HIGH | MEDIUM | LOW",
-                "title_ko": "한국어 취약점 제목",
-                "risk_summary": "한국어 위험 요약",
-                "reason": "한국어 판단 근거",
-                "action_text": "한국어 조치 방법",
+                "title_ko": "Korean vulnerability title",
+                "risk_summary": "Korean risk summary",
+                "reason": "Korean reasoning",
+                "action_text": "Korean remediation guidance",
             }
         )
 
@@ -193,45 +193,45 @@ def _rule_based_fallback(matched_pairs: list[dict]) -> list[dict]:
         finding_a = item.get("finding_a")
         finding_b = item.get("finding_b")
         severity = item.get("severity", "MEDIUM")
-        title = str((finding_a or finding_b or {}).get("title") or "이름 없는 취약점").strip()
+        title = str((finding_a or finding_b or {}).get("title") or "Unnamed finding").strip()
         if len(title) > 60:
             title = title[:60] + "..."
 
         if finding_a and finding_b:
-            tool_a = finding_a.get("tool", "도구 A")
-            tool_b = finding_b.get("tool", "도구 B")
+            tool_a = finding_a.get("tool", "Tool A")
+            tool_b = finding_b.get("tool", "Tool B")
             item["judgement_code"] = "TRUE_POSITIVE"
             item["confidence_level"] = "HIGH"
-            item["title_ko"] = f"[확인됨] {title}"
+            item["title_ko"] = f"[Confirmed] {title}"
             item["risk_summary"] = (
-                f"{tool_a}와 {tool_b}가 동일 위치 또는 동일 대상에서 같은 취약점을 함께 탐지했습니다."
+                f"{tool_a} and {tool_b} reported the same vulnerability in the same area."
             )
             item["reason"] = (
-                f"두 도구가 독립적으로 같은 문제를 지목해 신뢰도가 높습니다. "
-                f"현재 심각도는 {severity}로 유지하며 우선 조치가 필요합니다."
+                f"Two independent tools pointed to the same issue, so the confidence is high. "
+                f"The current severity is {severity} and should be prioritized."
             )
-            item["action_text"] = "관련 코드나 설정을 즉시 재검토하고 보안 수정 사항을 적용하세요."
+            item["action_text"] = "Review the related code or configuration and apply the security fix."
             item["reassessed_severity"] = severity
         elif finding_a or finding_b:
             found = finding_a or finding_b
-            tool = found.get("tool", "도구")
+            tool = found.get("tool", "Tool")
             item["judgement_code"] = "REVIEW_NEEDED"
             item["confidence_level"] = "MED"
-            item["title_ko"] = f"[검토 필요] {title}"
-            item["risk_summary"] = f"{tool}에서만 탐지된 결과라 실제 취약점 여부를 추가 확인해야 합니다."
+            item["title_ko"] = f"[Needs Review] {title}"
+            item["risk_summary"] = f"Only {tool} reported this finding, so it still needs manual validation."
             item["reason"] = (
-                f"교차 검증이 충분하지 않아 오탐 또는 미탐 가능성이 남아 있습니다. "
-                f"보안 담당자가 근거와 영향을 다시 확인하는 것이 안전합니다."
+                "Cross-validation is incomplete, so this may be a real issue or a false positive. "
+                "A reviewer should confirm the evidence and impact."
             )
-            item["action_text"] = "탐지 근거와 실제 사용 경로를 확인하고 수동 검토 결과를 기록하세요."
+            item["action_text"] = "Confirm the evidence and reachable path, then record the review result."
             item["reassessed_severity"] = severity
         else:
             item["judgement_code"] = "FALSE_POSITIVE"
             item["confidence_level"] = "LOW"
-            item["title_ko"] = "[오탐 가능] 취약점 정보 부족"
-            item["risk_summary"] = "양쪽 도구 모두에서 확실한 탐지 근거를 확인하지 못했습니다."
-            item["reason"] = "입력 정보가 부족하여 신뢰 가능한 보안 판단을 내리기 어렵습니다."
-            item["action_text"] = "추가 근거를 수집하거나 해당 항목을 제외 대상으로 재검토하세요."
+            item["title_ko"] = "[Likely False Positive] Not enough evidence"
+            item["risk_summary"] = "There was not enough evidence from the available findings to confirm a real issue."
+            item["reason"] = "The input data was too limited to support a confident security judgment."
+            item["action_text"] = "Collect more evidence or review whether this item should be excluded."
             item["reassessed_severity"] = "LOW"
 
         result.append(item)

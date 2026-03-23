@@ -1,4 +1,4 @@
-name: CD Deploy (Manual Legacy)
+name: CD Deploy
 
 on:
   workflow_call:
@@ -95,16 +95,6 @@ jobs:
 
             if [ "$requested_production" = "true" ] && [ "$branch_name" = "SUN" ]; then
               run_production="true"
-            fi
-          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
-            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
-              branch_name="${{ github.event.workflow_run.head_branch }}"
-              source_sha="${{ github.event.workflow_run.head_sha }}"
-              run_staging="true"
-
-              if [ "$branch_name" = "SUN" ]; then
-                proceed="true"
-              fi
             fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             proceed="true"

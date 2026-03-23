@@ -1,113 +1,33 @@
-"""
-CI에서 LLM gate 결과를 기반으로 개별 취약점 한국어 판정을 수행합니다.
-run_llm_gate.py의 매칭 결과를 가져와서 prompts.py 로직으로 Gemini에 판정 요청.
-결과를 EC2 백엔드로 전송.
-"""
+from __future__ import annotations
 
 import json
 import os
 import sys
+import urllib.request
 from pathlib import Path
 
-# 프로젝트 루트를 path에 추가
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
+STAGE_CATEGORIES = {
+    "sast": "SAST",
+    "sca": "SCA",
+    "iac": "IaC",
+    "dast": "DAST",
+    "image": "IMAGE",
+}
 
-def load_gate(stage: str) -> dict | None:
-    """CI artifact에서 gate JSON을 로드합니다."""
-    path = ROOT / f"scan-results/{stage}-llm-gate/{stage}-llm-gate.json"
-    if not path.exists():
-        print(f"  {stage}: gate 파일 없음 ({path})")
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def gate_to_pairs(gate: dict, category: str) -> list[dict]:
-    """gate 결과에서 prompts.py 형식의 매칭 페어를 생성합니다."""
-    pairs = []
-    matching = gate.get("matching", {})
-
-    # 1. 동시 탐지 (matched pairs)
-    for mp in matching.get("matched_pairs_sample", []):
-        left = mp.get("left", {})
-        right = mp.get("right", {})
-        severity = left.get("severity") or right.get("severity") or "MEDIUM"
-        pairs.append({
-            "category": category,
-            "severity": severity.upper(),
-            "finding_a": {
-                "tool": left.get("tool", ""),
-                "category": category,
-                "severity": (left.get("severity") or "MEDIUM").upper(),
-                "title": left.get("title", ""),
-                "file_path": left.get("file_path", ""),
-                "line_number": left.get("line_number"),
-                "cwe_id": left.get("cwe_id"),
-                "cve_id": left.get("cve_id"),
-                "description": left.get("description", "")[:200],
-            },
-            "finding_b": {
-                "tool": right.get("tool", ""),
-                "category": category,
-                "severity": (right.get("severity") or "MEDIUM").upper(),
-                "title": right.get("title", ""),
-                "file_path": right.get("file_path", ""),
-                "line_number": right.get("line_number"),
-                "cwe_id": right.get("cwe_id"),
-                "cve_id": right.get("cve_id"),
-                "description": right.get("description", "")[:200],
-            },
-        })
-
-    # 2. 단독 탐지 — 도구당 심각도 순 상위 5건
-    _SEV = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
-    unmatched = gate.get("unmatched_findings", {})
-    for tool_name, findings in unmatched.items():
-        if not isinstance(findings, list):
-            continue
-        # 심각도 순 정렬
-        sorted_findings = sorted(
-            findings,
-            key=lambda f: _SEV.get((f.get("severity") or "LOW").upper(), 9)
-        )
-        max_per_tool = 10 if category == "IMAGE" else 5
-        tool_count = 0
-        for f in sorted_findings:
-            if tool_count >= max_per_tool:
-                break
-            severity = (f.get("severity") or "MEDIUM").upper()
-            # SAST/SCA는 Critical/High만, IaC/DAST/IMAGE는 전체
-            if category not in ("IaC", "DAST", "IMAGE") and severity not in ("CRITICAL", "HIGH"):
-                continue
-            tool_count += 1
-            # title + description 합쳐서 LLM에 충분한 맥락 제공
-            title = f.get("title", "")
-            desc = f.get("description") or ""
-            full_desc = f"{title}. {desc}" if desc and desc != title else title
-            pairs.append({
-                "category": category,
-                "severity": severity,
-                "finding_a": {
-                    "tool": f.get("tool", tool_name),
-                    "category": category,
-                    "severity": severity,
-                    "title": title,
-                    "file_path": f.get("file_path", ""),
-                    "line_number": f.get("line_number"),
-                    "url": f.get("url", ""),
-                    "cwe_id": f.get("cwe_id"),
-                    "cve_id": f.get("cve_id"),
-                    "description": full_desc[:400],
-                },
-                "finding_b": None,
-            })
-
-    return pairs
+SEVERITY_ORDER = {
+    "CRITICAL": 0,
+    "HIGH": 1,
+    "MEDIUM": 2,
+    "LOW": 3,
+    "INFO": 4,
+}
 
 
 def normalize_api_base(url: str) -> str:
-    """Accept either https://host or https://host/api/v1 and normalize to the API base."""
     normalized = url.strip().rstrip("/")
     if not normalized:
         return ""
@@ -116,146 +36,283 @@ def normalize_api_base(url: str) -> str:
     return f"{normalized}/api/v1"
 
 
-def main():
-    backend_url = normalize_api_base(
-        (os.getenv("API_SERVER_URL", "") or os.getenv("BACKEND_URL", "")).strip()
+def gate_path(stage: str) -> Path:
+    return ROOT / f"scan-results/{stage}-llm-gate/{stage}-llm-gate.json"
+
+
+def load_gate(stage: str) -> dict | None:
+    path = gate_path(stage)
+    if not path.exists():
+        print(f"  {stage}: missing gate file ({path})")
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def collect_pairs(gate: dict, category: str) -> list[dict]:
+    pairs: list[dict] = []
+    matching = gate.get("matching", {})
+
+    for match in matching.get("matched_pairs_sample", []):
+        left = match.get("left", {})
+        right = match.get("right", {})
+        severity = (left.get("severity") or right.get("severity") or "MEDIUM").upper()
+        pairs.append(
+            {
+                "category": category,
+                "severity": severity,
+                "finding_a": {
+                    "tool": left.get("tool", ""),
+                    "category": category,
+                    "severity": (left.get("severity") or "MEDIUM").upper(),
+                    "title": left.get("title", ""),
+                    "file_path": left.get("file_path", ""),
+                    "line_number": left.get("line_number"),
+                    "url": left.get("url", ""),
+                    "cwe_id": left.get("cwe_id"),
+                    "cve_id": left.get("cve_id"),
+                    "description": str(left.get("description") or "")[:400],
+                },
+                "finding_b": {
+                    "tool": right.get("tool", ""),
+                    "category": category,
+                    "severity": (right.get("severity") or "MEDIUM").upper(),
+                    "title": right.get("title", ""),
+                    "file_path": right.get("file_path", ""),
+                    "line_number": right.get("line_number"),
+                    "url": right.get("url", ""),
+                    "cwe_id": right.get("cwe_id"),
+                    "cve_id": right.get("cve_id"),
+                    "description": str(right.get("description") or "")[:400],
+                },
+            }
+        )
+
+    unmatched = gate.get("unmatched_findings", {})
+    for tool_name, findings in unmatched.items():
+        if not isinstance(findings, list):
+            continue
+
+        sorted_findings = sorted(
+            findings,
+            key=lambda finding: SEVERITY_ORDER.get(
+                str(finding.get("severity") or "LOW").upper(),
+                9,
+            ),
+        )
+        max_per_tool = 10 if category == "IMAGE" else 5
+        added = 0
+
+        for finding in sorted_findings:
+            if added >= max_per_tool:
+                break
+
+            severity = str(finding.get("severity") or "MEDIUM").upper()
+            if category not in {"IaC", "DAST", "IMAGE"} and severity not in {"CRITICAL", "HIGH"}:
+                continue
+
+            title = str(finding.get("title") or "")
+            description = str(finding.get("description") or "")
+            full_description = f"{title}. {description}" if description and description != title else title
+
+            pairs.append(
+                {
+                    "category": category,
+                    "severity": severity,
+                    "finding_a": {
+                        "tool": finding.get("tool", tool_name),
+                        "category": category,
+                        "severity": severity,
+                        "title": title,
+                        "file_path": finding.get("file_path", ""),
+                        "line_number": finding.get("line_number"),
+                        "url": finding.get("url", ""),
+                        "cwe_id": finding.get("cwe_id"),
+                        "cve_id": finding.get("cve_id"),
+                        "description": full_description[:400],
+                    },
+                    "finding_b": None,
+                }
+            )
+            added += 1
+
+    return pairs
+
+
+def summarize_judgements(stage: str, judged_pairs: list[dict]) -> dict:
+    true_positive_pairs = [
+        pair
+        for pair in judged_pairs
+        if pair.get("judgement_code") == "TRUE_POSITIVE" and pair.get("finding_b")
+    ]
+    review_pairs = [
+        pair
+        for pair in judged_pairs
+        if not (pair.get("judgement_code") == "TRUE_POSITIVE" and pair.get("finding_b"))
+    ]
+
+    tp_titles = [pair.get("title_ko", "") for pair in true_positive_pairs[:5] if pair.get("title_ko")]
+    review_titles = [pair.get("title_ko", "") for pair in review_pairs[:3] if pair.get("title_ko")]
+
+    summary_prompt = f"""
+You are summarizing SecureFlow individual vulnerability adjudication results.
+Return JSON only with this schema:
+{{"summary": "2-3 sentence summary in Korean", "reasons": ["reason 1", "reason 2"]}}
+
+Stage: {stage.upper()}
+Confirmed by multiple tools: {len(true_positive_pairs)}
+Sample confirmed titles:
+{chr(10).join(f"- {title}" for title in tp_titles) if tp_titles else "- none"}
+
+Single-tool or review-needed findings: {len(review_pairs)}
+Sample review-needed titles:
+{chr(10).join(f"- {title}" for title in review_titles) if review_titles else "- none"}
+""".strip()
+
+    try:
+        import re
+
+        from engine.llm.client import call_llm
+
+        response = call_llm(summary_prompt)
+        json_match = re.search(r"\{[\s\S]+\}", response)
+        if json_match:
+            return json.loads(json_match.group(0))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  {stage}: failed to build summary via LLM ({exc})")
+
+    return {
+        "summary": (
+            f"{stage.upper()} stage produced {len(true_positive_pairs)} confirmed cross-tool findings "
+            f"and {len(review_pairs)} findings that still need review."
+        ),
+        "reasons": [],
+    }
+
+
+def upload_results(api_base: str, commit_hash: str, upload_key: str, payload: dict) -> None:
+    url = f"{api_base}/scans/gate-result"
+    headers = {"Content-Type": "application/json"}
+    if upload_key:
+        headers["X-SecureFlow-Upload-Key"] = upload_key
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
     )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = response.read().decode("utf-8", errors="replace")
+        print(f"\nUploaded individual judgments: {body}")
+
+
+def main() -> None:
+    api_base = normalize_api_base(os.getenv("API_SERVER_URL", "") or os.getenv("BACKEND_URL", ""))
     commit_hash = os.getenv("COMMIT_SHA", "").strip()
     upload_key = os.getenv("SECUREFLOW_UPLOAD_KEY", "").strip()
 
-    if not backend_url:
-        print("API_SERVER_URL 미설정, 스킵")
+    if not api_base:
+        print("API_SERVER_URL is not configured; skipping individual judgments upload.")
         return
 
-    all_stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST", "image": "IMAGE"}
-    # gate 파일이 있는 stage만 처리 (CD에서는 DAST만 있을 수 있음)
-    stages = {}
-    for k, v in all_stages.items():
-        gate_path = ROOT / f"scan-results/{k}-llm-gate/{k}-llm-gate.json"
-        if gate_path.exists():
-            stages[k] = v
+    stages = {
+        stage: category
+        for stage, category in STAGE_CATEGORIES.items()
+        if gate_path(stage).exists()
+    }
     if not stages:
-        print("처리할 gate 파일 없음")
+        print("No gate files were found; skipping individual judgments.")
         return
-    all_judgments = {}
+
+    all_judgments: dict[str, list[dict]] = {}
+    summaries: dict[str, dict] = {}
 
     for stage, category in stages.items():
-        print(f"\n=== {stage.upper()} 개별 판정 ===")
+        print(f"\n=== {stage.upper()} individual judgments ===")
         gate = load_gate(stage)
         if not gate:
             continue
 
-        pairs = gate_to_pairs(gate, category)
+        pairs = collect_pairs(gate, category)
         if not pairs:
-            print(f"  매칭 페어 없음, 스킵")
+            print("  No matched or high-priority unmatched findings to review.")
             continue
 
-        print(f"  매칭 페어 {len(pairs)}건 (동시탐지 + 단독 Critical/High)")
+        print(f"  Candidate pairs: {len(pairs)}")
 
-        # prompts.py로 프롬프트 생성 (15건씩 배치 처리)
         try:
-            from engine.llm.prompts import build_cross_validation_prompt, parse_llm_response, _rule_based_fallback
             from engine.llm.client import call_llm
+            from engine.llm.prompts import (
+                _rule_based_fallback,
+                build_cross_validation_prompt,
+                parse_llm_response,
+            )
 
-            BATCH_SIZE = 15
-            analyzed = []
-            for batch_start in range(0, len(pairs), BATCH_SIZE):
-                batch = pairs[batch_start:batch_start + BATCH_SIZE]
+            judged_pairs: list[dict] = []
+            batch_size = 15
+
+            for batch_start in range(0, len(pairs), batch_size):
+                batch = pairs[batch_start : batch_start + batch_size]
+                batch_number = (batch_start // batch_size) + 1
                 try:
                     prompt = build_cross_validation_prompt(category, batch)
                     response = call_llm(prompt)
-                    batch_result = parse_llm_response(response, batch)
-                    analyzed.extend(batch_result)
-                    print(f"  배치 {batch_start//BATCH_SIZE+1}: {len(batch_result)}건 LLM 완료")
-                except Exception as be:
-                    print(f"  배치 {batch_start//BATCH_SIZE+1}: 실패 ({be}), 룰 기반 폴백")
-                    analyzed.extend(_rule_based_fallback(batch))
-            print(f"  LLM 판정 완료: {len(analyzed)}건")
+                    parsed = parse_llm_response(response, batch)
+                    judged_pairs.extend(parsed)
+                    print(f"  Batch {batch_number}: {len(parsed)} judgments completed")
+                except Exception as batch_exc:  # noqa: BLE001
+                    print(f"  Batch {batch_number}: LLM failed ({batch_exc}); using fallback")
+                    judged_pairs.extend(_rule_based_fallback(batch))
 
-        except Exception as e:
-            print(f"  LLM 호출 실패 ({e}), 룰 기반 폴백")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  LLM pipeline failed ({exc}); using rule-based fallback")
             from engine.llm.prompts import _rule_based_fallback
-            analyzed = _rule_based_fallback(pairs)
 
-        all_judgments[stage] = analyzed
+            judged_pairs = _rule_based_fallback(pairs)
 
-    # 카테고리별 LLM 요약 생성
-    summaries = {}
-    for stage, analyzed in all_judgments.items():
-        tp = [p for p in analyzed if p.get("judgement_code") == "TRUE_POSITIVE" and p.get("finding_b")]
-        rv = [p for p in analyzed if not (p.get("judgement_code") == "TRUE_POSITIVE" and p.get("finding_b"))]
-        tp_titles = [p.get("title_ko", "") for p in tp[:5]]
-        rv_titles = [p.get("title_ko", "") for p in rv[:3]]
+        print(f"  Final judgments: {len(judged_pairs)}")
+        all_judgments[stage] = judged_pairs
+        summaries[stage] = summarize_judgements(stage, judged_pairs)
 
-        summary_prompt = f"""너는 DevSecOps 보안 분석 전문가다. 아래 교차검증 결과를 한국어로 요약하라.
+    if not all_judgments:
+        print("No judgments were produced; nothing to upload.")
+        return
 
-카테고리: {stage.upper()}
-동시 탐지 (두 도구 모두 발견): {len(tp)}건
-{chr(10).join(f'  - {t}' for t in tp_titles) if tp_titles else '  없음'}
-단독 탐지 (한 도구만 발견): {len(rv)}건
-{chr(10).join(f'  - {t}' for t in rv_titles) if rv_titles else '  없음'}
-
-아래 JSON 형식으로만 응답하라:
-{{"summary": "2~3문장 한국어 요약", "reasons": ["근거1", "근거2"]}}
-"""
-        try:
-            from engine.llm.client import call_llm
-            resp = call_llm(summary_prompt)
-            import re
-            json_match = re.search(r'\{[\s\S]+\}', resp)
-            if json_match:
-                sdata = json.loads(json_match.group(0))
-                summaries[stage] = sdata
-                print(f"  {stage} 요약 생성 완료")
-        except Exception as e:
-            print(f"  {stage} 요약 실패 ({e})")
-            summaries[stage] = {
-                "summary": f"동시 탐지 {len(tp)}건, 단독 탐지 {len(rv)}건이 확인되었습니다.",
-                "reasons": []
-            }
-
-    # EC2로 전송
-    if all_judgments:
-        import urllib.request
-        payload = json.dumps({
-            "stage": "judgments",
+    payload = {
+        "stage": "judgments",
+        "commit_hash": commit_hash,
+        "gate_result": {
+            "type": "individual_judgments",
             "commit_hash": commit_hash,
-            "gate_result": {
-                "type": "individual_judgments",
-                "commit_hash": commit_hash,
-                "summaries": summaries,
-                "judgments": {
-                    stage: [
-                        {
-                            "category": p.get("category"),
-                            "severity": p.get("severity"),
-                            "judgement_code": p.get("judgement_code", "REVIEW_NEEDED"),
-                            "confidence": p.get("confidence_level", "MED"),
-                            "title_ko": p.get("title_ko", ""),
-                            "risk_summary": p.get("risk_summary", ""),
-                            "reason": p.get("reason", ""),
-                            "action_text": p.get("action_text", ""),
-                            "reassessed_severity": p.get("reassessed_severity", p.get("severity")),
-                            "finding_a": p.get("finding_a"),
-                            "finding_b": p.get("finding_b"),
-                        }
-                        for p in pairs_list
-                    ]
-                    for stage, pairs_list in all_judgments.items()
-                },
+            "summaries": summaries,
+            "judgments": {
+                stage: [
+                    {
+                        "category": pair.get("category"),
+                        "severity": pair.get("severity"),
+                        "judgement_code": pair.get("judgement_code", "REVIEW_NEEDED"),
+                        "confidence": pair.get("confidence_level", "MED"),
+                        "title_ko": pair.get("title_ko", ""),
+                        "risk_summary": pair.get("risk_summary", ""),
+                        "reason": pair.get("reason", ""),
+                        "action_text": pair.get("action_text", ""),
+                        "reassessed_severity": pair.get(
+                            "reassessed_severity",
+                            pair.get("severity"),
+                        ),
+                        "finding_a": pair.get("finding_a"),
+                        "finding_b": pair.get("finding_b"),
+                    }
+                    for pair in judged_pairs
+                ]
+                for stage, judged_pairs in all_judgments.items()
             },
-        }).encode("utf-8")
+        },
+    }
 
-        url = f"{backend_url}/scans/gate-result"
-        headers = {"Content-Type": "application/json"}
-        if upload_key:
-            headers["X-SecureFlow-Upload-Key"] = upload_key
-        req = urllib.request.Request(url, data=payload, headers=headers)
-        try:
-            resp = urllib.request.urlopen(req, timeout=30)
-            print(f"\n개별 판정 결과 EC2 전송 완료: {resp.read().decode()}")
-        except Exception as e:
-            print(f"\nEC2 전송 실패: {e}")
+    try:
+        upload_results(api_base, commit_hash, upload_key, payload)
+    except Exception as exc:  # noqa: BLE001
+        print(f"\nFailed to upload individual judgments: {exc}")
 
 
 if __name__ == "__main__":
