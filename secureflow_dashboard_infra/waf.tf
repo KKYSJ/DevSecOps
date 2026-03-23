@@ -16,7 +16,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
   rule {
     name     = "rate-limit"
-    priority = 1
+    priority = 10
 
     action {
       block {}
@@ -41,7 +41,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
     content {
       name     = "github-actions-upload-bypass"
-      priority = 5
+      priority = 1
 
       action {
         allow {}
@@ -257,7 +257,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 
   rule {
     name     = "rate-limit"
-    priority = 1
+    priority = 10
 
     action {
       block {}
@@ -282,7 +282,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 
     content {
       name     = "github-actions-upload-bypass"
-      priority = 5
+      priority = 1
 
       action {
         allow {}

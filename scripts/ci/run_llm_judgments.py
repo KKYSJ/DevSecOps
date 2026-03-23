@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -311,6 +312,11 @@ def main() -> None:
 
     try:
         upload_results(api_base, commit_hash, upload_key, payload)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        print(f"\nFailed to upload individual judgments: HTTP {exc.code}")
+        if body:
+            print(body[:1000])
     except Exception as exc:  # noqa: BLE001
         print(f"\nFailed to upload individual judgments: {exc}")
 

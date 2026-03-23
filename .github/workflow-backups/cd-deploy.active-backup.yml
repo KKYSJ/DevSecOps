@@ -1,4 +1,4 @@
-name: CD Deploy (Manual Backup)
+name: CD Deploy
 
 on:
   workflow_call:
