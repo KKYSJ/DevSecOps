@@ -364,7 +364,8 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
   // 합치기 (judgments 우선, 중복 제거)
   const jKeys = new Set(jVulns.map((v: any) => v.cwe).filter(Boolean));
   const extra = apiVulns.filter(v => !v.cwe || !jKeys.has(v.cwe));
-  const imgVulns = [...jVulns, ...extra].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
+  const imgVulnsAll = [...jVulns, ...extra].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
+  const imgVulns = imgVulnsAll.slice(0, 30);
 
   if (loading && imgJ.length === 0) return <div className="text-center py-10 text-muted-foreground">이미지 스캔 데이터 로딩 중...</div>;
 

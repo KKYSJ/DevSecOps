@@ -580,6 +580,11 @@ jobs:
           ${TARGET}/api/v1/tools
           ${TARGET}/api/v1/pipelines
           ${TARGET}/api/v1/reports
+          ${TARGET}/.env
+          ${TARGET}/.git/config
+          ${TARGET}/debug
+          ${TARGET}/api/status
+          ${TARGET}/redirect
           URLS
           sed -i 's/^[[:space:]]*//' /tmp/targets.txt
           # 1차: 헤더/기술 탐지 (빠름)
