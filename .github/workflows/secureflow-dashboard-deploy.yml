@@ -420,6 +420,10 @@ jobs:
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
+          echo "ecs_cluster_name=$(terraform output -raw ecs_cluster_name)" >> "$GITHUB_OUTPUT"
+          echo "frontend_service_name=$(terraform output -raw frontend_service_name)" >> "$GITHUB_OUTPUT"
+          echo "backend_service_name=$(terraform output -raw backend_service_name)" >> "$GITHUB_OUTPUT"
+          echo "worker_service_name=$(terraform output -raw worker_service_name)" >> "$GITHUB_OUTPUT"
           echo "frontend_repo=$(terraform output -raw frontend_ecr_repository_url)" >> "$GITHUB_OUTPUT"
           echo "backend_repo=$(terraform output -raw backend_ecr_repository_url)" >> "$GITHUB_OUTPUT"
           echo "worker_repo=$(terraform output -raw worker_ecr_repository_url)" >> "$GITHUB_OUTPUT"
@@ -542,14 +546,17 @@ jobs:
           terraform show -no-color tfplan-service > "${ARTIFACT_DIR}/service-plan.txt"
 
       - name: Apply service rollout
+        id: service_apply
         if: steps.context.outputs.deployment_mode == 'service'
         working-directory: secureflow_dashboard_infra
+        continue-on-error: true
         run: |
           set -euo pipefail
           terraform apply -no-color -auto-approve tfplan-service 2>&1 | tee "${ARTIFACT_DIR}/service-apply.log"
 
       - name: Collect deployment outputs
         id: deploy_outputs
+        if: steps.context.outputs.deployment_mode == 'infra_only' || steps.service_apply.outcome != 'failure'
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
@@ -563,12 +570,12 @@ jobs:
           echo "worker_service_name=$(jq -r '.worker_service_name.value' outputs.json)" >> "$GITHUB_OUTPUT"
 
       - name: Describe ECS services
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.service_apply.outcome != 'failure'
         env:
-          ECS_CLUSTER_NAME: ${{ steps.deploy_outputs.outputs.ecs_cluster_name }}
-          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
-          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
-          WORKER_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.worker_service_name }}
+          ECS_CLUSTER_NAME: ${{ steps.service_targets.outputs.ecs_cluster_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.service_targets.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.service_targets.outputs.backend_service_name }}
+          WORKER_SERVICE_NAME: ${{ steps.service_targets.outputs.worker_service_name }}
         run: |
           set -euo pipefail
           aws ecs describe-services \
@@ -577,12 +584,12 @@ jobs:
             > "${ARTIFACT_DIR}/ecs-services.json"
 
       - name: Wait for ECS services to stabilize
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.service_apply.outcome != 'failure'
         env:
-          ECS_CLUSTER_NAME: ${{ steps.deploy_outputs.outputs.ecs_cluster_name }}
-          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
-          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
-          WORKER_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.worker_service_name }}
+          ECS_CLUSTER_NAME: ${{ steps.service_targets.outputs.ecs_cluster_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.service_targets.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.service_targets.outputs.backend_service_name }}
+          WORKER_SERVICE_NAME: ${{ steps.service_targets.outputs.worker_service_name }}
         run: |
           set -euo pipefail
           aws ecs wait services-stable \
@@ -595,10 +602,10 @@ jobs:
             > "${ARTIFACT_DIR}/ecs-services-stable.json"
 
       - name: Wait for ALB target groups to become healthy
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.service_apply.outcome != 'failure'
         env:
-          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
-          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.service_targets.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.service_targets.outputs.backend_service_name }}
         run: |
           set -euo pipefail
 
@@ -641,7 +648,7 @@ jobs:
           wait_for_target_group "${BACKEND_SERVICE_NAME}" "${ARTIFACT_DIR}/backend-target-health.json"
 
       - name: Smoke check public endpoints
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.service_apply.outcome != 'failure'
         env:
           FRONTEND_URL: ${{ steps.deploy_outputs.outputs.frontend_url }}
         run: |
@@ -666,13 +673,13 @@ jobs:
             fi
           done
 
-      - name: Capture ECS diagnostics on failure
-        if: failure() && steps.context.outputs.deployment_mode == 'service'
+      - name: Capture ECS diagnostics after service rollout failure
+        if: steps.context.outputs.deployment_mode == 'service' && steps.service_apply.outcome == 'failure'
         env:
-          ECS_CLUSTER_NAME: ${{ steps.deploy_outputs.outputs.ecs_cluster_name }}
-          FRONTEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.frontend_service_name }}
-          BACKEND_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.backend_service_name }}
-          WORKER_SERVICE_NAME: ${{ steps.deploy_outputs.outputs.worker_service_name }}
+          ECS_CLUSTER_NAME: ${{ steps.service_targets.outputs.ecs_cluster_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.service_targets.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.service_targets.outputs.backend_service_name }}
+          WORKER_SERVICE_NAME: ${{ steps.service_targets.outputs.worker_service_name }}
         run: |
           set -euo pipefail
 
@@ -680,6 +687,10 @@ jobs:
             --cluster "${ECS_CLUSTER_NAME}" \
             --services "${FRONTEND_SERVICE_NAME}" "${BACKEND_SERVICE_NAME}" "${WORKER_SERVICE_NAME}" \
             > "${ARTIFACT_DIR}/ecs-service-diagnostics.json" || true
+
+          jq '{services: [.services[] | {serviceName, status, desiredCount, runningCount, pendingCount, events: (.events // [])[:10]}]}' \
+            "${ARTIFACT_DIR}/ecs-service-diagnostics.json" \
+            > "${ARTIFACT_DIR}/ecs-service-events-summary.json" || true
 
           capture_tasks() {
             local service_name="$1"
@@ -705,9 +716,31 @@ jobs:
             fi
           }
 
+          capture_target_group_health() {
+            local service_name="$1"
+            local prefix="$2"
+            local target_group_arn
+
+            target_group_arn="$(jq -r --arg service_name "${service_name}" '.services[] | select(.serviceName == $service_name) | .loadBalancers[0].targetGroupArn // empty' "${ARTIFACT_DIR}/ecs-service-diagnostics.json")"
+
+            if [ -n "${target_group_arn}" ]; then
+              aws elbv2 describe-target-health \
+                --target-group-arn "${target_group_arn}" \
+                > "${ARTIFACT_DIR}/${prefix}-target-health-on-failure.json" || true
+            fi
+          }
+
           capture_tasks "${FRONTEND_SERVICE_NAME}" "frontend"
           capture_tasks "${BACKEND_SERVICE_NAME}" "backend"
           capture_tasks "${WORKER_SERVICE_NAME}" "worker"
+          capture_target_group_health "${FRONTEND_SERVICE_NAME}" "frontend"
+          capture_target_group_health "${BACKEND_SERVICE_NAME}" "backend"
+
+      - name: Fail after collecting service rollout diagnostics
+        if: steps.context.outputs.deployment_mode == 'service' && steps.service_apply.outcome == 'failure'
+        run: |
+          echo "Terraform service rollout failed. See uploaded diagnostics artifacts."
+          exit 1
 
       - name: Upload terraform artifacts
         if: always()
