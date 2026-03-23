@@ -22,7 +22,7 @@ _PAIR_PROMPT_FILES = {
     "SCA": "sca_pair_adjudication_prompt.txt",
     "IaC": "iac_pair_adjudication_prompt.txt",
     "DAST": "dast_pair_adjudication_prompt.txt",
-    "IMAGE": "sca_pair_adjudication_prompt.txt",
+    "IMAGE": "image_pair_adjudication_prompt.txt",
 }
 
 

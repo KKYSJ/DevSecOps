@@ -138,14 +138,24 @@ def main():
 
         print(f"  매칭 페어 {len(pairs)}건 (동시탐지 + 단독 Critical/High)")
 
-        # prompts.py로 프롬프트 생성
+        # prompts.py로 프롬프트 생성 (15건씩 배치 처리)
         try:
             from engine.llm.prompts import build_cross_validation_prompt, parse_llm_response, _rule_based_fallback
             from engine.llm.client import call_llm
 
-            prompt = build_cross_validation_prompt(category, pairs)
-            response = call_llm(prompt)
-            analyzed = parse_llm_response(response, pairs)
+            BATCH_SIZE = 15
+            analyzed = []
+            for batch_start in range(0, len(pairs), BATCH_SIZE):
+                batch = pairs[batch_start:batch_start + BATCH_SIZE]
+                try:
+                    prompt = build_cross_validation_prompt(category, batch)
+                    response = call_llm(prompt)
+                    batch_result = parse_llm_response(response, batch)
+                    analyzed.extend(batch_result)
+                    print(f"  배치 {batch_start//BATCH_SIZE+1}: {len(batch_result)}건 LLM 완료")
+                except Exception as be:
+                    print(f"  배치 {batch_start//BATCH_SIZE+1}: 실패 ({be}), 룰 기반 폴백")
+                    analyzed.extend(_rule_based_fallback(batch))
             print(f"  LLM 판정 완료: {len(analyzed)}건")
 
         except Exception as e:
