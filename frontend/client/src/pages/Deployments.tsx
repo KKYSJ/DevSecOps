@@ -37,36 +37,52 @@ interface CrossReport {
 export default function Deployments() {
   const [, setLocation] = useLocation();
   const [pipelines, setPipelines] = useState<PipelineRun[]>([]);
-  const [crossReport, setCrossReport] = useState<CrossReport | null>(null);
+  const [crossReport] = useState<CrossReport | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetchJson<{ history: Array<any> }>('/cross/history').catch(() => ({ history: [] })),
-      fetchJson<CrossReport>('/cross').catch(() => null),
-    ]).then(([hRes, cRes]) => {
-      setCrossReport(cRes);
-
-      // history에서 커밋별로 중복 제거 (최신만)
+    fetchJson<{ history: Array<any> }>('/cross/history').catch(() => ({ history: [] })).then(async (hRes) => {
       const seen = new Set<string>();
       const unique = (hRes.history || []).filter((h: any) => {
         const key = h.commit_hash || h.id;
         if (!key || seen.has(key)) return false;
         seen.add(key);
         return true;
-      });
+      }).filter((h: any) => h.commit_hash && h.total_score > 0);
 
-      const pipelineList: PipelineRun[] = unique.map((h: any) => ({
-        id: Number(h.id) || 0,
-        project_name: h.project_name || 'secureflow',
-        commit_hash: h.commit_hash || '',
-        branch: 'main',
-        status: h.gate_decision === 'BLOCK' ? 'blocked' : 'completed',
-        gate_result: h.gate_decision || 'ALLOW',
-        gate_score: h.total_score || 0,
-        scan_ids: null,
-        created_at: h.generated_at || new Date().toISOString(),
-      }));
+      // 각 리포트의 상세 데이터 가져오기
+      const reports = await Promise.all(
+        unique.map((h: any) =>
+          fetchJson<any>(`/reports/${h.report_id}`).catch(() => null)
+        )
+      );
+
+      const pipelineList: PipelineRun[] = unique.map((h: any, i: number) => {
+        const report = reports[i];
+        const findings = report?.findings || [];
+        const totalFindings = findings.length || report?.summary?.total_findings || 0;
+        const bySev: Record<string, number> = {};
+        findings.forEach((f: any) => {
+          const sev = (f.severity || '').toUpperCase();
+          bySev[sev] = (bySev[sev] || 0) + 1;
+        });
+        // report.summary.by_severity 폴백
+        const severity = Object.keys(bySev).length > 0 ? bySev : (report?.summary?.by_severity || {});
+
+        return {
+          id: Number(h.id) || 0,
+          project_name: h.project_name || 'secureflow',
+          commit_hash: h.commit_hash || '',
+          branch: 'main',
+          status: h.gate_decision === 'BLOCK' ? 'blocked' : 'completed',
+          gate_result: h.gate_decision || 'ALLOW',
+          gate_score: h.total_score || 0,
+          scan_ids: null,
+          created_at: h.generated_at || new Date().toISOString(),
+          _total_findings: totalFindings,
+          _by_severity: severity,
+        } as any;
+      });
 
       setPipelines(pipelineList);
     }).finally(() => setLoading(false));
@@ -123,8 +139,9 @@ export default function Deployments() {
     });
   };
 
-  // cross report에서 해당 파이프라인의 취약점 수 가져오기
   const getVulnCount = (pipeline: PipelineRun) => {
+    const p = pipeline as any;
+    if (p._total_findings) return p._total_findings;
     if (crossReport && crossReport.commit_hash === pipeline.commit_hash) {
       return crossReport.summary?.total_findings || 0;
     }
@@ -132,6 +149,11 @@ export default function Deployments() {
   };
 
   const getHighCount = (pipeline: PipelineRun) => {
+    const p = pipeline as any;
+    if (p._by_severity) {
+      const sev = p._by_severity;
+      return (sev.CRITICAL || 0) + (sev.HIGH || 0);
+    }
     if (crossReport && crossReport.commit_hash === pipeline.commit_hash) {
       const sev = crossReport.summary?.by_severity || {};
       return (sev.CRITICAL || 0) + (sev.HIGH || 0);
@@ -215,13 +237,13 @@ export default function Deployments() {
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   <div className="bg-muted rounded-md p-3">
                     <div className="text-2xl font-bold text-red-600">
-                      {getVulnCount(pipeline)}
+                      {getVulnCount(pipeline) || '-'}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">취약점</div>
                   </div>
                   <div className="bg-muted rounded-md p-3">
                     <div className="text-2xl font-bold text-amber-600">
-                      {getHighCount(pipeline)}
+                      {getHighCount(pipeline) || '-'}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Critical+High</div>
                   </div>
