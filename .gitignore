@@ -49,6 +49,7 @@ terraform.rc
 .terraformrc
 *.tfbackend
 *.backend.hcl
+*.hcl
 
 # Security scan results (로컬 실행 결과)
 semgrep-results.json
@@ -70,5 +71,3 @@ reports/
 *.egg-info/
 .mypy_cache/
 .ruff_cache/
-secureflow-key.pem
-*.pem

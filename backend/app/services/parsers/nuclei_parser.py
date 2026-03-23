@@ -90,6 +90,8 @@ class NucleiParser:
     """Normalize nuclei JSON output."""
 
     def parse(self, raw: Any) -> dict[str, Any]:
+        if isinstance(raw, dict) and "data" in raw:
+            raw = raw["data"]
         records = raw if isinstance(raw, list) else [raw]
         findings = [_parse_record(record) for record in records if isinstance(record, dict)]
 

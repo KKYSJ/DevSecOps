@@ -37,11 +37,10 @@ const PIPELINE_STAGES = [
   { id: 'iac', label: 'IaC 스캔', subtitle: 'tfsec + Checkov', icon: Cloud },
   { id: 'sast', label: 'SAST', subtitle: 'SonarQube + Semgrep', icon: Code2 },
   { id: 'sca', label: 'SCA', subtitle: 'Trivy + Dep-Check', icon: ShieldCheck },
-  { id: 'cross', label: '교차 검증', subtitle: '', icon: GitBranch },
-  // { id: 'normalize', label: '정규화 + 스코어링', subtitle: '', icon: SlidersHorizontal },
+  { id: 'cross', label: '교차 검증', subtitle: 'LLM 판정', icon: GitBranch },
   { id: 'image', label: '이미지 스캔', subtitle: 'Trivy + Grype', icon: Image },
   { id: 'deploy', label: '배포', subtitle: 'ECS Fargate', icon: Server },
-  { id: 'dast', label: 'DAST', subtitle: 'OWASP ZAP + Nuclei', icon: Bug },
+  { id: 'dast', label: 'DAST', subtitle: 'ZAP + Nuclei', icon: Bug },
 ];
 
 type PipelineStepState = 'pending' | 'running' | 'success' | 'failed';
@@ -57,6 +56,64 @@ function stageIdFromPipelineText(text: string | undefined): string | null {
   if (text.includes('배포')) return 'deploy';
   if (text.includes('DAST')) return 'dast';
   return null;
+}
+
+// gate 결과 기반 단계별 상태 계산
+function getStepStateFromGates(
+  stageId: string,
+  gates: Record<string, any>
+): PipelineStepState {
+  const getGateDecision = (g: any) => {
+    const d = (g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase();
+    // fail = block
+    if (d === 'fail' || d === 'block') return 'block';
+    return d;
+  };
+
+  const stageGateMap: Record<string, string[]> = {
+    'iac': ['iac'],
+    'sast': ['sast'],
+    'sca': ['sca'],
+    'cross': ['sast', 'sca', 'iac'],
+    'image': ['image'],
+    'deploy': [],
+    'dast': ['dast'],
+  };
+
+  const relevantGates = stageGateMap[stageId] || [];
+
+  if (stageId === 'cross') {
+    const hasBlock = relevantGates.some(g => getGateDecision(gates[g]) === 'block');
+    const hasAny = relevantGates.some(g => gates[g]);
+    if (!hasAny) return 'pending';
+    return hasBlock ? 'failed' : 'success';
+  }
+
+  // BLOCK된 단계 이후는 전부 회색
+  const stageOrder = ['iac', 'sast', 'sca', 'cross', 'image', 'deploy', 'dast'];
+  const currentStageIdx = stageOrder.indexOf(stageId);
+  for (let i = 0; i < currentStageIdx; i++) {
+    const prevId = stageOrder[i];
+    const prevGates = stageGateMap[prevId] || [];
+    const prevDecision = prevGates.length > 0 ? getGateDecision(gates[prevGates[0]]) : '';
+    if (prevDecision === 'block') return 'pending';  // 이전에 BLOCK → 회색
+    // cross는 Phase 1 중 BLOCK이 있으면
+    if (prevId === 'cross') {
+      const hasBlock = ['sast', 'sca', 'iac'].some(g => getGateDecision(gates[g]) === 'block');
+      if (hasBlock) return 'pending';
+    }
+  }
+
+  if (stageId === 'deploy') {
+    return 'success';
+  }
+
+  const gate = gates[relevantGates[0]];
+  if (!gate) return 'pending';
+  const decision = getGateDecision(gate);
+  if (decision === 'block') return 'failed';
+  if (decision === 'review') return 'running';
+  return 'success';
 }
 
 function getStepState(
@@ -290,8 +347,8 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
   useEffect(() => {
     // trivy-image + grype 둘 다 가져오기
     Promise.all([
-      fetchJson<any>('/vulns?tool=trivy-image&limit=50').catch(() => ({ vulnerabilities: [] })),
-      fetchJson<any>('/vulns?tool=grype&limit=50').catch(() => ({ vulnerabilities: [] })),
+      fetchJson<any>('/vulns?tool=trivy-image&limit=200').catch(() => ({ vulnerabilities: [] })),
+      fetchJson<any>('/vulns?tool=grype&limit=200').catch(() => ({ vulnerabilities: [] })),
     ]).then(([trivyRes, grypeRes]) => {
       const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
       const allVulns = [...(trivyRes.vulnerabilities || []), ...(grypeRes.vulnerabilities || [])]
@@ -317,28 +374,56 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
   const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
   // judgments 기반 vulns (있으면 우선)
-  const jVulns = imgJ.map((j: any, i: number) => {
+  const jVulns: any[] = [];
+  imgJ.forEach((j: any, i: number) => {
     const fa = j.finding_a || {};
-    return {
-      id: `img-j-${i}`,
+    const fb = j.finding_b || {};
+    const cleanTitle = (s: string) => (s || '').replace(/^\[(?:확인됨|미확인|검토필요|검토 필요)\]\s*/g, '');
+    // finding_a (trivy)
+    jVulns.push({
+      id: `img-j-${i}-a`,
       severity: (j.reassessed_severity || j.severity || fa.severity || 'MEDIUM').toUpperCase(),
       category: 'IMAGE',
-      tool: fa.tool || 'trivy-image',
+      tool: fa.tool === 'trivy' ? 'trivy-image' : (fa.tool || 'trivy-image'),
       file: fa.package_name || fa.file_path || '',
       line: 0,
       cwe: fa.cve_id || fa.cwe_id || '',
-      description: j.title_ko || (fa.title || '').slice(0, 100),
-      confidence: j.finding_b ? 'HIGH' : (j.confidence || 'MED'),
+      description: cleanTitle(j.title_ko || (fa.title || '').slice(0, 100)),
+      confidence: fb.tool ? 'HIGH' : (j.confidence || 'MED'),
       detectedAt: new Date().toISOString(),
       _originalDesc: ((fa.description || fa.title || '') as string).slice(0, 300),
       _judgment: j,
-    };
+    });
+    // finding_b (grype) — 동시 탐지일 때만
+    if (fb.tool) {
+      jVulns.push({
+        id: `img-j-${i}-b`,
+        severity: (j.reassessed_severity || j.severity || fb.severity || 'MEDIUM').toUpperCase(),
+        category: 'IMAGE',
+        tool: fb.tool === 'trivy' ? 'trivy-image' : (fb.tool || 'grype'),
+        file: fb.package_name || fb.file_path || fa.package_name || fa.file_path || '',
+        line: 0,
+        cwe: fb.cve_id || fa.cve_id || fb.cwe_id || fa.cwe_id || '',
+        description: cleanTitle(j.title_ko || (fb.title || '').slice(0, 100)),
+        confidence: 'HIGH',
+        detectedAt: new Date().toISOString(),
+        _originalDesc: ((fb.description || fb.title || '') as string).slice(0, 300),
+        _judgment: j,
+      });
+    }
   });
 
-  // 합치기
-  const jKeys = new Set(jVulns.map((v: any) => `${v.tool}|${v.cwe}`));
-  const extra = apiVulns.filter(v => !jKeys.has(`${v.tool}|${v.cwe}`));
-  const imgVulns = [...jVulns, ...extra].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
+  // API vulns에서 CVE→패키지명 맵 생성
+  const cvePkgMap = new Map<string, string>();
+  apiVulns.forEach(v => { if (v.cwe && v.file) cvePkgMap.set(v.cwe, v.file); });
+  // judgments에 패키지명 보강
+  jVulns.forEach((v: any) => { if (!v.file && v.cwe && cvePkgMap.has(v.cwe)) v.file = cvePkgMap.get(v.cwe); });
+  // 합치기 (judgments 우선, 중복 제거)
+  const jKeys = new Set(jVulns.map((v: any) => v.cwe).filter(Boolean));
+  const extra = apiVulns.filter(v => !v.cwe || !jKeys.has(v.cwe));
+  // judgments 전부 포함 + extra는 상위만
+  const extraLimit = Math.max(0, 30 - jVulns.length);
+  const imgVulns = [...jVulns, ...extra.slice(0, extraLimit)].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
 
   if (loading && imgJ.length === 0) return <div className="text-center py-10 text-muted-foreground">이미지 스캔 데이터 로딩 중...</div>;
 
@@ -408,16 +493,20 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
       )}
 
       {/* 도구별 탐지 현황 */}
-      <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Trivy</span><span className="text-xs text-muted-foreground">총 {imgVulns.filter(v => v.tool?.includes('trivy')).length}건</span></div></div>
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Grype</span><span className="text-xs text-muted-foreground">총 {imgVulns.filter(v => v.tool === 'grype').length}건</span></div></div>
-        </div>
-      </div>
+      {(() => {
+        const toolStats = (toolFilter: (v: any) => boolean, label: string) => {
+          const tv = imgVulns.filter(toolFilter);
+          const c = tv.filter(v => v.severity === 'CRITICAL').length;
+          const h = tv.filter(v => v.severity === 'HIGH').length;
+          const m = tv.filter(v => v.severity === 'MEDIUM').length;
+          const l = tv.filter(v => v.severity === 'LOW').length;
+          return <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">{label}</span><span className="text-xs text-muted-foreground">총 {tv.length}건</span></div><div className="flex gap-2 mt-1">{c > 0 && <span className="text-xs font-bold text-red-600">C:{c}</span>}{h > 0 && <span className="text-xs font-bold text-orange-600">H:{h}</span>}{m > 0 && <span className="text-xs font-bold text-yellow-600">M:{m}</span>}{l > 0 && <span className="text-xs font-bold text-blue-600">L:{l}</span>}</div></div>;
+        };
+        return <div className="bg-card rounded-lg border border-border shadow-sm p-4"><h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3><div className="grid grid-cols-2 gap-3">{toolStats(v => v.tool?.includes('trivy'), 'Trivy')}{toolStats(v => v.tool === 'grype', 'Grype')}</div></div>;
+      })()}
 
       {/* 취약점 목록 */}
-      <VulnerabilityTable vulnerabilities={imgVulns} judgments={imgJ} category="SCA" />
+      <VulnerabilityTable vulnerabilities={imgVulns} judgments={imgJ} category="IMAGE" />
     </>
   );
 }
@@ -558,13 +647,17 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
       })()}
 
       {/* 도구별 탐지 현황 */}
-      <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">ZAP</span><span className="text-xs text-muted-foreground">총 {dastVulns.filter(v => v.tool === 'zap').length}건</span></div></div>
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Nuclei</span><span className="text-xs text-muted-foreground">총 {dastVulns.filter(v => v.tool === 'nuclei').length}건</span></div></div>
-        </div>
-      </div>
+      {(() => {
+        const toolStats = (toolFilter: (v: any) => boolean, label: string) => {
+          const tv = dastVulns.filter(toolFilter);
+          const c = tv.filter(v => v.severity === 'CRITICAL').length;
+          const h = tv.filter(v => v.severity === 'HIGH').length;
+          const m = tv.filter(v => v.severity === 'MEDIUM').length;
+          const l = tv.filter(v => v.severity === 'LOW').length;
+          return <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">{label}</span><span className="text-xs text-muted-foreground">총 {tv.length}건</span></div><div className="flex gap-2 mt-1">{c > 0 && <span className="text-xs font-bold text-red-600">C:{c}</span>}{h > 0 && <span className="text-xs font-bold text-orange-600">H:{h}</span>}{m > 0 && <span className="text-xs font-bold text-yellow-600">M:{m}</span>}{l > 0 && <span className="text-xs font-bold text-blue-600">L:{l}</span>}</div></div>;
+        };
+        return <div className="bg-card rounded-lg border border-border shadow-sm p-4"><h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3><div className="grid grid-cols-2 gap-3">{toolStats(v => v.tool === 'zap', 'ZAP')}{toolStats(v => v.tool === 'nuclei', 'Nuclei')}</div></div>;
+      })()}
 
       {/* 취약점 목록 */}
       <VulnerabilityTable vulnerabilities={dastVulns} judgments={dastJ} category="DAST" />
@@ -1011,6 +1104,12 @@ export default function Home({ params }: HomeProps) {
           const hasBoth = !!fb.tool && fb.tool !== fa.tool;
           const cat = (fa.category || stage).toUpperCase();
           const isSCA = cat === 'SCA';
+          const isIMAGE = cat === 'IMAGE' || stage === 'image';
+          // IMAGE 카테고리에서 tool명 정규화
+          if (isIMAGE) {
+            if (fa.tool === 'trivy') fa.tool = 'trivy-image';
+            if (fb.tool === 'trivy') fb.tool = 'trivy-image';
+          }
 
           // finding_a 행
           if (fa.tool) {
@@ -1182,11 +1281,29 @@ export default function Home({ params }: HomeProps) {
                   <h2 className="text-sm font-semibold text-foreground">DevSecOps 파이프라인</h2>
                   <div className="flex items-center gap-2">
                     <div
-                      className={`w-2 h-2 rounded-full ${pipelineStatus === 'running' ? 'status-running' : ''}`}
-                      style={{ backgroundColor: pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8' }}
+                      className={`w-2 h-2 rounded-full`}
+                      style={{ backgroundColor: (() => {
+                        if (Object.keys(llmGates).length > 0) {
+                          const hasBlock = Object.values(llmGates).some((g: any) => ['block', 'fail'].includes((g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase()));
+                          return hasBlock ? '#ef4444' : '#10b981';
+                        }
+                        return pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8';
+                      })() }}
                     />
-                    <span className="text-xs font-medium" style={{ color: pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8' }}>
-                      {pipelineStatus === 'success' ? 'SUCCESS' : pipelineStatus === 'failed' ? 'FAILED' : pipelineStatus === 'running' ? 'RUNNING' : 'IDLE'}
+                    <span className="text-xs font-medium" style={{ color: (() => {
+                      if (Object.keys(llmGates).length > 0) {
+                        const hasBlock = Object.values(llmGates).some((g: any) => ['block', 'fail'].includes((g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase()));
+                        return hasBlock ? '#ef4444' : '#10b981';
+                      }
+                      return pipelineStatus === 'success' ? '#10b981' : pipelineStatus === 'failed' ? '#ef4444' : pipelineStatus === 'running' ? '#f59e0b' : '#94a3b8';
+                    })() }}>
+                      {(() => {
+                        if (Object.keys(llmGates).length > 0) {
+                          const hasBlock = Object.values(llmGates).some((g: any) => ['block', 'fail'].includes((g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase()));
+                          return hasBlock ? 'BLOCK' : 'ALLOW';
+                        }
+                        return pipelineStatus === 'success' ? 'SUCCESS' : pipelineStatus === 'failed' ? 'FAILED' : pipelineStatus === 'running' ? 'RUNNING' : 'IDLE';
+                      })()}
                     </span>
                   </div>
                 </div>
@@ -1212,7 +1329,9 @@ export default function Home({ params }: HomeProps) {
                         opts: { showConnector: boolean; fullWidth?: boolean }
                       ) => {
                         const Icon = stage.icon;
-                        const stepState = getStepState(index, currentIdx, pipelineStatus, isFailure, progress);
+                        const stepState = Object.keys(llmGates).length > 0
+                          ? getStepStateFromGates(stage.id, llmGates)
+                          : getStepState(index, currentIdx, pipelineStatus, isFailure, progress);
                         const isSelected = activeSection === stage.id;
 
                         const colors = {
@@ -1247,9 +1366,9 @@ export default function Home({ params }: HomeProps) {
                         const badge = stepState === 'success'
                           ? { label: 'OK', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
                           : stepState === 'failed'
-                            ? { label: 'FAIL', className: 'border-red-200 bg-red-50 text-red-700' }
+                            ? { label: 'BLOCK', className: 'border-red-200 bg-red-50 text-red-700' }
                             : stepState === 'running'
-                              ? { label: 'RUN', className: 'border-amber-200 bg-amber-50 text-amber-700' }
+                              ? { label: 'REVIEW', className: 'border-amber-200 bg-amber-50 text-amber-700' }
                               : null;
 
                         return (
@@ -1263,7 +1382,7 @@ export default function Home({ params }: HomeProps) {
                                   : [
                                     // Small/medium desktop widths may still overflow → allow horizontal scroll.
                                     // Only very large screens should fit all steps in one row → flex and shrink.
-                                    'w-[120px] md:w-[130px] lg:w-[140px] xl:w-[150px] flex-shrink-0',
+                                    'w-[230px] h-[65px] flex-shrink-0',
                                     'lg:px-2.5 lg:py-2',
                                   ].join(' '),
                                 isSelected ? 'bg-primary/10 border-primary' : 'bg-background hover:bg-muted/40',
@@ -1279,23 +1398,19 @@ export default function Home({ params }: HomeProps) {
                                   <div className="absolute inset-0 rounded-lg border-2 border-amber-400/35 animate-pulse pointer-events-none" />
                                 )}
                               </div>
-                              <div className="min-w-0 text-left flex-1 pr-1">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="text-xs lg:text-[11px] font-semibold text-foreground leading-tight whitespace-nowrap">
-                                      {stage.label}
-                                    </div>
-                                    <div className="text-xs lg:text-xs text-muted-foreground leading-snug whitespace-normal lg:whitespace-nowrap lg:truncate">
-                                      {stage.subtitle || (index < currentIdx ? '완료' : index === currentIdx ? (stepState === 'failed' ? '실패' : '진행/대기') : '대기')}
-                                    </div>
-                                  </div>
-                                  {badge && (
-                                    <span className={`text-xs lg:text-xs font-mono px-2 lg:px-1.5 py-0.5 rounded-md border ${badge.className}`}>
-                                      {badge.label}
-                                    </span>
-                                  )}
+                              <div className="min-w-0 text-left flex-1">
+                                <div className="text-xs font-semibold text-foreground leading-tight whitespace-nowrap">
+                                  {stage.label}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground leading-snug whitespace-nowrap">
+                                  {stage.subtitle}
                                 </div>
                               </div>
+                              {badge && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${badge.className}`}>
+                                  {badge.label}
+                                </span>
+                              )}
                             </button>
 
                             {opts.showConnector && index < PIPELINE_STAGES.length - 1 && (
@@ -1463,7 +1578,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sca' && (
             <div className="space-y-4">
-              <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))} />
+              <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()) && v.category !== 'IMAGE')} />
               <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">CI 교차검증 분석 결과</span></>}>
                 {(() => { const jAll = llmJudgments['sca'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b); const jRV = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b)); const sm = llmSummaries['sca']; return (<div className="space-y-3 pt-3">
                   <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP.length}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV.length}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
@@ -1484,7 +1599,7 @@ export default function Home({ params }: HomeProps) {
                   return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div></div>; })()}
               </Accordion>
               <GateToolSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
-              <VulnerabilityTable vulnerabilities={(() => { const _s: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; return vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).sort((a,b) => (_s[a.severity]??9) - (_s[b.severity]??9)); })()} judgments={llmJudgments['sca']} category="SCA" />
+              <VulnerabilityTable vulnerabilities={(() => { const _s: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; return vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()) && v.category !== 'IMAGE').sort((a,b) => (_s[a.severity]??9) - (_s[b.severity]??9)); })()} judgments={llmJudgments['sca']} category="SCA" />
             </div>
           )}
 
