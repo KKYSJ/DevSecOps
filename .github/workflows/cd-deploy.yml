@@ -286,6 +286,11 @@ jobs:
         if: env.API_SERVER_URL != ''
         run: |
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
           # Trivy 이미지 스캔 업로드
           for service in fastapi node spring; do
             FILE="trivy-image-${service}.json"
@@ -298,7 +303,7 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${API_SERVER_URL}/api/v1/scans" \
+                -X POST "${API_BASE_URL}/scans" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패"
             fi
@@ -315,7 +320,7 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${API_SERVER_URL}/api/v1/scans" \
+                -X POST "${API_BASE_URL}/scans" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패"
             fi
@@ -405,10 +410,15 @@ jobs:
           if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
             exit 0
           fi
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
           jq -n --arg stage "image" --arg commit "$COMMIT_SHA" \
             --slurpfile raw artifacts/image/image-llm-gate.json \
             '{stage:$stage, commit_hash:$commit, gate_result:$raw[0]}' \
-          | curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
+          | curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" -d @- || true
 
       - name: Image 개별 취약점 LLM 판정
@@ -682,6 +692,12 @@ jobs:
             exit 0
           fi
 
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           jq -n \
             --arg stage "dast" \
             --arg commit "$COMMIT_SHA" \
@@ -689,7 +705,7 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -702,6 +718,12 @@ jobs:
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
           # Upload raw DAST outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           upload() {
             local tool=$1 file=$2
             if [ ! -f "$file" ]; then
@@ -717,7 +739,7 @@ jobs:
                   --slurpfile raw "$file" \
                   '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch}' \
                   > /tmp/payload.json 2>/dev/null; then
-              curl -s -X POST "${API_SERVER_URL}/api/v1/scans" \
+              curl -s -X POST "${API_BASE_URL}/scans" \
                 -H "Content-Type: application/json" \
                 -d @/tmp/payload.json \
                 --max-time 60 || true
@@ -739,10 +761,16 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Refresh the existing backend dashboard report after DAST uploads complete.
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           for i in $(seq 1 24); do
-            WAIT=$(curl -s "${API_SERVER_URL}/api/v1/scans" \
+            WAIT=$(curl -s "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${API_SERVER_URL}/api/v1/scans" \
+            DONE=$(curl -s "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
             echo "done=${DONE}, waiting=${WAIT} (${i}/24)"
             if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
@@ -760,7 +788,13 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/analyze" \
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
+          curl -s -X POST "${API_BASE_URL}/scans/analyze" \
             -H "Content-Type: application/json" \
             -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
             --max-time 120 || true
@@ -871,6 +905,12 @@ jobs:
             exit 0
           fi
 
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           jq -n \
             --arg name "isms-gate-${DEPLOY_ENV}" \
             --arg status "completed" \
@@ -881,7 +921,7 @@ jobs:
             '{name:$name,status:$status,environment:$environment,commit_hash:$commit,branch:$branch,data:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/isms-payload.json
 
-          curl -s -X POST "${API_SERVER_URL}/api/v1/isms" \
+          curl -s -X POST "${API_BASE_URL}/isms" \
             -H "Content-Type: application/json" \
             -d @/tmp/isms-payload.json \
             --max-time 60 || true

@@ -106,8 +106,20 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
     return pairs
 
 
+def normalize_api_base(url: str) -> str:
+    """Accept either https://host or https://host/api/v1 and normalize to the API base."""
+    normalized = url.strip().rstrip("/")
+    if not normalized:
+        return ""
+    if normalized.endswith("/api/v1"):
+        return normalized
+    return f"{normalized}/api/v1"
+
+
 def main():
-    backend_url = (os.getenv("API_SERVER_URL", "") or os.getenv("BACKEND_URL", "")).strip()
+    backend_url = normalize_api_base(
+        (os.getenv("API_SERVER_URL", "") or os.getenv("BACKEND_URL", "")).strip()
+    )
     commit_hash = os.getenv("COMMIT_SHA", "").strip()
 
     if not backend_url:
@@ -233,7 +245,7 @@ def main():
             },
         }).encode("utf-8")
 
-        url = f"{backend_url}/api/v1/scans/gate-result"
+        url = f"{backend_url}/scans/gate-result"
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         try:
             resp = urllib.request.urlopen(req, timeout=30)

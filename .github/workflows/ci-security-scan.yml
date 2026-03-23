@@ -241,6 +241,12 @@ jobs:
             exit 0
           fi
 
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           jq -n \
             --arg stage "iac" \
             --arg commit "$COMMIT_SHA" \
@@ -248,7 +254,7 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -495,6 +501,12 @@ jobs:
             exit 0
           fi
 
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           jq -n \
             --arg stage "sast" \
             --arg commit "$COMMIT_SHA" \
@@ -502,7 +514,7 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -645,6 +657,12 @@ jobs:
             exit 0
           fi
 
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           jq -n \
             --arg stage "sca" \
             --arg commit "$COMMIT_SHA" \
@@ -652,7 +670,7 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -704,6 +722,12 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           # Upload raw scanner outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           upload() {
             local tool=$1 file=$2
             if [ -f "$file" ]; then
@@ -718,14 +742,14 @@ jobs:
                     > /tmp/payload.json 2>/dev/null
               if [ $? -eq 0 ]; then
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${API_SERVER_URL}/api/v1/scans" \
+                  -X POST "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
                   -d @/tmp/payload.json \
                   --max-time 60 || echo "000")
               else
                 echo "  ⚠ jq 실패, 직접 전송 시도"
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${API_SERVER_URL}/api/v1/scans" \
+                  -X POST "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
                   -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
                   --max-time 30 || echo "000")
@@ -751,10 +775,16 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           # Refresh the existing backend dashboard report after raw CI uploads complete.
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           for i in $(seq 1 30); do
-            WAIT=$(curl -s "${API_SERVER_URL}/api/v1/scans" \
+            WAIT=$(curl -s "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${API_SERVER_URL}/api/v1/scans" \
+            DONE=$(curl -s "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
             echo "done=${DONE}, waiting=${WAIT} (${i}/30)"
             if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
@@ -771,7 +801,13 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/analyze" \
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
+          curl -s -X POST "${API_BASE_URL}/scans/analyze" \
             -H "Content-Type: application/json" \
             -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
             --max-time 120 || true
@@ -782,13 +818,19 @@ jobs:
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          case "$API_BASE_URL" in
+            */api/v1) ;;
+            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
+          esac
+
           for stage in iac sast sca; do
             FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
             if [ -f "$FILE" ]; then
               echo "LLM gate 전송: $stage"
               jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
                 '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
-              | curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
+              | curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패 (무시)"
             else
