@@ -71,9 +71,10 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
             findings,
             key=lambda f: _SEV.get((f.get("severity") or "LOW").upper(), 9)
         )
+        max_per_tool = 10 if category == "IMAGE" else 5
         tool_count = 0
         for f in sorted_findings:
-            if tool_count >= 5:
+            if tool_count >= max_per_tool:
                 break
             severity = (f.get("severity") or "MEDIUM").upper()
             # SAST/SCA는 Critical/High만, IaC/DAST/IMAGE는 전체
