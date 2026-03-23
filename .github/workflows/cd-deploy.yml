@@ -97,7 +97,7 @@ jobs:
               run_staging="true"
             fi
 
-            if [ "$requested_production" = "true" ] && [ "$branch_name" = "main" ]; then
+            if [ "$requested_production" = "true" ] && [ "$branch_name" = "SUN" ]; then
               run_production="true"
             fi
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
@@ -106,11 +106,8 @@ jobs:
               source_sha="${{ github.event.workflow_run.head_sha }}"
               run_staging="true"
 
-              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ] || [ "$branch_name" = "nayoung" ]; then
+              if [ "$branch_name" = "SUN" ]; then
                 proceed="true"
-              elif [ "$branch_name" = "main" ]; then
-                proceed="true"
-                run_production="true"
               fi
             fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -120,7 +117,7 @@ jobs:
             service="${{ inputs.service }}"
             run_staging="true"
 
-            if [ "${{ inputs.environment }}" = "production" ] && [ "$branch_name" = "main" ]; then
+            if [ "${{ inputs.environment }}" = "production" ] && [ "$branch_name" = "SUN" ]; then
               run_production="true"
             fi
           fi
@@ -227,7 +224,7 @@ jobs:
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -286,7 +283,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload image scan results to SecureFlow
-        if: env.BACKEND_URL != ''
+        if: env.API_SERVER_URL != ''
         run: |
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
           # Trivy 이미지 스캔 업로드
@@ -301,7 +298,7 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -X POST "${API_SERVER_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패"
             fi
@@ -318,7 +315,7 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -X POST "${API_SERVER_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패"
             fi
@@ -341,7 +338,7 @@ jobs:
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Check out source
@@ -405,13 +402,13 @@ jobs:
         env:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
+          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
             exit 0
           fi
           jq -n --arg stage "image" --arg commit "$COMMIT_SHA" \
             --slurpfile raw artifacts/image/image-llm-gate.json \
             '{stage:$stage, commit_hash:$commit, gate_result:$raw[0]}' \
-          | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+          | curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" -d @- || true
 
       - name: Image 개별 취약점 LLM 판정
@@ -420,7 +417,7 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           PYTHONPATH: ${{ github.workspace }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
         run: |
           mkdir -p scan-results/image-llm-gate
           cp artifacts/image/image-llm-gate.json scan-results/image-llm-gate/image-llm-gate.json 2>/dev/null || true
@@ -678,10 +675,10 @@ jobs:
       - name: Upload DAST gate result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
+          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
             exit 0
           fi
 
@@ -692,15 +689,15 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
 
       - name: Upload DAST results to SecureFlow
-        if: always() && env.BACKEND_URL != ''
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
@@ -720,7 +717,7 @@ jobs:
                   --slurpfile raw "$file" \
                   '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch}' \
                   > /tmp/payload.json 2>/dev/null; then
-              curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
+              curl -s -X POST "${API_SERVER_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
                 -d @/tmp/payload.json \
                 --max-time 60 || true
@@ -736,16 +733,16 @@ jobs:
         continue-on-error: true
 
       - name: Wait for SecureFlow DAST parsing
-        if: always() && env.BACKEND_URL != ''
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Refresh the existing backend dashboard report after DAST uploads complete.
           for i in $(seq 1 24); do
-            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+            WAIT=$(curl -s "${API_SERVER_URL}/api/v1/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+            DONE=$(curl -s "${API_SERVER_URL}/api/v1/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
             echo "done=${DONE}, waiting=${WAIT} (${i}/24)"
             if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
@@ -757,22 +754,22 @@ jobs:
         continue-on-error: true
 
       - name: Refresh SecureFlow Phase 2 dashboard report
-        if: always() && env.BACKEND_URL != ''
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+          curl -s -X POST "${API_SERVER_URL}/api/v1/scans/analyze" \
             -H "Content-Type: application/json" \
             -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
             --max-time 120 || true
         continue-on-error: true
 
       - name: DAST 개별 취약점 LLM 판정 (한국어)
-        if: always() && env.BACKEND_URL != ''
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -865,12 +862,12 @@ jobs:
       - name: Upload ISMS-P result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
           DEPLOY_ENV: ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
+          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
             exit 0
           fi
 
@@ -884,7 +881,7 @@ jobs:
             '{name:$name,status:$status,environment:$environment,commit_hash:$commit,branch:$branch,data:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/isms-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/isms" \
+          curl -s -X POST "${API_SERVER_URL}/api/v1/isms" \
             -H "Content-Type: application/json" \
             -d @/tmp/isms-payload.json \
             --max-time 60 || true

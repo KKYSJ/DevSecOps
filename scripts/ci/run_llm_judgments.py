@@ -107,11 +107,11 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
 
 
 def main():
-    backend_url = os.getenv("BACKEND_URL", "").strip()
+    backend_url = (os.getenv("API_SERVER_URL", "") or os.getenv("BACKEND_URL", "")).strip()
     commit_hash = os.getenv("COMMIT_SHA", "").strip()
 
     if not backend_url:
-        print("BACKEND_URL 미설정, 스킵")
+        print("API_SERVER_URL 미설정, 스킵")
         return
 
     all_stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST", "image": "IMAGE"}

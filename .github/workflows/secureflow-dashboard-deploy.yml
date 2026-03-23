@@ -144,8 +144,8 @@ jobs:
             exit 1
           fi
 
-          if [ "${deploy_environment}" = "prod" ] && [ "${GITHUB_REF_NAME}" != "main" ]; then
-            echo "Production deploys are only allowed from the main branch."
+          if [ "${deploy_environment}" = "prod" ] && [ "${GITHUB_REF_NAME}" != "SUN" ]; then
+            echo "Production deploys are only allowed from the SUN branch."
             exit 1
           fi
 
