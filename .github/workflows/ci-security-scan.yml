@@ -1,12 +1,6 @@
-name: CI Security Scan
+name: CI Security Scan (Manual Backup)
 
 on:
-  push:
-    branches:
-      - SUN
-  pull_request:
-    branches:
-      - SUN
   workflow_dispatch:
 
 permissions:
