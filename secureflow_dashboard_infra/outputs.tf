@@ -8,6 +8,16 @@ output "cloudfront_domain_name" {
   value       = try(aws_cloudfront_distribution.app[0].domain_name, null)
 }
 
+output "cloudfront_enabled" {
+  description = "Whether CloudFront is enabled for the public entrypoint."
+  value       = var.enable_cloudfront_https
+}
+
+output "waf_enabled" {
+  description = "Whether WAF is enabled in front of the public entrypoint."
+  value       = var.enable_waf
+}
+
 output "alb_frontend_url" {
   description = "Direct ALB frontend URL."
   value       = var.acm_certificate_arn != null ? "https://${aws_lb.main.dns_name}" : "http://${aws_lb.main.dns_name}"
