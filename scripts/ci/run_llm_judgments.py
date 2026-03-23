@@ -76,8 +76,8 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
             if tool_count >= 5:
                 break
             severity = (f.get("severity") or "MEDIUM").upper()
-            # SAST/SCA는 Critical/High만, IaC/DAST는 전체
-            if category not in ("IaC", "DAST") and severity not in ("CRITICAL", "HIGH"):
+            # SAST/SCA는 Critical/High만, IaC/DAST/IMAGE는 전체
+            if category not in ("IaC", "DAST", "IMAGE") and severity not in ("CRITICAL", "HIGH"):
                 continue
             tool_count += 1
             # title + description 합쳐서 LLM에 충분한 맥락 제공
@@ -113,7 +113,7 @@ def main():
         print("BACKEND_URL 미설정, 스킵")
         return
 
-    all_stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST"}
+    all_stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST", "image": "IMAGE"}
     # gate 파일이 있는 stage만 처리 (CD에서는 DAST만 있을 수 있음)
     stages = {}
     for k, v in all_stages.items():

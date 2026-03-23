@@ -284,7 +284,7 @@ function DeploySection() {
 }
 
 // 이미지 스캔 섹션
-function ImageScanSection() {
+function ImageScanSection({ judgments, summaries }: { judgments?: any[]; summaries?: Record<string, any> }) {
   const [vulns, setVulns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -1507,7 +1507,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'image' && (
             <div className="space-y-5">
-              <ImageScanSection />
+              <ImageScanSection judgments={llmJudgments['image']} summaries={llmSummaries} />
             </div>
           )}
 

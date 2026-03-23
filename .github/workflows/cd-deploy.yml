@@ -297,6 +297,85 @@ jobs:
           path: trivy-image-*.json
         continue-on-error: true
 
+  # ── 이미지 스캔 LLM Gate ─────────────────────────────
+  llm-image-gate:
+    needs:
+      - resolve-context
+      - image-scan
+    if: always() && needs.resolve-context.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download image scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: image-scan-results
+          path: artifacts/image/
+        continue-on-error: true
+
+      - name: Run Image LLM gate
+        run: |
+          pip install -q httpx 2>/dev/null
+          # trivy 결과를 합치기
+          COMBINED="artifacts/image/trivy-image-combined.json"
+          python3 -c "
+          import json, glob
+          all_vulns = []
+          for f in glob.glob('artifacts/image/trivy-image-*.json'):
+              data = json.load(open(f))
+              for r in data.get('Results', []):
+                  for v in r.get('Vulnerabilities', []):
+                      all_vulns.append({
+                          'VulnerabilityID': v.get('VulnerabilityID', ''),
+                          'PkgName': v.get('PkgName', ''),
+                          'InstalledVersion': v.get('InstalledVersion', ''),
+                          'FixedVersion': v.get('FixedVersion', ''),
+                          'Severity': v.get('Severity', 'MEDIUM'),
+                          'Title': v.get('Title', ''),
+                          'Description': (v.get('Description') or '')[:200],
+                      })
+          json.dump({'Results': [{'Vulnerabilities': all_vulns}]}, open('$COMBINED', 'w'))
+          print(f'Combined {len(all_vulns)} image vulnerabilities')
+          "
+          python scripts/ci/run_llm_gate.py \
+            --stage image \
+            --tool-input "trivy-image=$COMBINED" \
+            --output artifacts/image/image-llm-gate.json || echo "Image LLM gate failed (ignored)"
+
+      - name: Upload image gate result to SecureFlow
+        if: always()
+        env:
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
+            exit 0
+          fi
+          jq -n --arg stage "image" --arg commit "$COMMIT_SHA" \
+            --slurpfile raw artifacts/image/image-llm-gate.json \
+            '{stage:$stage, commit_hash:$commit, gate_result:$raw[0]}' \
+          | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+            -H "Content-Type: application/json" -d @- || true
+
+      - name: Image 개별 취약점 LLM 판정
+        if: always()
+        env:
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          mkdir -p scan-results/image-llm-gate
+          cp artifacts/image/image-llm-gate.json scan-results/image-llm-gate/image-llm-gate.json 2>/dev/null || true
+          python scripts/ci/run_llm_judgments.py || echo "Image judgments failed (ignored)"
+        continue-on-error: true
+
   service-dast-zap:
     needs:
       - resolve-context

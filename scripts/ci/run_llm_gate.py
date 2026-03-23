@@ -29,24 +29,28 @@ GATE_PROMPT_FILES = {
     "sast": Path("backend/app/prompts/sast_gate_prompt.txt"),
     "sca": Path("backend/app/prompts/sca_gate_prompt.txt"),
     "dast": Path("backend/app/prompts/dast_gate_prompt.txt"),
+    "image": Path("backend/app/prompts/sca_gate_prompt.txt"),  # SCA 프롬프트 재사용
 }
 MATCH_PROMPT_FILES = {
     "iac": Path("backend/app/prompts/iac_match_adjudication_prompt.txt"),
     "sast": Path("backend/app/prompts/sast_match_adjudication_prompt.txt"),
     "sca": Path("backend/app/prompts/sca_match_adjudication_prompt.txt"),
     "dast": Path("backend/app/prompts/dast_match_adjudication_prompt.txt"),
+    "image": Path("backend/app/prompts/sca_match_adjudication_prompt.txt"),  # SCA 재사용
 }
 STAGE_CATEGORY = {
     "iac": "IaC",
     "sast": "SAST",
     "sca": "SCA",
     "dast": "DAST",
+    "image": "IMAGE",
 }
 DEFAULT_THRESHOLDS = {
     "iac": {"critical": 0, "high": 2, "medium_review": 10},
     "sast": {"critical": 0, "high": 3, "medium_review": 15},
     "sca": {"critical": 0, "high": 5, "medium_review": 20},
     "dast": {"critical": 0, "high": 0, "medium_review": 5},
+    "image": {"critical": 0, "high": 3, "medium_review": 10},
 }
 SEVERITY_ALIASES = {
     "blocker": "critical",
@@ -67,6 +71,7 @@ MATCH_THRESHOLDS = {
     "sast": 0.78,
     "sca": 0.75,
     "dast": 0.80,
+    "image": 0.75,
 }
 MAX_LLM_FINDINGS_PER_TOOL = 15
 MAX_LLM_MATCH_CANDIDATES = 20
