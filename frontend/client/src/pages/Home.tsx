@@ -290,8 +290,8 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
   useEffect(() => {
     // trivy-image + grype 둘 다 가져오기
     Promise.all([
-      fetchJson<any>('/vulns?tool=trivy-image&limit=50').catch(() => ({ vulnerabilities: [] })),
-      fetchJson<any>('/vulns?tool=grype&limit=50').catch(() => ({ vulnerabilities: [] })),
+      fetchJson<any>('/vulns?tool=trivy-image&limit=200').catch(() => ({ vulnerabilities: [] })),
+      fetchJson<any>('/vulns?tool=grype&limit=200').catch(() => ({ vulnerabilities: [] })),
     ]).then(([trivyRes, grypeRes]) => {
       const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
       const allVulns = [...(trivyRes.vulnerabilities || []), ...(grypeRes.vulnerabilities || [])]
@@ -317,27 +317,53 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
   const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
   // judgments 기반 vulns (있으면 우선)
-  const jVulns = imgJ.map((j: any, i: number) => {
+  const jVulns: any[] = [];
+  imgJ.forEach((j: any, i: number) => {
     const fa = j.finding_a || {};
-    return {
-      id: `img-j-${i}`,
+    const fb = j.finding_b || {};
+    const cleanTitle = (s: string) => (s || '').replace(/^\[(?:확인됨|미확인|검토필요|검토 필요)\]\s*/g, '');
+    // finding_a (trivy)
+    jVulns.push({
+      id: `img-j-${i}-a`,
       severity: (j.reassessed_severity || j.severity || fa.severity || 'MEDIUM').toUpperCase(),
       category: 'IMAGE',
-      tool: fa.tool || 'trivy-image',
+      tool: fa.tool === 'trivy' ? 'trivy-image' : (fa.tool || 'trivy-image'),
       file: fa.package_name || fa.file_path || '',
       line: 0,
       cwe: fa.cve_id || fa.cwe_id || '',
-      description: j.title_ko || (fa.title || '').slice(0, 100),
-      confidence: j.finding_b ? 'HIGH' : (j.confidence || 'MED'),
+      description: cleanTitle(j.title_ko || (fa.title || '').slice(0, 100)),
+      confidence: fb.tool ? 'HIGH' : (j.confidence || 'MED'),
       detectedAt: new Date().toISOString(),
       _originalDesc: ((fa.description || fa.title || '') as string).slice(0, 300),
       _judgment: j,
-    };
+    });
+    // finding_b (grype) — 동시 탐지일 때만
+    if (fb.tool) {
+      jVulns.push({
+        id: `img-j-${i}-b`,
+        severity: (j.reassessed_severity || j.severity || fb.severity || 'MEDIUM').toUpperCase(),
+        category: 'IMAGE',
+        tool: fb.tool === 'trivy' ? 'trivy-image' : (fb.tool || 'grype'),
+        file: fb.package_name || fb.file_path || fa.package_name || fa.file_path || '',
+        line: 0,
+        cwe: fb.cve_id || fa.cve_id || fb.cwe_id || fa.cwe_id || '',
+        description: cleanTitle(j.title_ko || (fb.title || '').slice(0, 100)),
+        confidence: 'HIGH',
+        detectedAt: new Date().toISOString(),
+        _originalDesc: ((fb.description || fb.title || '') as string).slice(0, 300),
+        _judgment: j,
+      });
+    }
   });
 
-  // 합치기
-  const jKeys = new Set(jVulns.map((v: any) => `${v.tool}|${v.cwe}`));
-  const extra = apiVulns.filter(v => !jKeys.has(`${v.tool}|${v.cwe}`));
+  // API vulns에서 CVE→패키지명 맵 생성
+  const cvePkgMap = new Map<string, string>();
+  apiVulns.forEach(v => { if (v.cwe && v.file) cvePkgMap.set(v.cwe, v.file); });
+  // judgments에 패키지명 보강
+  jVulns.forEach((v: any) => { if (!v.file && v.cwe && cvePkgMap.has(v.cwe)) v.file = cvePkgMap.get(v.cwe); });
+  // 합치기 (judgments 우선, 중복 제거)
+  const jKeys = new Set(jVulns.map((v: any) => v.cwe).filter(Boolean));
+  const extra = apiVulns.filter(v => !v.cwe || !jKeys.has(v.cwe));
   const imgVulns = [...jVulns, ...extra].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
 
   if (loading && imgJ.length === 0) return <div className="text-center py-10 text-muted-foreground">이미지 스캔 데이터 로딩 중...</div>;
@@ -408,16 +434,20 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
       )}
 
       {/* 도구별 탐지 현황 */}
-      <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Trivy</span><span className="text-xs text-muted-foreground">총 {imgVulns.filter(v => v.tool?.includes('trivy')).length}건</span></div></div>
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Grype</span><span className="text-xs text-muted-foreground">총 {imgVulns.filter(v => v.tool === 'grype').length}건</span></div></div>
-        </div>
-      </div>
+      {(() => {
+        const toolStats = (toolFilter: (v: any) => boolean, label: string) => {
+          const tv = imgVulns.filter(toolFilter);
+          const c = tv.filter(v => v.severity === 'CRITICAL').length;
+          const h = tv.filter(v => v.severity === 'HIGH').length;
+          const m = tv.filter(v => v.severity === 'MEDIUM').length;
+          const l = tv.filter(v => v.severity === 'LOW').length;
+          return <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">{label}</span><span className="text-xs text-muted-foreground">총 {tv.length}건</span></div><div className="flex gap-2 mt-1">{c > 0 && <span className="text-xs font-bold text-red-600">C:{c}</span>}{h > 0 && <span className="text-xs font-bold text-orange-600">H:{h}</span>}{m > 0 && <span className="text-xs font-bold text-yellow-600">M:{m}</span>}{l > 0 && <span className="text-xs font-bold text-blue-600">L:{l}</span>}</div></div>;
+        };
+        return <div className="bg-card rounded-lg border border-border shadow-sm p-4"><h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3><div className="grid grid-cols-2 gap-3">{toolStats(v => v.tool?.includes('trivy'), 'Trivy')}{toolStats(v => v.tool === 'grype', 'Grype')}</div></div>;
+      })()}
 
       {/* 취약점 목록 */}
-      <VulnerabilityTable vulnerabilities={imgVulns} judgments={imgJ} category="SCA" />
+      <VulnerabilityTable vulnerabilities={imgVulns} judgments={imgJ} category="IMAGE" />
     </>
   );
 }
@@ -558,13 +588,17 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
       })()}
 
       {/* 도구별 탐지 현황 */}
-      <div className="bg-card rounded-lg border border-border shadow-sm p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">ZAP</span><span className="text-xs text-muted-foreground">총 {dastVulns.filter(v => v.tool === 'zap').length}건</span></div></div>
-          <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">Nuclei</span><span className="text-xs text-muted-foreground">총 {dastVulns.filter(v => v.tool === 'nuclei').length}건</span></div></div>
-        </div>
-      </div>
+      {(() => {
+        const toolStats = (toolFilter: (v: any) => boolean, label: string) => {
+          const tv = dastVulns.filter(toolFilter);
+          const c = tv.filter(v => v.severity === 'CRITICAL').length;
+          const h = tv.filter(v => v.severity === 'HIGH').length;
+          const m = tv.filter(v => v.severity === 'MEDIUM').length;
+          const l = tv.filter(v => v.severity === 'LOW').length;
+          return <div className="bg-muted rounded-md p-3"><div className="flex items-center justify-between mb-1"><span className="text-xs font-bold">{label}</span><span className="text-xs text-muted-foreground">총 {tv.length}건</span></div><div className="flex gap-2 mt-1">{c > 0 && <span className="text-xs font-bold text-red-600">C:{c}</span>}{h > 0 && <span className="text-xs font-bold text-orange-600">H:{h}</span>}{m > 0 && <span className="text-xs font-bold text-yellow-600">M:{m}</span>}{l > 0 && <span className="text-xs font-bold text-blue-600">L:{l}</span>}</div></div>;
+        };
+        return <div className="bg-card rounded-lg border border-border shadow-sm p-4"><h3 className="text-sm font-semibold text-foreground mb-3">도구별 탐지 현황</h3><div className="grid grid-cols-2 gap-3">{toolStats(v => v.tool === 'zap', 'ZAP')}{toolStats(v => v.tool === 'nuclei', 'Nuclei')}</div></div>;
+      })()}
 
       {/* 취약점 목록 */}
       <VulnerabilityTable vulnerabilities={dastVulns} judgments={dastJ} category="DAST" />
@@ -1011,6 +1045,12 @@ export default function Home({ params }: HomeProps) {
           const hasBoth = !!fb.tool && fb.tool !== fa.tool;
           const cat = (fa.category || stage).toUpperCase();
           const isSCA = cat === 'SCA';
+          const isIMAGE = cat === 'IMAGE' || stage === 'image';
+          // IMAGE 카테고리에서 tool명 정규화
+          if (isIMAGE) {
+            if (fa.tool === 'trivy') fa.tool = 'trivy-image';
+            if (fb.tool === 'trivy') fb.tool = 'trivy-image';
+          }
 
           // finding_a 행
           if (fa.tool) {
@@ -1463,7 +1503,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'sca' && (
             <div className="space-y-4">
-              <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()))} />
+              <VulnSeverityCards vulns={vulnerabilities.filter(v => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()) && v.category !== 'IMAGE')} />
               <Accordion title={<><span className="text-sm font-bold bg-blue-600 text-white px-3 py-1 rounded">Gemini LLM</span><span className="text-base font-semibold text-foreground">CI 교차검증 분석 결과</span></>}>
                 {(() => { const jAll = llmJudgments['sca'] || []; const jTP = jAll.filter((j:any) => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b); const jRV = jAll.filter((j:any) => !(j.judgement_code === 'TRUE_POSITIVE' && j.finding_b)); const sm = llmSummaries['sca']; return (<div className="space-y-3 pt-3">
                   <div className="grid grid-cols-2 gap-3"><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-green-600">{jTP.length}</div><div className="text-sm text-muted-foreground">동시 탐지</div></div><div className="bg-muted rounded-md p-3 text-center"><div className="text-xl font-bold text-amber-600">{jRV.length}</div><div className="text-sm text-muted-foreground">단독 탐지</div></div></div>
@@ -1484,7 +1524,7 @@ export default function Home({ params }: HomeProps) {
                   return <div className="grid grid-cols-2 gap-4 pt-3"><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tA} ({rA.length}건)</div><div className="space-y-2">{rA.length>0?rA.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div><div><div className="text-sm font-bold mb-2 bg-muted rounded p-2">{tB} ({rB.length}건)</div><div className="space-y-2">{rB.length>0?rB.map(renderItem):<div className="text-sm text-muted-foreground p-3">단독 탐지 없음</div>}</div></div></div>; })()}
               </Accordion>
               <GateToolSummary gate={llmGates['sca']} judgments={llmJudgments['sca']} />
-              <VulnerabilityTable vulnerabilities={(() => { const _s: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; return vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase())).sort((a,b) => (_s[a.severity]??9) - (_s[b.severity]??9)); })()} judgments={llmJudgments['sca']} category="SCA" />
+              <VulnerabilityTable vulnerabilities={(() => { const _s: Record<string,number> = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3}; return vulnerabilities.filter((v) => ['trivy', 'depcheck', 'dep-check'].includes(v.tool?.toLowerCase()) && v.category !== 'IMAGE').sort((a,b) => (_s[a.severity]??9) - (_s[b.severity]??9)); })()} judgments={llmJudgments['sca']} category="SCA" />
             </div>
           )}
 
