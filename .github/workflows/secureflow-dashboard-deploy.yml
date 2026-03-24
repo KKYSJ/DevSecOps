@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - SUN
-    paths:
-      - .github/workflows/secureflow-dashboard-deploy.yml
-      - backend/**
-      - frontend/**
-      - secureflow_dashboard_infra/**
   workflow_dispatch:
     inputs:
       environment:
