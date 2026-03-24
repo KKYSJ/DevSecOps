@@ -961,7 +961,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
-      (needs.isms-preprod-gate.result == 'success' || needs.isms-preprod-gate.result == 'skipped') &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'fastapi')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -982,7 +982,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
-      (needs.isms-preprod-gate.result == 'success' || needs.isms-preprod-gate.result == 'skipped') &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'node')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -1003,7 +1003,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
-      (needs.isms-preprod-gate.result == 'success' || needs.isms-preprod-gate.result == 'skipped') &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'spring')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -1024,7 +1024,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
-      (needs.isms-preprod-gate.result == 'success' || needs.isms-preprod-gate.result == 'skipped') &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'frontend')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
