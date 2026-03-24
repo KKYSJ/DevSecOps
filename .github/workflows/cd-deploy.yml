@@ -959,6 +959,7 @@ jobs:
   deploy-production-fastapi:
     needs:
       - resolve-context
+      - deploy-staging-fastapi
       - isms-preprod-gate
     if: |
       always() &&
@@ -975,11 +976,13 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-fastapi.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-node:
     needs:
       - resolve-context
+      - deploy-staging-node
       - isms-preprod-gate
     if: |
       always() &&
@@ -996,11 +999,13 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-node.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-spring:
     needs:
       - resolve-context
+      - deploy-staging-spring
       - isms-preprod-gate
     if: |
       always() &&
@@ -1017,11 +1022,13 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-spring.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-frontend:
     needs:
       - resolve-context
+      - deploy-staging-frontend
       - isms-preprod-gate
     if: |
       always() &&
@@ -1038,6 +1045,7 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-frontend.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   # 전체 stage 종합 판정 (CI+CD 모든 gate 수집 → Gemini 종합 분석)
