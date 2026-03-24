@@ -1,104 +1,117 @@
 """
-보안 취약점 테스트용 코드 (SAST 동시탐지 대상)
-- SonarQube + Semgrep 양쪽에서 탐지되도록 설계
-- SecureFlow 파이프라인 검증 목적
+보안 취약점 수정 완료 코드
+- 이전 SAST 스캔에서 발견된 취약점을 모두 패치
+- SecureFlow 파이프라인 검증 목적 (성공 시나리오)
 """
 
 import os
 import hashlib
 import subprocess
 import sqlite3
-from fastapi import APIRouter, Request
+import secrets
+from fastapi import APIRouter, Request, HTTPException
+from markupsafe import escape
 
 router = APIRouter()
 
-# ── 1. SQL Injection (CWE-89) ──────────────────────────
-# SonarQube: pythonsecurity:S3649 / Semgrep: python.lang.security.audit.sqli
+# ── 1. SQL Injection (CWE-89) → 파라미터 바인딩으로 수정
 @router.get("/users/search")
 def search_user(username: str):
     conn = sqlite3.connect("data/app.db")
     cursor = conn.cursor()
-    query = "SELECT * FROM users WHERE username = '" + username + "'"
-    cursor.execute(query)
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     return {"users": cursor.fetchall()}
 
 
-# ── 2. OS Command Injection (CWE-78) ──────────────────
-# SonarQube: python:S5131 / Semgrep: python.lang.security.audit.dangerous-system-call
+# ── 2. OS Command Injection (CWE-78) → 화이트리스트 + shlex 사용
 @router.get("/system/ping")
 def ping_host(host: str):
-    output = subprocess.check_output("ping -c 1 " + host, shell=True)
-    return {"output": output.decode()}
+    import re
+    if not re.match(r'^[\w.\-]+$', host):
+        raise HTTPException(status_code=400, detail="Invalid host format")
+    result = subprocess.run(
+        ["ping", "-c", "1", host],
+        capture_output=True, text=True, timeout=5
+    )
+    return {"output": result.stdout}
 
 
-# ── 3. Path Traversal (CWE-22) ────────────────────────
-# SonarQube: python:S5144 / Semgrep: python.lang.security.audit.path-traversal
+# ── 3. Path Traversal (CWE-22) → 경로 검증
+SAFE_DIR = os.path.abspath("data/public")
+
 @router.get("/files/read")
 def read_file(filepath: str):
-    with open(filepath, "r") as f:
+    full_path = os.path.abspath(os.path.join(SAFE_DIR, filepath))
+    if not full_path.startswith(SAFE_DIR):
+        raise HTTPException(status_code=403, detail="Access denied")
+    with open(full_path, "r") as f:
         return {"content": f.read()}
 
 
-# ── 4. Hardcoded Secret (CWE-798) ─────────────────────
-# SonarQube: python:S2068 / Semgrep: python.lang.security.audit.hardcoded-password
-DB_PASSWORD = "admin123!"
-SECRET_KEY = "super_secret_key_12345"
+# ── 4. Hardcoded Secret (CWE-798) → 환경변수 사용
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
 
 
-# ── 5. Weak Hash - MD5 (CWE-327) ─────────────────────
-# SonarQube: python:S4790 / Semgrep: python.lang.security.insecure-hash-algorithms
+# ── 5. Weak Hash - MD5 (CWE-327) → SHA-256 사용
 @router.post("/auth/hash")
 def hash_password(password: str):
-    return {"hash": hashlib.md5(password.encode()).hexdigest()}
+    salt = secrets.token_hex(16)
+    hashed = hashlib.sha256((salt + password).encode()).hexdigest()
+    return {"hash": f"{salt}:{hashed}"}
 
 
-# ══════════════════════════════════════════════════════
-# SonarQube 단독 탐지 (Semgrep에서는 잡히지 않는 패턴)
-# ══════════════════════════════════════════════════════
-
-# ── 6. SSRF (CWE-918) ── SonarQube 단독
+# ── 6. SSRF (CWE-918) → URL 화이트리스트
 import urllib.request
+
+ALLOWED_DOMAINS = ["api.example.com", "internal.service.local"]
+
 @router.get("/fetch")
 def fetch_url(url: str):
-    response = urllib.request.urlopen(url)
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.hostname not in ALLOWED_DOMAINS:
+        raise HTTPException(status_code=403, detail="Domain not allowed")
+    response = urllib.request.urlopen(url, timeout=5)
     return {"data": response.read().decode()[:500]}
 
 
-# ── 7. Unsafe Deserialization (CWE-502) ── SonarQube 단독
-import pickle
+# ── 7. Unsafe Deserialization (CWE-502) → JSON 사용
+import json
 import base64
+
 @router.post("/deserialize")
 def deserialize_data(data: str):
-    obj = pickle.loads(base64.b64decode(data))
+    try:
+        obj = json.loads(base64.b64decode(data).decode())
+    except (json.JSONDecodeError, Exception):
+        raise HTTPException(status_code=400, detail="Invalid data format")
     return {"result": str(obj)}
 
 
-# ── 8. XSS Reflected (CWE-79) ── SonarQube 단독
+# ── 8. XSS Reflected (CWE-79) → 이스케이프 처리
 @router.get("/greet")
 def greet(name: str):
-    return f"<h1>Hello {name}</h1>"
+    safe_name = escape(name)
+    return {"message": f"Hello {safe_name}"}
 
 
-# ══════════════════════════════════════════════════════
-# Semgrep 단독 탐지 (SonarQube에서는 잡히지 않는 패턴)
-# ══════════════════════════════════════════════════════
-
-# ── 9. Insecure Random (CWE-330) ── Semgrep 단독
-import random
+# ── 9. Insecure Random (CWE-330) → secrets 모듈 사용
 @router.get("/token/generate")
 def generate_token():
-    token = str(random.randint(100000, 999999))
+    token = secrets.token_hex(16)
     return {"token": token}
 
 
-# ── 10. Binding to all interfaces (CWE-1327) ── Semgrep 단독
+# ── 10. Binding to all interfaces (CWE-1327) → localhost로 변경
 def start_server():
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000)
 
 
-# ── 11. Disabled SSL verification (CWE-295) ── Semgrep 단독
+# ── 11. SSL verification 활성화 (CWE-295)
 import requests
+
 def call_external_api():
-    resp = requests.get("https://api.example.com", verify=False)
+    resp = requests.get("https://api.example.com", verify=True)
     return resp.json()
