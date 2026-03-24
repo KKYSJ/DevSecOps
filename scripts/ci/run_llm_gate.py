@@ -47,11 +47,11 @@ STAGE_CATEGORY = {
     "image": "IMAGE",
 }
 DEFAULT_THRESHOLDS = {
-    "iac": {"critical": 0, "high": 2, "medium_review": 10},
-    "sast": {"critical": 0, "high": 3, "medium_review": 15},
-    "sca": {"critical": 0, "high": 5, "medium_review": 20},
-    "dast": {"critical": 0, "high": 0, "medium_review": 5},
-    "image": {"critical": 5, "high": 10, "medium_review": 30},
+    "iac": {"critical": 10, "high": 20, "medium_review": 50},
+    "sast": {"critical": 10, "high": 20, "medium_review": 50},
+    "sca": {"critical": 10, "high": 20, "medium_review": 50},
+    "dast": {"critical": 10, "high": 20, "medium_review": 50},
+    "image": {"critical": 10, "high": 20, "medium_review": 50},
 }
 SEVERITY_ALIASES = {
     "blocker": "critical",
