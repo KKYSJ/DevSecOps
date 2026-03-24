@@ -126,7 +126,7 @@ def get_llm_gates(db: Session = Depends(get_db)):
             s_inner = j_data.get("summaries", {})
             if isinstance(s_inner, dict):
                 for stage_key, sdata in s_inner.items():
-                    if isinstance(sdata, dict) and sdata.get("summary"):
+                    if isinstance(sdata, dict) and (sdata.get("summary") or sdata.get("verdict")):
                         summaries[stage_key] = sdata
 
         return {"gates": gates, "judgments": judgments, "summaries": summaries}
