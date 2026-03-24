@@ -655,9 +655,16 @@ jobs:
 
   llm-dast-gate:
     needs:
+      - resolve-context
       - service-dast-zap
       - service-dast-nuclei
-    if: always()
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      (
+        needs.service-dast-zap.result == 'success' ||
+        needs.service-dast-nuclei.result == 'success'
+      )
     runs-on: ubuntu-latest
 
     steps:
@@ -813,8 +820,24 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
       - llm-dast-gate
-    if: needs.resolve-context.outputs.proceed == 'true'
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (
+        needs.deploy-staging-fastapi.result == 'success' ||
+        needs.deploy-staging-node.result == 'success' ||
+        needs.deploy-staging-spring.result == 'success' ||
+        needs.deploy-staging-frontend.result == 'success'
+      ) &&
+      needs.deploy-staging-fastapi.result != 'failure' &&
+      needs.deploy-staging-node.result != 'failure' &&
+      needs.deploy-staging-spring.result != 'failure' &&
+      needs.deploy-staging-frontend.result != 'failure' &&
+      needs.llm-image-gate.result != 'failure' &&
+      needs.llm-dast-gate.result != 'failure'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -876,6 +899,7 @@ jobs:
           python scripts/ci/run_ismsp_gate.py \
             --environment ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }} \
             --target-url "${{ steps.target.outputs.target_url }}" \
+            --gate-input artifacts/isms/image-llm-gate/image-llm-gate.json \
             --gate-input artifacts/isms/dast-llm-gate/dast-llm-gate.json \
             --output artifacts/isms/ismsp-gate.json
 
@@ -917,6 +941,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'fastapi')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -937,6 +963,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'node')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -957,6 +985,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'spring')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -977,6 +1007,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'frontend')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
