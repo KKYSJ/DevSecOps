@@ -364,17 +364,17 @@ jobs:
             -Dsonar.python.version=3.11
             -Dsonar.java.binaries=app/api-server-spring/target/classes
 
-      - name: SonarCloud 遺꾩꽍 ?꾨즺 ?湲?
+      - name: SonarCloud ?釉뚯뫒???熬곣뫁??????
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          echo "SonarCloud 遺꾩꽍 ?꾨즺 ?湲?以?.."
+          echo "SonarCloud ?釉뚯뫒???熬곣뫁??????繞?.."
           for i in $(seq 1 12); do
             STATUS=$(curl -s -u "${SONAR_TOKEN}:" \
               "${SONAR_HOST_URL}/api/ce/activity?component=${{ vars.SONAR_PROJECT_KEY }}&ps=1" \
               | grep -o '"status":"[^"]*"' | head -1 || echo "")
-            echo "  ?곹깭: $STATUS ($i/12)"
+            echo "  ??⑤객臾? $STATUS ($i/12)"
             if echo "$STATUS" | grep -q "SUCCESS"; then
-              echo "??遺꾩꽍 ?꾨즺"
+              echo "SonarCloud scan finished"
               break
             fi
             sleep 10
@@ -715,60 +715,8 @@ jobs:
           path: scan-results/
         continue-on-error: true
 
-      - name: ?섏쭛??寃곌낵 ?뺤씤
-        run: find scan-results/ -name "*.json" | sort || echo "寃곌낵 ?놁쓬"
-
-      - name: Disabled legacy raw scan upload step
-        if: ${{ false }}
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          API_BASE_URL="${API_SERVER_URL%/}"
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
-          fi
-          # Upload raw scanner outputs only. LLM gate JSON is uploaded separately to /scans/gate-result.
-          upload() {
-            local tool=$1 file=$2
-            if [ -f "$file" ]; then
-              echo "?낅줈?? $tool"
-              # ?꾩떆 payload ?뚯씪 ?앹꽦 (??JSON??泥섎━ 媛??
-              jq -n --arg tool "$tool" \
-                    --arg commit "${COMMIT_SHA}" \
-                    --arg project "secureflow" \
-                    --arg branch "${GITHUB_REF_NAME}" \
-                    --slurpfile raw "$file" \
-                    '{tool:$tool, raw_result:$raw[0], commit_hash:$commit, project_name:$project, branch:$branch}' \
-                    > /tmp/payload.json 2>/dev/null
-              if [ $? -eq 0 ]; then
-                HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
-                  -H "Content-Type: application/json" \
-                  -d @/tmp/payload.json \
-                  --max-time 60 || echo "000")
-              else
-                echo "  ??jq ?ㅽ뙣, 吏곸젒 ?꾩넚 ?쒕룄"
-                HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
-                  -H "Content-Type: application/json" \
-                  -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
-                  --max-time 30 || echo "000")
-              fi
-              echo "  ??HTTP $HTTP"
-              rm -f /tmp/payload.json
-            else
-              echo "嫄대꼫?: $tool (?뚯씪 ?놁쓬)"
-            fi
-          }
-
-          upload "semgrep"  "scan-results/semgrep-service-results/semgrep-results.json"
-          upload "sonarqube" "scan-results/sonarqube-service-results/sonarqube-results.json"
-          upload "trivy"    "scan-results/trivy-service-results/trivy-results.json"
-          upload "depcheck" "scan-results/depcheck-service-results/dependency-check-report.json"
-          upload "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
-          upload "checkov"  "scan-results/checkov-results/checkov-results.json"
-        continue-on-error: true
+      - name: List downloaded scan results
+        run: find scan-results/ -name "*.json" | sort || echo "No scan results found"
 
       - name: Upload raw scan results to SecureFlow
         if: env.API_SERVER_URL != ''
@@ -811,12 +759,12 @@ jobs:
             rm -f /tmp/payload.json
           }
 
-          upload "semgrep"  "scan-results/semgrep-service-results/semgrep-results.json"
+          upload "semgrep" "scan-results/semgrep-service-results/semgrep-results.json"
           upload "sonarqube" "scan-results/sonarqube-service-results/sonarqube-results.json"
-          upload "trivy"    "scan-results/trivy-service-results/trivy-results.json"
+          upload "trivy" "scan-results/trivy-service-results/trivy-results.json"
           upload "depcheck" "scan-results/depcheck-service-results/dependency-check-report.json"
-          upload "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
-          upload "checkov"  "scan-results/checkov-results/checkov-results.json"
+          upload "tfsec" "scan-results/tfsec-results/tfsec-results.json"
+          upload "checkov" "scan-results/checkov-results/checkov-results.json"
         continue-on-error: true
 
       - name: Wait for SecureFlow scan parsing
@@ -829,7 +777,7 @@ jobs:
           if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
             HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
-          # Refresh the existing backend dashboard report after raw CI uploads complete.
+
           for i in $(seq 1 30); do
             WAIT=$(curl -s "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
@@ -854,14 +802,14 @@ jobs:
           if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
             HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
-          # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
+
           curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/analyze" \
             -H "Content-Type: application/json" \
             -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
             --max-time 120 || true
         continue-on-error: true
 
-      - name: CI LLM Gate 寃곌낵瑜?諛깆뿏?쒖뿉 ?꾩넚
+      - name: Upload CI LLM gate results to SecureFlow
         if: env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -871,22 +819,23 @@ jobs:
           if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
             HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
+
           for stage in iac sast sca; do
             FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
             if [ -f "$FILE" ]; then
-              echo "LLM gate ?꾩넚: $stage"
+              echo "Uploading gate: $stage"
               jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
-                '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
+                '{stage:$stage, commit_hash:$commit, gate_result:$gate[0]}' \
               | curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
                 -H "Content-Type: application/json" \
-                -d @- || echo "  ?꾩넚 ?ㅽ뙣 (臾댁떆)"
+                -d @- || echo "  send failed (ignored)"
             else
-              echo "  $FILE ?놁쓬 (?ㅽ궢)"
+              echo "  Missing gate file: $FILE"
             fi
           done
         continue-on-error: true
 
-      - name: 媛쒕퀎 痍⑥빟??LLM ?먯젙 (?쒓뎅??
+      - name: Run individual vulnerability LLM judgments
         if: env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -894,16 +843,15 @@ jobs:
           SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
         run: |
           pip install -q httpx 2>/dev/null
-          python scripts/ci/run_llm_judgments.py || echo "媛쒕퀎 ?먯젙 ?ㅽ뙣 (臾댁떆)"
+          python scripts/ci/run_llm_judgments.py || echo "Judgment run failed (ignored)"
         continue-on-error: true
 
-      - name: API_SERVER_URL 誘몄꽕???덈궡
+      - name: Explain missing API_SERVER_URL
         if: env.API_SERVER_URL == ''
         run: |
-          echo "?좑툘 API_SERVER_URL secret???ㅼ젙?섏? ?딆븯?듬땲??"
-          echo "  SecureFlow 諛깆뿏??諛고룷 ??GitHub Secrets??API_SERVER_URL??異붽??섎㈃"
-          echo "  ?ㅼ틪 寃곌낵媛 ??쒕낫?쒖뿉 ?먮룞 諛섏쁺?⑸땲??"
-
+          echo "API_SERVER_URL secret is not configured."
+          echo "Add API_SERVER_URL to GitHub Secrets to upload results to the SecureFlow backend."
+          echo "Without it, scan results stay in GitHub artifacts only."
   chain-cd-seo:
     needs:
       - ci-release-gate
