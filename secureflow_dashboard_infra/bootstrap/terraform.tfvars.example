@@ -1,0 +1,12 @@
+project_name = "secureflow-dashboard"
+environment  = "shared"
+managed_by   = "admin-dev"
+aws_region   = "ap-northeast-2"
+
+# Optional explicit names. Leave null to auto-generate a unique state bucket name.
+# state_bucket_name = "secureflow-dashboard-shared-tfstate-123456"
+# lock_table_name   = "secureflow-dashboard-shared-tflock"
+
+default_tags = {
+  Owner = "admin-dev"
+}
