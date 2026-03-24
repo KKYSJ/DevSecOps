@@ -35,6 +35,11 @@ on:
         required: false
         default: ""
         type: string
+      existing_image_uri:
+        required: false
+        default: ""
+        type: string
+        description: "Skip build and use this image URI directly"
     outputs:
       image_uri:
         description: "Built container image URI"
@@ -55,7 +60,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     outputs:
-      image_uri: ${{ steps.build-image.outputs.image_uri }}
+      image_uri: ${{ steps.build-image.outputs.image_uri || steps.existing-image.outputs.image_uri }}
       service_url: ${{ steps.discover-service-url.outputs.service_url }}
 
     steps:
@@ -83,15 +88,21 @@ jobs:
 
       - name: Build and push image
         id: build-image
+        if: inputs.existing_image_uri == ''
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           SHORT_SHA="${GITHUB_SHA::12}"
-          IMAGE_TAG="${SHORT_SHA}-${GITHUB_RUN_ATTEMPT}"
+          IMAGE_TAG="${SHORT_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           IMAGE_URI="${REGISTRY}/${{ inputs.ecr_repository }}:${IMAGE_TAG}"
           docker build -t "${IMAGE_URI}" "${{ inputs.build_context }}"
           docker push "${IMAGE_URI}"
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+      - name: Use existing image
+        id: existing-image
+        if: inputs.existing_image_uri != ''
+        run: echo "image_uri=${{ inputs.existing_image_uri }}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch current ECS task definition
         run: |
@@ -107,7 +118,7 @@ jobs:
         with:
           task-definition: task-definition-clean.json
           container-name: ${{ inputs.ecs_container_name }}
-          image: ${{ steps.build-image.outputs.image_uri }}
+          image: ${{ steps.build-image.outputs.image_uri || steps.existing-image.outputs.image_uri }}
 
       - name: Deploy to Amazon ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2

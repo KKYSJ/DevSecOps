@@ -959,6 +959,7 @@ jobs:
   deploy-production-fastapi:
     needs:
       - resolve-context
+      - deploy-staging-fastapi
       - isms-preprod-gate
     if: |
       always() &&
@@ -975,11 +976,13 @@ jobs:
       ecs_container_name: api-server-fastapi
       build_context: app/api-server-fastapi
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-fastapi.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-node:
     needs:
       - resolve-context
+      - deploy-staging-node
       - isms-preprod-gate
     if: |
       always() &&
@@ -996,11 +999,13 @@ jobs:
       ecs_container_name: api-server-node
       build_context: app/api-server-node
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-node.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-spring:
     needs:
       - resolve-context
+      - deploy-staging-spring
       - isms-preprod-gate
     if: |
       always() &&
@@ -1017,11 +1022,13 @@ jobs:
       ecs_container_name: api-server-spring
       build_context: app/api-server-spring
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-spring.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   deploy-production-frontend:
     needs:
       - resolve-context
+      - deploy-staging-frontend
       - isms-preprod-gate
     if: |
       always() &&
@@ -1038,6 +1045,7 @@ jobs:
       ecs_container_name: frontend
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
+      existing_image_uri: ${{ needs.deploy-staging-frontend.outputs.image_uri }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
 
   # 전체 stage 종합 판정 (CI+CD 모든 gate 수집 → Gemini 종합 분석)
@@ -1123,27 +1131,21 @@ jobs:
 
           print(f'종합 판정 대상: {len(stage_details)}개 stage, 최종: {final_decision}')
 
-          prompt = '''너는 DevSecOps 보안 파이프라인의 최종 판정을 내리는 전문가다.
-          아래는 각 보안 검사 단계의 분석 결과이다. 이를 종합하여 최종 판정을 한국어로 작성하라.
-
-          ''' + chr(10).join(stage_details) + f'''
-
-          ★★★ 최종 게이트 판정 결과: {final_decision} ★★★
-
-          위 최종 판정 결과를 반드시 반영하여 작성하라.
-          - ALLOW인 경우: 배포가 허용된 이유, 발견된 취약점이 임계값 이내인 점, 전반적 보안 상태가 양호한 점을 서술
-          - BLOCK인 경우: 배포가 차단된 이유, 어떤 단계에서 임계값을 초과했는지, 즉시 조치 항목을 서술
-
-          다음을 포함하여 작성하라:
-          1. 최종 판정 결과 (ALLOW 또는 BLOCK)와 그 이유
-          2. 각 단계별 주요 발견사항 요약
-          3. 전체적인 보안 상태 평가
-
-          ALLOW인 경우 긍정적 톤으로 작성하라. "배포가 승인되었습니다", "보안 기준을 충족합니다" 등.
-
-          아래 JSON 형식으로만 응답하라:
-          {{\"verdict\": \"5~8문장의 상세한 종합 판정 (한국어)\"}}
-          '''
+          prompt = (
+              '너는 DevSecOps 보안 파이프라인의 최종 판정을 내리는 전문가다.\n'
+              '아래는 각 보안 검사 단계의 분석 결과이다. 이를 종합하여 최종 판정을 한국어로 작성하라.\n\n'
+              + chr(10).join(stage_details) + '\n\n'
+              + '★★★ 최종 게이트 판정 결과: ' + final_decision + ' ★★★\n\n'
+              + '위 최종 판정 결과를 반드시 반영하여 작성하라.\n'
+              + 'ALLOW인 경우: 배포가 승인된 이유, 발견된 취약점이 임계값 이내인 점, 보안 상태가 양호한 점을 긍정적 톤으로 서술하라.\n'
+              + 'BLOCK인 경우: 배포가 차단된 이유, 어떤 단계에서 임계값을 초과했는지, 즉시 조치 항목을 서술하라.\n\n'
+              + '다음을 포함하여 작성하라:\n'
+              + '1. 최종 판정 결과와 그 이유\n'
+              + '2. 각 단계별 주요 발견사항 요약\n'
+              + '3. 전체적인 보안 상태 평가\n\n'
+              + '아래 JSON 형식으로만 응답하라:\n'
+              + '{"verdict": "5~8문장의 상세한 종합 판정 (한국어)"}'
+          )
 
           from engine.llm.client import call_llm
           resp = call_llm(prompt)
