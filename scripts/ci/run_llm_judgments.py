@@ -201,9 +201,9 @@ def main():
                 "reasons": []
             }
 
-    # 종합 판정 생성 — 전체 stage를 종합 분석
-    overall_verdict = ""
-    if summaries:
+    # 종합 판정은 CD의 overall-verdict job에서 전체 stage 기반으로 생성
+    # 개별 run_llm_judgments에서는 생성하지 않음
+    if False and summaries:
         # 각 stage별 요약 + gate decision 수집
         stage_details = []
         for stage, analyzed in all_judgments.items():
