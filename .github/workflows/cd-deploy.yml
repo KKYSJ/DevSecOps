@@ -294,7 +294,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload image scan results to SecureFlow
-        if: env.API_SERVER_URL != ''
+        if: ${{ false }}
         run: |
           API_BASE_URL="${API_SERVER_URL%/}"
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
@@ -337,6 +337,53 @@ jobs:
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패"
             fi
+          done
+
+      - name: Upload image scan results to SecureFlow
+        if: env.API_SERVER_URL != ''
+        run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          upload_image_scan() {
+            local tool="$1"
+            local service="$2"
+            local file="$3"
+
+            if [ ! -s "$file" ]; then
+              echo "Skip upload: ${tool} ${service} (file missing)"
+              return
+            fi
+
+            echo "Uploading ${tool} ${service}..."
+            if ! jq -n --arg tool "$tool" \
+                  --arg commit "$COMMIT_SHA" \
+                  --arg project "secureflow" \
+                  --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                  --slurpfile raw "$file" \
+                  '{tool:$tool, raw_result:$raw[0], commit_hash:$commit, project_name:$project, branch:$branch}' \
+                  > /tmp/payload.json 2>/dev/null; then
+              echo "Skip upload: failed to build payload for ${tool} ${service}"
+              return
+            fi
+
+            curl -s -o /dev/null -w "  -> HTTP %{http_code}\n" \
+              -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+              -H "Content-Type: application/json" \
+              -d @/tmp/payload.json || echo "  send failed"
+            rm -f /tmp/payload.json
+          }
+
+          for service in fastapi node spring; do
+            upload_image_scan "trivy-image" "$service" "trivy-image-${service}.json"
+          done
+
+          for service in fastapi node spring; do
+            upload_image_scan "grype" "$service" "grype-${service}.json"
           done
 
       - name: Upload artifacts

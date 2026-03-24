@@ -720,6 +720,7 @@ jobs:
 
       - name: SecureFlow 백엔드에 결과 업로드
         if: env.API_SERVER_URL != ''
+        if: ${{ false }}
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
@@ -760,6 +761,55 @@ jobs:
             else
               echo "건너뜀: $tool (파일 없음)"
             fi
+          }
+
+          upload "semgrep"  "scan-results/semgrep-service-results/semgrep-results.json"
+          upload "sonarqube" "scan-results/sonarqube-service-results/sonarqube-results.json"
+          upload "trivy"    "scan-results/trivy-service-results/trivy-results.json"
+          upload "depcheck" "scan-results/depcheck-service-results/dependency-check-report.json"
+          upload "tfsec"    "scan-results/tfsec-results/tfsec-results.json"
+          upload "checkov"  "scan-results/checkov-results/checkov-results.json"
+        continue-on-error: true
+
+      - name: Upload raw scan results to SecureFlow
+        if: env.API_SERVER_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          upload() {
+            local tool="$1"
+            local file="$2"
+
+            if [ ! -f "$file" ]; then
+              echo "Skip upload: $tool (file missing)"
+              return
+            fi
+
+            echo "Uploading $tool..."
+            if ! jq -n --arg tool "$tool" \
+                  --arg commit "${COMMIT_SHA}" \
+                  --arg project "secureflow" \
+                  --arg branch "${GITHUB_REF_NAME}" \
+                  --slurpfile raw "$file" \
+                  '{tool:$tool, raw_result:$raw[0], commit_hash:$commit, project_name:$project, branch:$branch}' \
+                  > /tmp/payload.json 2>/dev/null; then
+              echo "Skip upload: failed to build payload for $tool"
+              return
+            fi
+
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+              -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+              -H "Content-Type: application/json" \
+              -d @/tmp/payload.json \
+              --max-time 60 || echo "000")
+            echo "  -> HTTP $HTTP"
+            rm -f /tmp/payload.json
           }
 
           upload "semgrep"  "scan-results/semgrep-service-results/semgrep-results.json"
