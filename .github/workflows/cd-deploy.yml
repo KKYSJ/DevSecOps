@@ -986,7 +986,7 @@ jobs:
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
-      BACKEND_URL: ${{ vars.BACKEND_URL }}
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
       PYTHONPATH: ${{ github.workspace }}
