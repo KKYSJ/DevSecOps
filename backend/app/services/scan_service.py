@@ -21,6 +21,7 @@ from engine.normalizer.parsers import (
     zap       as _p_zap,
 )
 from backend.app.services.parsers.nuclei_parser import NucleiParser
+from backend.app.services.parsers.grype_parser import GrypeParser
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ PARSERS = {
     "checkov":   _Adapter(_p_checkov),
     "zap":       _Adapter(_p_zap),
     "nuclei":    NucleiParser(),
+    "trivy-image": _Adapter(_p_trivy),
+    "grype": GrypeParser(),
 }
 
 # ── 스코어링 상수 ─────────────────────────────────────────────────────────────
@@ -174,7 +177,20 @@ def process_tool_result(tool: str, raw: dict) -> dict:
     parser = PARSERS.get(tool)
     if not parser:
         raise ValueError(f"지원하지 않는 도구: {tool}. 지원 목록: {list(PARSERS.keys())}")
-    return parser.parse(raw)
+    result = parser.parse(raw)
+    # trivy-image는 tool/category 오버라이드
+    if tool == "trivy-image":
+        result["tool"] = "trivy-image"
+        result["category"] = "IMAGE"
+        for f in result.get("findings", []):
+            f["tool"] = "trivy-image"
+            f["category"] = "IMAGE"
+            # file_path를 패키지명으로 교체
+            pkg = f.get("package_name") or ""
+            ver = f.get("package_version") or ""
+            if pkg:
+                f["file_path"] = f"{pkg}@{ver}" if ver else pkg
+    return result
 
 
 def match_findings(tool_results: list[dict]) -> list[dict]:

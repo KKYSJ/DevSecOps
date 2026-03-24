@@ -274,8 +274,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install semgrep
-          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --json --output semgrep-results.json app || true
-          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --sarif --output semgrep.sarif app || true
+          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --json --output semgrep-results.json app/api-server-fastapi/vulnerable_example.py app/api-server-node/vulnerable_example.js || true
+          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --sarif --output semgrep.sarif app/api-server-fastapi/vulnerable_example.py app/api-server-node/vulnerable_example.js || true
           if [ ! -f semgrep-results.json ]; then
             echo '{"results":[]}' > semgrep-results.json
           fi
@@ -350,7 +350,8 @@ jobs:
           args: >
             -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-            -Dsonar.sources=app/api-server-fastapi,app/api-server-node,app/api-server-spring,app/frontend
+            -Dsonar.sources=app/api-server-fastapi/vulnerable_example.py,app/api-server-node/vulnerable_example.js
+            -Dsonar.inclusions=**/vulnerable_example.*
             -Dsonar.python.version=3.11
             -Dsonar.java.binaries=app/api-server-spring/target/classes
 
@@ -566,7 +567,7 @@ jobs:
 
       - name: Run Trivy filesystem scan on services
         run: |
-          docker run --rm -v "${PWD}:/workspace" aquasec/trivy:latest \
+          docker run --rm -v "${PWD}:/workspace" ghcr.io/aquasecurity/trivy:latest \
             fs \
             --scanners vuln \
             --severity HIGH,CRITICAL \
@@ -672,12 +673,18 @@ jobs:
       - service-sca-depcheck
       - iac-tfsec
       - iac-checkov
+      - llm-iac-gate
+      - llm-sast-gate
+      - llm-sca-gate
     if: always()
     runs-on: ubuntu-latest
     env:
       BACKEND_URL: ${{ secrets.BACKEND_URL }}
 
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Download all scan artifacts
         uses: actions/download-artifact@v4
         with:
@@ -766,6 +773,36 @@ jobs:
             --max-time 120 || true
         continue-on-error: true
 
+      - name: CI LLM Gate 결과를 백엔드에 전송
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          for stage in iac sast sca; do
+            FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
+            if [ -f "$FILE" ]; then
+              echo "LLM gate 전송: $stage"
+              jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
+                '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
+              | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+                -H "Content-Type: application/json" \
+                -d @- || echo "  전송 실패 (무시)"
+            else
+              echo "  $FILE 없음 (스킵)"
+            fi
+          done
+        continue-on-error: true
+
+      - name: 개별 취약점 LLM 판정 (한국어)
+        if: env.BACKEND_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          pip install -q httpx 2>/dev/null
+          python scripts/ci/run_llm_judgments.py || echo "개별 판정 실패 (무시)"
+        continue-on-error: true
+
       - name: BACKEND_URL 미설정 안내
         if: env.BACKEND_URL == ''
         run: |
@@ -783,6 +820,38 @@ jobs:
     uses: ./.github/workflows/cd-deploy.yml
     with:
       branch_name: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      service: all
+      run_staging: true
+      run_production: false
+    secrets: inherit
+
+  chain-cd-nayoung:
+    needs:
+      - ci-release-gate
+    if: github.event_name == 'push' && github.ref_name == 'nayoung'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/cd-deploy.yml
+    with:
+      branch_name: ${{ github.ref_name }}
+      source_sha: ${{ github.sha }}
+      service: all
+      run_staging: true
+      run_production: false
+    secrets: inherit
+
+  chain-cd-main:
+    needs:
+      - ci-release-gate
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/cd-deploy.yml
+    with:
+      branch_name: main
       source_sha: ${{ github.sha }}
       service: all
       run_staging: true

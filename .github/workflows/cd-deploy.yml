@@ -21,10 +21,7 @@ on:
         required: false
         default: false
         type: boolean
-  workflow_run:
-    workflows: ["CI Security Scan"]
-    types:
-      - completed
+  # workflow_run 제거 — chain-cd-main/nayoung/seo에서 직접 호출
   workflow_dispatch:
     inputs:
       environment:
@@ -216,6 +213,239 @@ jobs:
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
       concurrency_suffix: staging-${{ needs.resolve-context.outputs.branch_name }}
 
+  # ── 이미지 스캔 (Trivy) ─────────────────────────────────
+  image-scan:
+    needs:
+      - resolve-context
+      - deploy-staging-fastapi
+      - deploy-staging-node
+      - deploy-staging-spring
+      - deploy-staging-frontend
+    if: always() && needs.resolve-context.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ap-northeast-2
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Scan FastAPI image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest"
+          format: json
+          output: trivy-image-fastapi.json
+          severity: CRITICAL,HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Scan Node image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest"
+          format: json
+          output: trivy-image-node.json
+          severity: CRITICAL,HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Scan Spring image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest"
+          format: json
+          output: trivy-image-spring.json
+          severity: CRITICAL,HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Scan FastAPI image with Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json > grype-fastapi.json || true
+        continue-on-error: true
+
+      - name: Scan Node image with Grype
+        run: |
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json > grype-node.json || true
+        continue-on-error: true
+
+      - name: Scan Spring image with Grype
+        run: |
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json > grype-spring.json || true
+        continue-on-error: true
+
+      - name: Upload image scan results to SecureFlow
+        if: env.BACKEND_URL != ''
+        run: |
+          COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
+          # Trivy 이미지 스캔 업로드
+          for service in fastapi node spring; do
+            FILE="trivy-image-${service}.json"
+            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
+              echo "이미지 스캔 업로드: trivy-image ${service}"
+              jq -n --arg tool "trivy-image" \
+                    --arg commit "$COMMIT_SHA" \
+                    --arg project "secureflow" \
+                    --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                    --slurpfile raw "$FILE" \
+                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
+              | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -H "Content-Type: application/json" \
+                -d @- || echo "  전송 실패"
+            fi
+          done
+          # Grype 이미지 스캔 업로드
+          for service in fastapi node spring; do
+            FILE="grype-${service}.json"
+            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
+              echo "이미지 스캔 업로드: grype ${service}"
+              jq -n --arg tool "grype" \
+                    --arg commit "$COMMIT_SHA" \
+                    --arg project "secureflow" \
+                    --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                    --slurpfile raw "$FILE" \
+                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
+              | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -H "Content-Type: application/json" \
+                -d @- || echo "  전송 실패"
+            fi
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-scan-results
+          path: |
+            trivy-image-*.json
+            grype-*.json
+        continue-on-error: true
+
+  # ── 이미지 스캔 LLM Gate ─────────────────────────────
+  llm-image-gate:
+    needs:
+      - resolve-context
+      - image-scan
+    if: always() && needs.resolve-context.outputs.proceed == 'true'
+    outputs:
+      gate_decision: ${{ steps.gate-check.outputs.decision }}
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download image scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: image-scan-results
+          path: artifacts/image/
+        continue-on-error: true
+
+      - name: Run Image LLM gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          pip install -q httpx 2>/dev/null
+          # trivy 결과를 합치기
+          COMBINED="artifacts/image/trivy-image-combined.json"
+          python3 -c "
+          import json, glob
+          # Trivy 결과 합치기
+          trivy_vulns = []
+          for f in glob.glob('artifacts/image/trivy-image-*.json'):
+              data = json.load(open(f))
+              for r in data.get('Results', []):
+                  for v in r.get('Vulnerabilities', []):
+                      trivy_vulns.append({
+                          'VulnerabilityID': v.get('VulnerabilityID', ''),
+                          'PkgName': v.get('PkgName', ''),
+                          'InstalledVersion': v.get('InstalledVersion', ''),
+                          'FixedVersion': v.get('FixedVersion', ''),
+                          'Severity': v.get('Severity', 'MEDIUM'),
+                          'Title': v.get('Title', ''),
+                          'Description': (v.get('Description') or '')[:200],
+                      })
+          json.dump({'Results': [{'Vulnerabilities': trivy_vulns}]}, open('artifacts/image/trivy-combined.json', 'w'))
+          print(f'Trivy image: {len(trivy_vulns)} vulnerabilities')
+
+          # Grype 결과 합치기
+          grype_matches = []
+          for f in glob.glob('artifacts/image/grype-*.json'):
+              data = json.load(open(f))
+              grype_matches.extend(data.get('matches', []))
+          json.dump({'matches': grype_matches}, open('artifacts/image/grype-combined.json', 'w'))
+          print(f'Grype image: {len(grype_matches)} vulnerabilities')
+          "
+          python scripts/ci/run_llm_gate.py \
+            --stage image \
+            --tool-input "trivy-image=artifacts/image/trivy-combined.json" \
+            --tool-input "grype=artifacts/image/grype-combined.json" \
+            --output artifacts/image/image-llm-gate.json || echo "Image LLM gate failed (ignored)"
+
+      - name: Upload image gate result to SecureFlow
+        if: always()
+        env:
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
+            exit 0
+          fi
+          jq -n --arg stage "image" --arg commit "$COMMIT_SHA" \
+            --slurpfile raw artifacts/image/image-llm-gate.json \
+            '{stage:$stage, commit_hash:$commit, gate_result:$raw[0]}' \
+          | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+            -H "Content-Type: application/json" -d @- || true
+
+      - name: Image 개별 취약점 LLM 판정
+        if: always()
+        env:
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+          PYTHONPATH: ${{ github.workspace }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+        run: |
+          mkdir -p scan-results/image-llm-gate
+          cp artifacts/image/image-llm-gate.json scan-results/image-llm-gate/image-llm-gate.json 2>/dev/null || true
+          python scripts/ci/run_llm_judgments.py || echo "Image judgments failed (ignored)"
+        continue-on-error: true
+
+      - name: Upload image gate artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-llm-gate
+          path: artifacts/image/image-llm-gate.json
+          if-no-files-found: ignore
+
+      - name: Check image gate decision
+        id: gate-check
+        if: always()
+        run: |
+          if [ -f artifacts/image/image-llm-gate.json ]; then
+            DECISION=$(jq -r '.decision // "unknown"' artifacts/image/image-llm-gate.json)
+            echo "decision=$DECISION"
+            echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          else
+            echo "decision=unknown" >> $GITHUB_OUTPUT
+          fi
+
   service-dast-zap:
     needs:
       - resolve-context
@@ -223,6 +453,7 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
     if: |
       always() &&
       needs.resolve-context.outputs.proceed == 'true' &&
@@ -231,7 +462,8 @@ jobs:
       needs.deploy-staging-fastapi.result != 'failure' &&
       needs.deploy-staging-node.result != 'failure' &&
       needs.deploy-staging-spring.result != 'failure' &&
-      needs.deploy-staging-frontend.result != 'failure'
+      needs.deploy-staging-frontend.result != 'failure' &&
+      (needs.resolve-context.outputs.branch_name != 'main' || needs.llm-image-gate.outputs.gate_decision != 'fail')
     runs-on: ubuntu-latest
 
     steps:
@@ -306,6 +538,7 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
     if: |
       always() &&
       needs.resolve-context.outputs.proceed == 'true' &&
@@ -314,7 +547,8 @@ jobs:
       needs.deploy-staging-fastapi.result != 'failure' &&
       needs.deploy-staging-node.result != 'failure' &&
       needs.deploy-staging-spring.result != 'failure' &&
-      needs.deploy-staging-frontend.result != 'failure'
+      needs.deploy-staging-frontend.result != 'failure' &&
+      (needs.resolve-context.outputs.branch_name != 'main' || needs.llm-image-gate.outputs.gate_decision != 'fail')
     runs-on: ubuntu-latest
 
     steps:
@@ -357,16 +591,59 @@ jobs:
       - name: Run Nuclei web scan
         if: steps.target.outputs.enabled == 'true'
         run: |
-          docker run --rm -v "${PWD}:/workspace" projectdiscovery/nuclei:latest \
-            -u "${{ steps.target.outputs.target_url }}" \
-            -severity high,critical \
+          # 프론트엔드 + API 서버 + 취약 엔드포인트 스캔
+          TARGET="${{ steps.target.outputs.target_url }}"
+          cat > /tmp/targets.txt << URLS
+          ${TARGET}
+          ${TARGET}/api/v1/health
+          ${TARGET}/docs
+          ${TARGET}/openapi.json
+          ${TARGET}/api/v1/scans
+          ${TARGET}/api/v1/vulns
+          ${TARGET}/api/v1/tools
+          ${TARGET}/api/v1/pipelines
+          ${TARGET}/api/v1/reports
+          ${TARGET}/.env
+          ${TARGET}/.git/config
+          ${TARGET}/debug
+          ${TARGET}/api/status
+          ${TARGET}/redirect
+          URLS
+          sed -i 's/^[[:space:]]*//' /tmp/targets.txt
+          # 1차: 헤더/기술 탐지 (빠름)
+          docker run --rm -v "${PWD}:/workspace" -v "/tmp/targets.txt:/targets.txt" projectdiscovery/nuclei:latest \
+            -l /targets.txt \
+            -severity info,low,medium,high,critical \
+            -tags tech,headers,security,misconfiguration,exposure,default-login,cve,xss,sqli,ssrf,lfi \
+            -rate-limit 50 \
             -json-export /workspace/nuclei-results.json || true
+          # 2차: 추가 HTTP 탐지 (타겟 루트만)
+          docker run --rm -v "${PWD}:/workspace" projectdiscovery/nuclei:latest \
+            -u "${TARGET}" \
+            -t http/misconfiguration/ -t http/technologies/ -t http/exposures/ -t http/vulnerabilities/ \
+            -json-export /workspace/nuclei-results-extra.json || true
+          # 결과 합치기 (JSONL 파일들을 하나로)
+          if [ -f nuclei-results-extra.json ] && [ -s nuclei-results-extra.json ]; then
+            # 둘 다 JSONL이므로 줄 단위로 합치기
+            jq -s 'flatten' nuclei-results.json nuclei-results-extra.json > nuclei-merged.json 2>/dev/null \
+              || cat nuclei-results.json >> /dev/null
+            if [ -f nuclei-merged.json ] && [ -s nuclei-merged.json ]; then
+              mv nuclei-merged.json nuclei-results.json
+            fi
+          fi
 
       - name: Ensure Nuclei report exists
         if: always()
         run: |
           if [ ! -f nuclei-results.json ]; then
-            echo '{"tool_disabled":true,"reason":"missing_nuclei_output","findings":[]}' > nuclei-results.json
+            echo '[]' > nuclei-results.json
+          else
+            # JSONL → JSON 배열 변환 (Nuclei -json-export는 JSONL 형식)
+            if ! jq empty nuclei-results.json 2>/dev/null; then
+              echo "Converting JSONL to JSON array..."
+              jq -s '.' nuclei-results.json > nuclei-results-arr.json && mv nuclei-results-arr.json nuclei-results.json
+            fi
+            echo "Nuclei results: $(jq length nuclei-results.json 2>/dev/null || echo 0) findings"
           fi
 
       - name: Upload Nuclei results
@@ -378,9 +655,16 @@ jobs:
 
   llm-dast-gate:
     needs:
+      - resolve-context
       - service-dast-zap
       - service-dast-nuclei
-    if: always()
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      (
+        needs.service-dast-zap.result == 'success' ||
+        needs.service-dast-nuclei.result == 'success'
+      )
     runs-on: ubuntu-latest
 
     steps:
@@ -515,6 +799,20 @@ jobs:
             --max-time 120 || true
         continue-on-error: true
 
+      - name: DAST 개별 취약점 LLM 판정 (한국어)
+        if: always() && env.BACKEND_URL != ''
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # DAST gate 파일을 run_llm_judgments.py가 찾는 경로에 복사
+          mkdir -p scan-results/dast-llm-gate
+          cp artifacts/dast/dast-llm-gate.json scan-results/dast-llm-gate/dast-llm-gate.json 2>/dev/null || true
+          pip install -q httpx 2>/dev/null
+          python scripts/ci/run_llm_judgments.py || echo "DAST 개별 판정 실패 (무시)"
+        continue-on-error: true
+
   isms-preprod-gate:
     needs:
       - resolve-context
@@ -522,8 +820,24 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
       - llm-dast-gate
-    if: needs.resolve-context.outputs.proceed == 'true'
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (
+        needs.deploy-staging-fastapi.result == 'success' ||
+        needs.deploy-staging-node.result == 'success' ||
+        needs.deploy-staging-spring.result == 'success' ||
+        needs.deploy-staging-frontend.result == 'success'
+      ) &&
+      needs.deploy-staging-fastapi.result != 'failure' &&
+      needs.deploy-staging-node.result != 'failure' &&
+      needs.deploy-staging-spring.result != 'failure' &&
+      needs.deploy-staging-frontend.result != 'failure' &&
+      needs.llm-image-gate.result != 'failure' &&
+      needs.llm-dast-gate.result != 'failure'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -585,6 +899,7 @@ jobs:
           python scripts/ci/run_ismsp_gate.py \
             --environment ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }} \
             --target-url "${{ steps.target.outputs.target_url }}" \
+            --gate-input artifacts/isms/image-llm-gate/image-llm-gate.json \
             --gate-input artifacts/isms/dast-llm-gate/dast-llm-gate.json \
             --output artifacts/isms/ismsp-gate.json
 
@@ -626,6 +941,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'fastapi')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -646,6 +963,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'node')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -666,6 +985,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'spring')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -686,6 +1007,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
+      always() &&
+      needs.isms-preprod-gate.result == 'success' &&
       needs.resolve-context.outputs.run_production == 'true' &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'frontend')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -700,3 +1023,135 @@ jobs:
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
+
+  # 전체 stage 종합 판정 (CI+CD 모든 gate 수집 → Gemini 종합 분석)
+  overall-verdict:
+    needs:
+      - resolve-context
+      - llm-image-gate
+      - llm-dast-gate
+    if: always() && needs.resolve-context.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q httpx 2>/dev/null
+
+      - name: Download all gate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: "*gate*"
+          merge-multiple: false
+
+      - name: Collect gate files and generate overall verdict
+        run: |
+          mkdir -p scan-results/iac-llm-gate scan-results/sast-llm-gate scan-results/sca-llm-gate scan-results/image-llm-gate scan-results/dast-llm-gate
+
+          for stage in iac sast sca image dast; do
+            SRC=$(find artifacts -name "${stage}-llm-gate.json" 2>/dev/null | head -1)
+            if [ -n "$SRC" ]; then
+              cp "$SRC" "scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
+              echo "Found ${stage} gate: $SRC"
+            else
+              echo "Missing ${stage} gate"
+            fi
+          done
+
+          echo "=== Collected gate files ==="
+          find scan-results -name "*.json" -type f
+
+          python3 -c "
+          import json, os, sys, re
+          sys.path.insert(0, '.')
+
+          stages = ['iac', 'sast', 'sca', 'image', 'dast']
+          stage_details = []
+
+          for stage in stages:
+              path = f'scan-results/{stage}-llm-gate/{stage}-llm-gate.json'
+              if not os.path.exists(path):
+                  continue
+              gate = json.load(open(path))
+              decision = gate.get('decision', 'unknown')
+              matching = gate.get('matching', {})
+              matched = len(matching.get('matched_pairs_sample', []))
+              unmatched = len(gate.get('unmatched_findings', []))
+              summary = gate.get('llm_analysis', {}).get('summary', '')
+              stage_details.append(
+                  f'[{stage.upper()}] gate={decision}, 동시탐지={matched}건, 단독탐지={unmatched}건'
+                  + f'\n  요약: {summary[:150]}'
+              )
+
+          if not stage_details:
+              print('No gate files found, skipping verdict')
+              sys.exit(0)
+
+          print(f'종합 판정 대상: {len(stage_details)}개 stage')
+
+          prompt = '''너는 DevSecOps 보안 파이프라인의 최종 판정을 내리는 전문가다.
+          아래는 각 보안 검사 단계의 분석 결과이다. 이를 종합하여 최종 판정을 한국어로 작성하라.
+
+          ''' + chr(10).join(stage_details) + '''
+
+          게이트 차단 조건:
+          - CRITICAL TRUE_POSITIVE >= 1건
+          - total_score >= 100
+          - HIGH TRUE_POSITIVE >= 3건
+
+          다음을 포함하여 작성하라:
+          1. 어떤 단계에서 어떤 이유로 차단(또는 통과)되었는지
+          2. 가장 심각한 취약점이 무엇이고 왜 위험한지
+          3. 즉시 조치가 필요한 항목과 우선순위
+          4. 전체적인 보안 상태 평가
+
+          아래 JSON 형식으로만 응답하라:
+          {\"verdict\": \"5~8문장의 상세한 종합 판정 (한국어)\", \"priority_actions\": [\"우선 조치1\", \"우선 조치2\", \"우선 조치3\"]}
+          '''
+
+          from engine.llm.client import call_llm
+          resp = call_llm(prompt)
+          match = re.search(r'\{[\s\S]+\}', resp)
+          if match:
+              verdict_data = json.loads(match.group(0))
+              print(f'종합 판정 생성 완료')
+              print(f'  verdict: {verdict_data.get(\"verdict\", \"\")[:100]}...')
+          else:
+              verdict_data = {'verdict': '종합 판정 생성 실패', 'priority_actions': []}
+              print('LLM 응답 파싱 실패')
+
+          import urllib.request
+          backend = os.environ.get('BACKEND_URL', '')
+          commit = os.environ.get('COMMIT_SHA', '')
+          payload = json.dumps({
+              'stage': 'overall-verdict',
+              'commit_hash': commit,
+              'gate_result': {
+                  'type': 'overall_verdict',
+                  'summaries': {'_overall': verdict_data},
+              },
+          }).encode('utf-8')
+          req = urllib.request.Request(
+              f'{backend}/api/v1/scans/gate-result',
+              data=payload,
+              headers={'Content-Type': 'application/json'},
+          )
+          try:
+              r = urllib.request.urlopen(req, timeout=30)
+              print(f'EC2 전송 완료: {r.read().decode()}')
+          except Exception as e:
+              print(f'EC2 전송 실패: {e}')
+          "

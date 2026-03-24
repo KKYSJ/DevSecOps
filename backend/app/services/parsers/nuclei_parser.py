@@ -46,7 +46,7 @@ def _parse_record(record: dict[str, Any]) -> dict[str, Any]:
     matched_at = str(record.get("matched-at") or record.get("host") or record.get("url") or "")
     severity = _normalize_severity(info.get("severity") or record.get("severity"))
     title = str(info.get("name") or template_id)
-    description = str(info.get("description") or "")
+    description = str(info.get("description") or title)
     cve_id = _first_value(classification.get("cve-id"))
     cwe_id = _first_value(classification.get("cwe-id"))
     references = info.get("reference") or []
@@ -63,7 +63,7 @@ def _parse_record(record: dict[str, Any]) -> dict[str, Any]:
         "rule_id": template_id,
         "cwe_id": cwe_id,
         "cve_id": cve_id,
-        "file_path": None,
+        "file_path": matched_at or None,
         "line_number": None,
         "url": matched_at or None,
         "http_method": str(record.get("type") or "").upper() or None,
@@ -90,6 +90,8 @@ class NucleiParser:
     """Normalize nuclei JSON output."""
 
     def parse(self, raw: Any) -> dict[str, Any]:
+        if isinstance(raw, dict) and "data" in raw:
+            raw = raw["data"]
         records = raw if isinstance(raw, list) else [raw]
         findings = [_parse_record(record) for record in records if isinstance(record, dict)]
 

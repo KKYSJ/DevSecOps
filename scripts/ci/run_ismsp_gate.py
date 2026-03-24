@@ -31,6 +31,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
     content = path.read_text(encoding="utf-8").strip()
     if not content:
         return {}
@@ -166,7 +168,14 @@ def write_step_summary(output: dict) -> None:
 
 def main() -> int:
     args = parse_args()
-    gate_summaries = [load_json(Path(item)) for item in args.gate_input]
+    missing_gate_inputs: list[str] = []
+    gate_summaries = []
+    for item in args.gate_input:
+        path = Path(item)
+        if not path.exists():
+            missing_gate_inputs.append(str(path))
+            continue
+        gate_summaries.append(load_json(path))
     gate_decisions = [item.get("decision", "review") for item in gate_summaries]
     aws_region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or DEFAULT_REGION
     aws_profile = os.getenv("AWS_PROFILE") or DEFAULT_PROFILE
@@ -200,6 +209,7 @@ def main() -> int:
         "aws_credentials_configured": has_aws_credentials(),
         "checker_status": checker_status,
         "checker_error": checker_error,
+        "missing_gate_inputs": missing_gate_inputs,
         "non_compliant": non_compliant,
         "insufficient_data": insufficient_data,
         "compliance_rate_pct": compliance_rate,
@@ -208,6 +218,9 @@ def main() -> int:
     if "fail" in gate_decisions:
         decision = "fail"
         reasons = ["a prior LLM security gate returned fail"]
+    elif missing_gate_inputs:
+        decision = "review"
+        reasons = [f"required gate input is missing: {', '.join(missing_gate_inputs)}"]
     elif checker_error:
         decision = "review"
         reasons = [checker_error]

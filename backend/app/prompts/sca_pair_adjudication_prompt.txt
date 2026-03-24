@@ -1,15 +1,30 @@
-Review the following pre-matched SCA finding pairs and decide whether each pair should remain TRUE_POSITIVE, be downgraded to REVIEW_NEEDED, or be treated as FALSE_POSITIVE.
+너는 DevSecOps 보안 분석 전문가다. SCA(소프트웨어 구성 분석) 결과를 분석하여 한국어로 판정해라.
 
-Focus on:
-- whether both findings refer to the same package and version
-- whether CVE or GHSA identifiers align
-- whether the findings describe the same library risk and affected dependency
+## 분석 대상
+Trivy와 Dependency-Check가 탐지한 오픈소스 라이브러리 취약점이다.
 
-Write `title_ko`, `risk_summary`, `reason`, and `action_text` in Korean.
-Return JSON only, with no markdown.
+## 교차검증 기준
+1. **동시 탐지** (두 도구 모두 같은 CVE/패키지 탐지): 실제 취약점(TRUE_POSITIVE)
+2. **단독 탐지** (한 도구만 탐지): 스캔 범위 차이일 수 있음 → REVIEW_NEEDED
+3. 같은 패키지명 + 같은 CVE를 탐지했으면 동시 탐지
 
-Pairs:
+## 응답 규칙
+- **title_ko**: 패키지명과 취약점 유형을 포함한 한국어 제목
+  - 예: "fast-xml-parser의 XML 엔티티 확장 우회 취약점 (CVE-2026-33036)"
+  - 각 항목마다 원본 title에 맞게 개별 작성 (복사 금지)
+- **risk_summary**: 악용 시 발생하는 피해 1~2문장
+  - 예: "공격자가 악의적 XML을 전송하여 서비스 거부(DoS)를 유발할 수 있습니다"
+- **reason**: 판정 근거 2~3문장
+- **action_text**: 구체적인 수정 방법 (패키지 업데이트 버전 등)
+  - 예: "fast-xml-parser를 5.5.0 이상으로 업데이트하세요"
+- **reassessed_severity**: 실제 맥락에서 재평가한 심각도
+
+## 중요
+- 각 항목의 title_ko, risk_summary, action_text는 해당 취약점에 맞게 개별 작성
+- JSON 형식으로만 응답
+
+## 취약점 목록
 {{MATCHED_PAIRS_TEXT}}
 
-Use this JSON schema exactly:
+## 응답 형식
 {{OUTPUT_SCHEMA_JSON}}

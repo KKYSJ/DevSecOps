@@ -15,7 +15,7 @@ router = APIRouter()
 
 _TOOL_CATEGORY = {
     "sonarqube": "SAST", "semgrep": "SAST",
-    "trivy": "SCA",      "depcheck": "SCA",
+    "trivy": "SCA",      "depcheck": "SCA",      "trivy-image": "IMAGE",      "grype": "IMAGE",
     "tfsec": "IaC",      "checkov": "IaC",
     "zap": "DAST",       "nuclei": "DAST",
 }
@@ -287,49 +287,14 @@ def trigger_analysis(body: AnalyzeRequest = None, db: Session = Depends(get_db))
             detail="분석할 스캔 결과가 없습니다. 먼저 POST /api/v1/scans 로 스캔 결과를 제출하세요.",
         )
 
-    # 새 카테고리 매칭 + Gemini LLM 교차 검증
+    # 교차 매칭 + 룰 기반 판정 (LLM은 CI에서 처리, 여기서는 호출 안 함)
     new_scored_pairs: list[dict] = []
     if latest_by_tool:
         tool_results = list(latest_by_tool.values())
         matched_pairs = scan_service.match_findings(tool_results)
 
-        try:
-            from engine.llm.prompts import build_cross_validation_prompt, parse_llm_response
-            from engine.llm.client import call_llm
-
-            analyzed_pairs = list(matched_pairs)
-            categories = list(dict.fromkeys(p["category"] for p in matched_pairs))
-
-            BATCH_SIZE = 8  # Gemini가 처리 가능한 최대 쌍 수
-
-            for category in categories:
-                cat_indices = [i for i, p in enumerate(matched_pairs) if p["category"] == category]
-                cat_pairs = [matched_pairs[i] for i in cat_indices]
-
-                # 배치 단위로 LLM 호출
-                for batch_start in range(0, len(cat_pairs), BATCH_SIZE):
-                    batch_pairs = cat_pairs[batch_start:batch_start + BATCH_SIZE]
-                    batch_indices = cat_indices[batch_start:batch_start + BATCH_SIZE]
-
-                    try:
-                        prompt = build_cross_validation_prompt(category, batch_pairs)
-                        response = call_llm(prompt)
-                        batch_analyzed = parse_llm_response(response, batch_pairs)
-
-                        for list_idx, analyzed_pair in zip(batch_indices, batch_analyzed):
-                            if analyzed_pair.get("confidence_level"):
-                                analyzed_pair["confidence"] = analyzed_pair["confidence_level"]
-                            analyzed_pairs[list_idx] = analyzed_pair
-                    except Exception:
-                        import logging
-                        logging.getLogger(__name__).warning("LLM 배치 호출 실패, 규칙 기반 fallback 사용")
-                        from engine.llm.prompts import _rule_based_fallback
-                        batch_fallback = _rule_based_fallback(batch_pairs)
-                        for list_idx, fb_pair in zip(batch_indices, batch_fallback):
-                            analyzed_pairs[list_idx] = fb_pair
-
-        except Exception:
-            analyzed_pairs = scan_service.analyze_with_llm(matched_pairs)
+        from engine.llm.prompts import _rule_based_fallback
+        analyzed_pairs = _rule_based_fallback(matched_pairs)
 
         new_scored_pairs = scan_service.score_findings(analyzed_pairs)
 
@@ -392,3 +357,30 @@ def trigger_analysis(body: AnalyzeRequest = None, db: Session = Depends(get_db))
     db.commit()
 
     return dashboard
+
+
+# ── CI LLM Gate 결과 수신 ──────────────────────────────────────────────
+
+class GateResultRequest(BaseModel):
+    stage: str  # sast | sca | iac | dast
+    commit_hash: str
+    gate_result: dict  # run_llm_gate.py의 전체 JSON 출력
+
+@router.post("/gate-result")
+def receive_gate_result(body: GateResultRequest, db: Session = Depends(get_db)):
+    """CI의 run_llm_gate.py 결과를 저장합니다."""
+    from backend.app.models.tool_result import ToolResult
+
+    record = ToolResult(
+        name=f"llm-gate-{body.stage}",
+        status="ok",
+        data={
+            "stage": body.stage,
+            "commit_hash": body.commit_hash,
+            **body.gate_result,
+        },
+    )
+    db.add(record)
+    db.commit()
+
+    return {"status": "ok", "stage": body.stage, "id": record.id}

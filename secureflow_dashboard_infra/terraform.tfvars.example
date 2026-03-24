@@ -1,0 +1,36 @@
+project_name = "secureflow-dashboard"
+environment  = "dev"
+managed_by   = "admin-dev"
+aws_region   = "ap-northeast-2"
+vpc_cidr     = "10.50.0.0/16"
+
+frontend_image_tag = "latest"
+backend_image_tag  = "latest"
+worker_image_tag   = "latest"
+
+frontend_desired_count = 1
+backend_desired_count  = 1
+worker_desired_count   = 1
+
+enable_autoscaling = false
+
+db_instance_class          = "db.t4g.micro"
+db_username                = "admin_dev"
+db_backup_retention_period = 7
+db_multi_az                = false
+
+enable_cloudfront_https = true
+acm_certificate_arn     = null
+actions_upload_bypass_key = "replace-with-a-long-random-upload-key"
+
+alarm_email = "security@example.com"
+
+# Map these from your GitHub repository variables.
+gemini_model       = "gemini-2.5-flash"
+sonar_host_url     = "https://sonar.example.com"
+sonar_organization = "your-sonar-org"
+sonar_project_key  = "your-sonar-project-key"
+
+tags = {
+  Owner = "admin-dev"
+}

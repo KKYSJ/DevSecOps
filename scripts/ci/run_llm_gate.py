@@ -21,6 +21,7 @@ from backend.app.services.parsers.sonarqube_parser import SonarqubeParser
 from backend.app.services.parsers.tfsec_parser import TfsecParser
 from backend.app.services.parsers.trivy_parser import TrivyParser
 from backend.app.services.parsers.zap_parser import ZapParser
+from backend.app.services.parsers.grype_parser import GrypeParser
 
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
@@ -29,24 +30,28 @@ GATE_PROMPT_FILES = {
     "sast": Path("backend/app/prompts/sast_gate_prompt.txt"),
     "sca": Path("backend/app/prompts/sca_gate_prompt.txt"),
     "dast": Path("backend/app/prompts/dast_gate_prompt.txt"),
+    "image": Path("backend/app/prompts/sca_gate_prompt.txt"),  # SCA 프롬프트 재사용
 }
 MATCH_PROMPT_FILES = {
     "iac": Path("backend/app/prompts/iac_match_adjudication_prompt.txt"),
     "sast": Path("backend/app/prompts/sast_match_adjudication_prompt.txt"),
     "sca": Path("backend/app/prompts/sca_match_adjudication_prompt.txt"),
     "dast": Path("backend/app/prompts/dast_match_adjudication_prompt.txt"),
+    "image": Path("backend/app/prompts/sca_match_adjudication_prompt.txt"),  # SCA 재사용
 }
 STAGE_CATEGORY = {
     "iac": "IaC",
     "sast": "SAST",
     "sca": "SCA",
     "dast": "DAST",
+    "image": "IMAGE",
 }
 DEFAULT_THRESHOLDS = {
     "iac": {"critical": 0, "high": 2, "medium_review": 10},
     "sast": {"critical": 0, "high": 3, "medium_review": 15},
     "sca": {"critical": 0, "high": 5, "medium_review": 20},
     "dast": {"critical": 0, "high": 0, "medium_review": 5},
+    "image": {"critical": 0, "high": 3, "medium_review": 10},
 }
 SEVERITY_ALIASES = {
     "blocker": "critical",
@@ -67,6 +72,7 @@ MATCH_THRESHOLDS = {
     "sast": 0.78,
     "sca": 0.75,
     "dast": 0.80,
+    "image": 0.75,
 }
 MAX_LLM_FINDINGS_PER_TOOL = 15
 MAX_LLM_MATCH_CANDIDATES = 20
@@ -109,6 +115,8 @@ TOOL_PARSERS = {
     "trivy": TrivyParser(),
     "zap": ZapParser(),
     "nuclei": NucleiParser(),
+    "trivy-image": TrivyParser(),
+    "grype": GrypeParser(),
 }
 
 
@@ -126,6 +134,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_json(path: Path) -> Any:
+    if not path.exists():
+        return {}
     content = path.read_text(encoding="utf-8-sig").strip()
     if not content:
         return {}
@@ -944,7 +954,7 @@ def match_score_iac(left: dict[str, Any], right: dict[str, Any]) -> tuple[float,
 
 
 def match_score(stage: str, left: dict[str, Any], right: dict[str, Any]) -> tuple[float, str]:
-    if stage == "sca":
+    if stage in ("sca", "image"):
         return match_score_sca(left, right)
     if stage == "dast":
         return match_score_dast(left, right)

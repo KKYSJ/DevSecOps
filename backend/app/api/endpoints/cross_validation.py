@@ -83,3 +83,52 @@ def get_cross_validation_history(db: Session = Depends(get_db)):
         return {"history": history, "total": len(history)}
     except Exception:
         return {"history": [], "total": 0}
+
+
+@router.get("/gates")
+def get_llm_gates(db: Session = Depends(get_db)):
+    """CI의 LLM gate 결과를 반환합니다."""
+    from backend.app.models.tool_result import ToolResult
+
+    try:
+        records = (
+            db.query(ToolResult)
+            .filter(ToolResult.name.like("llm-gate-%"))
+            .order_by(ToolResult.id.desc())
+            .limit(10)
+            .all()
+        )
+        gates = {}
+        for rec in records:
+            data = rec.data or {}
+            stage = data.get("stage", "unknown")
+            if stage not in gates:  # 카테고리별 최신 1건만
+                gates[stage] = data
+
+        # 개별 판정 결과 (judgments) — 여러 건 merge
+        judgments: dict = {}
+        j_records = (
+            db.query(ToolResult)
+            .filter(ToolResult.name == "llm-gate-judgments")
+            .order_by(ToolResult.id.desc())
+            .limit(5)
+            .all()
+        )
+        summaries: dict = {}
+        for j_rec in reversed(j_records):  # 오래된 것부터 → 최신이 덮어씀
+            j_data = j_rec.data or {}
+            j_inner = j_data.get("judgments", {})
+            if isinstance(j_inner, dict):
+                for stage_key, items in j_inner.items():
+                    if isinstance(items, list) and len(items) > 0:
+                        judgments[stage_key] = items
+            # summaries도 merge
+            s_inner = j_data.get("summaries", {})
+            if isinstance(s_inner, dict):
+                for stage_key, sdata in s_inner.items():
+                    if isinstance(sdata, dict) and (sdata.get("summary") or sdata.get("verdict")):
+                        summaries[stage_key] = sdata
+
+        return {"gates": gates, "judgments": judgments, "summaries": summaries}
+    except Exception:
+        return {"gates": {}, "judgments": {}}

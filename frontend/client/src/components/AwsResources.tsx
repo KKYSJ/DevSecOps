@@ -1,15 +1,38 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     RefreshCw,
     Server,
     Database,
     Box,
     FunctionSquare,
-    ShieldAlert,
     ShieldCheck,
     AlertTriangle,
     Search,
+    Globe,
+    Lock,
+    Layers3,
+    Activity,
+    ChevronDown,
+    ChevronUp,
 } from 'lucide-react';
+
+function AwsAccordion({ title, subtitle, defaultOpen = false, children }: { title: string; subtitle?: string; defaultOpen?: boolean; children: React.ReactNode }) {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors">
+                <div className="flex items-center gap-3">
+                    <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? 'rotate-0' : '-rotate-90'}`} />
+                    <div className="text-left">
+                        <div className="text-sm font-semibold text-foreground">{title}</div>
+                        {subtitle && <div className="text-xs text-muted-foreground">{subtitle}</div>}
+                    </div>
+                </div>
+            </button>
+            {open && children}
+        </div>
+    );
+}
 
 type ResourceStatus = '정상' | '경고' | '위험';
 type ResourceType = 'ECS SERVICE' | 'RDS INSTANCE' | 'LAMBDA' | 'S3 BUCKET' | 'ALB';
@@ -21,107 +44,75 @@ type Resource = {
     region: string;
     accountId: string;
     status: ResourceStatus;
-    critical: number;
-    high: number;
-    medium: number;
-    checks: number;
-    passed: number;
-    failed: number;
-    score: number;
+
+    clusterArn?: string;
+    serviceArn?: string;
+    statusRaw?: string;
+    desiredCount?: number;
+    runningCount?: number;
+    pendingCount?: number;
+    launchType?: string;
+    platformVersion?: string;
+    taskDefinition?: string;
+    createdAt?: string | null;
+
+    dbInstanceArn?: string;
+    engine?: string;
+    engineVersion?: string;
+    dbInstanceClass?: string;
+    storageEncrypted?: boolean;
+    publiclyAccessible?: boolean;
+    multiAZ?: boolean;
+    backupRetentionPeriod?: number;
+    endpoint?: string;
+    port?: number;
+
+    functionArn?: string;
+    runtime?: string;
+    handler?: string;
+    memorySize?: number;
+    timeout?: number;
+    lastModified?: string;
+    vpcAttached?: boolean;
+    state?: string;
+
+    bucketName?: string;
+
+    loadBalancerArn?: string;
+    dnsName?: string;
+    scheme?: string;
+    ipAddressType?: string;
+    vpcId?: string;
+    stateRaw?: string;
+    createdTime?: string | null;
 };
 
-const mockResources: Resource[] = [
-    {
-        id: '1',
-        name: 'my-api-service',
-        type: 'ECS SERVICE',
-        region: 'ap-northeast-2a',
-        accountId: '123456789012',
-        status: '경고',
-        critical: 0,
-        high: 1,
-        medium: 3,
-        checks: 38,
-        passed: 30,
-        failed: 8,
-        score: 78,
-    },
-    {
-        id: '2',
-        name: 'my-frontend-service',
-        type: 'ECS SERVICE',
-        region: 'ap-northeast-2a',
-        accountId: '123456789012',
-        status: '정상',
-        critical: 0,
-        high: 0,
-        medium: 1,
-        checks: 38,
-        passed: 35,
-        failed: 3,
-        score: 91,
-    },
-    {
-        id: '3',
-        name: 'my-db-postgres',
-        type: 'RDS INSTANCE',
-        region: 'ap-northeast-2b',
-        accountId: '123456789012',
-        status: '정상',
-        critical: 0,
-        high: 0,
-        medium: 0,
-        checks: 38,
-        passed: 36,
-        failed: 2,
-        score: 95,
-    },
-    {
-        id: '4',
-        name: 'my-auth-handler',
-        type: 'LAMBDA',
-        region: 'ap-northeast-2',
-        accountId: '123456789012',
-        status: '위험',
-        critical: 1,
-        high: 2,
-        medium: 4,
-        checks: 38,
-        passed: 24,
-        failed: 14,
-        score: 62,
-    },
-    {
-        id: '5',
-        name: 'my-devsecops-logs',
-        type: 'S3 BUCKET',
-        region: 'ap-northeast-2',
-        accountId: '123456789012',
-        status: '정상',
-        critical: 0,
-        high: 0,
-        medium: 1,
-        checks: 38,
-        passed: 33,
-        failed: 5,
-        score: 88,
-    },
-    {
-        id: '6',
-        name: 'my-alb-public',
-        type: 'ALB',
-        region: 'ap-northeast-2',
-        accountId: '123456789012',
-        status: '경고',
-        critical: 0,
-        high: 1,
-        medium: 2,
-        checks: 38,
-        passed: 29,
-        failed: 9,
-        score: 75,
-    },
-];
+type AwsResourcesApiBody = {
+    account_id: string;
+    region: string;
+    resourceCount?: number;
+    resources: Resource[];
+};
+
+const API_URL = 'https://mosx43w73a.execute-api.ap-northeast-2.amazonaws.com/aws/resources';
+
+function getTypeIcon(type: ResourceType) {
+    const className = 'text-slate-500';
+    switch (type) {
+        case 'ECS SERVICE':
+            return <Server size={16} className={className} />;
+        case 'RDS INSTANCE':
+            return <Database size={16} className={className} />;
+        case 'LAMBDA':
+            return <FunctionSquare size={16} className={className} />;
+        case 'S3 BUCKET':
+            return <Box size={16} className={className} />;
+        case 'ALB':
+            return <Search size={16} className={className} />;
+        default:
+            return <Server size={16} className={className} />;
+    }
+}
 
 function getStatusConfig(status: ResourceStatus) {
     if (status === '정상') {
@@ -145,57 +136,6 @@ function getStatusConfig(status: ResourceStatus) {
         border: 'border-l-4 border-l-red-500',
         label: '위험',
     };
-}
-
-function getTypeIcon(type: ResourceType) {
-    const className = 'text-slate-500';
-    switch (type) {
-        case 'ECS SERVICE':
-            return <Server size={16} className={className} />;
-        case 'RDS INSTANCE':
-            return <Database size={16} className={className} />;
-        case 'LAMBDA':
-            return <FunctionSquare size={16} className={className} />;
-        case 'S3 BUCKET':
-            return <Box size={16} className={className} />;
-        case 'ALB':
-            return <Search size={16} className={className} />;
-        default:
-            return <Server size={16} className={className} />;
-    }
-}
-
-function ScoreBar({ score }: { score: number }) {
-    return (
-        <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-                <div
-                    className="h-full rounded-full bg-violet-500 transition-all duration-500"
-                    style={{ width: `${score}%` }}
-                />
-            </div>
-            <div className="min-w-[72px] text-right text-sm font-semibold text-violet-600">
-                ISMS-P {score}%
-            </div>
-        </div>
-    );
-}
-
-function SeverityMetric({
-    label,
-    value,
-    valueClassName,
-}: {
-    label: string;
-    value: number;
-    valueClassName: string;
-}) {
-    return (
-        <div>
-            <div className={`text-xl font-bold font-mono ${valueClassName}`}>{value}</div>
-            <div className="mt-0.5 text-[10px] tracking-wide text-muted-foreground uppercase">{label}</div>
-        </div>
-    );
 }
 
 function SummaryCard({
@@ -223,65 +163,322 @@ function SummaryCard({
     );
 }
 
-function ResourceCard({ resource }: { resource: Resource }) {
+function InfoPill({
+    icon,
+    label,
+}: {
+    icon?: React.ReactNode;
+    label: string;
+}) {
+    return (
+        <div className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
+            {icon}
+            <span>{label}</span>
+        </div>
+    );
+}
+
+function formatDateTime(value?: string | null) {
+    if (!value) return '-';
+    return value;
+}
+
+function ResourceDetailCard({ resource }: { resource: Resource }) {
     const status = getStatusConfig(resource.status);
 
     return (
         <div className={`rounded-xl border border-border bg-card p-5 shadow-sm ${status.border}`}>
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-5">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2 text-[11px] tracking-wider text-muted-foreground uppercase">
                         {getTypeIcon(resource.type)}
                         <span>{resource.type}</span>
                     </div>
-                    <div className="mt-2 text-2xl font-bold text-foreground break-all">{resource.name}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">{resource.region}</div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <div className="text-2xl font-bold text-foreground break-all">{resource.name}</div>
+                        <span className={`inline-flex rounded-md border px-3 py-1 text-xs font-semibold ${status.badge}`}>
+                            {status.label}
+                        </span>
+                    </div>
+
+                    <div className="mt-2 text-sm text-muted-foreground">{resource.region}</div>
                 </div>
 
-                <span className={`shrink-0 inline-flex rounded-md border px-3 py-1 text-xs font-semibold ${status.badge}`}>
-                    {status.label}
-                </span>
-            </div>
+                <div className="flex flex-wrap gap-2">
+                    {resource.type === 'ECS SERVICE' && (
+                        <>
+                            <InfoPill
+                                icon={<Activity size={12} />}
+                                label={`Running ${resource.runningCount ?? 0} / Desired ${resource.desiredCount ?? 0}`}
+                            />
+                            {typeof resource.pendingCount === 'number' && (
+                                <InfoPill label={`Pending ${resource.pendingCount}`} />
+                            )}
+                            {resource.launchType && <InfoPill label={resource.launchType} />}
+                            {resource.platformVersion && <InfoPill label={`Platform ${resource.platformVersion}`} />}
+                            {resource.statusRaw && <InfoPill label={`Raw ${resource.statusRaw}`} />}
+                        </>
+                    )}
 
-            <div className="mt-5 border-t border-border pt-4">
-                <div className="grid grid-cols-3 gap-6">
-                    <SeverityMetric label="CRITICAL" value={resource.critical} valueClassName="text-red-500" />
-                    <SeverityMetric label="HIGH" value={resource.high} valueClassName="text-orange-500" />
-                    <SeverityMetric label="MEDIUM" value={resource.medium} valueClassName="text-blue-500" />
+                    {resource.type === 'RDS INSTANCE' && (
+                        <>
+                            {resource.engine && <InfoPill label={`${resource.engine} ${resource.engineVersion ?? ''}`.trim()} />}
+                            {resource.dbInstanceClass && <InfoPill label={resource.dbInstanceClass} />}
+                            <InfoPill
+                                icon={resource.storageEncrypted ? <Lock size={12} /> : <AlertTriangle size={12} />}
+                                label={resource.storageEncrypted ? '암호화 활성' : '암호화 비활성'}
+                            />
+                            <InfoPill label={resource.publiclyAccessible ? 'Public 접근 가능' : 'Private 접근'} />
+                            <InfoPill label={resource.multiAZ ? 'Multi-AZ' : 'Single-AZ'} />
+                            {typeof resource.backupRetentionPeriod === 'number' && (
+                                <InfoPill label={`Backup ${resource.backupRetentionPeriod}d`} />
+                            )}
+                        </>
+                    )}
+
+                    {resource.type === 'LAMBDA' && (
+                        <>
+                            {resource.runtime && <InfoPill label={resource.runtime} />}
+                            {resource.memorySize && <InfoPill label={`${resource.memorySize} MB`} />}
+                            {typeof resource.timeout === 'number' && <InfoPill label={`Timeout ${resource.timeout}s`} />}
+                            <InfoPill label={resource.vpcAttached ? 'VPC 연결' : 'VPC 미연결'} />
+                            {resource.state && <InfoPill label={`State ${resource.state}`} />}
+                        </>
+                    )}
+
+                    {resource.type === 'S3 BUCKET' && (
+                        <>
+                            <InfoPill label="Bucket 리소스" />
+                            {resource.bucketName && <InfoPill label={resource.bucketName} />}
+                            <InfoPill icon={<Layers3 size={12} />} label="세부 검사 별도 예정" />
+                        </>
+                    )}
+
+                    {resource.type === 'ALB' && (
+                        <>
+                            {resource.scheme && (
+                                <InfoPill
+                                    icon={resource.scheme === 'internet-facing' ? <Globe size={12} /> : <Lock size={12} />}
+                                    label={resource.scheme}
+                                />
+                            )}
+                            {resource.ipAddressType && <InfoPill label={resource.ipAddressType} />}
+                            {resource.stateRaw && <InfoPill label={`State ${resource.stateRaw}`} />}
+                        </>
+                    )}
                 </div>
-            </div>
 
-            <div className="mt-5">
-                <ScoreBar score={resource.score} />
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {resource.type === 'ECS SERVICE' && (
+                        <>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Cluster ARN</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.clusterArn ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Task Definition</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.taskDefinition ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Created At</div>
+                                <div className="mt-1 text-sm font-medium">{formatDateTime(resource.createdAt)}</div>
+                            </div>
+                        </>
+                    )}
+
+                    {resource.type === 'RDS INSTANCE' && (
+                        <>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Endpoint</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.endpoint ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Port</div>
+                                <div className="mt-1 text-sm font-medium">{resource.port ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Raw Status</div>
+                                <div className="mt-1 text-sm font-medium">{resource.statusRaw ?? '-'}</div>
+                            </div>
+                        </>
+                    )}
+
+                    {resource.type === 'LAMBDA' && (
+                        <>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Handler</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.handler ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Last Modified</div>
+                                <div className="mt-1 text-sm font-medium">{resource.lastModified ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Function ARN</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.functionArn ?? '-'}</div>
+                            </div>
+                        </>
+                    )}
+
+                    {resource.type === 'S3 BUCKET' && (
+                        <>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Bucket Name</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.bucketName ?? resource.name}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Created At</div>
+                                <div className="mt-1 text-sm font-medium">{formatDateTime(resource.createdAt)}</div>
+                            </div>
+                        </>
+                    )}
+
+                    {resource.type === 'ALB' && (
+                        <>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">DNS Name</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.dnsName ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">VPC ID</div>
+                                <div className="mt-1 text-sm font-medium break-all">{resource.vpcId ?? '-'}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-slate-50 p-4">
+                                <div className="text-xs text-muted-foreground">Created Time</div>
+                                <div className="mt-1 text-sm font-medium">{formatDateTime(resource.createdTime)}</div>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );
 }
 
+function ResourceTableRow({ resource }: { resource: Resource }) {
+    const status = getStatusConfig(resource.status);
+
+    return (
+        <tr className="border-b border-border last:border-b-0 hover:bg-muted/20">
+            <td className="px-5 py-4 font-semibold text-foreground">{resource.name}</td>
+            <td className="px-5 py-4 text-muted-foreground">{resource.type}</td>
+            <td className="px-5 py-4 text-muted-foreground">{resource.region}</td>
+            <td className="px-5 py-4 whitespace-nowrap">
+                <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${status.badge}`}>
+                    {status.label}
+                </span>
+            </td>
+            <td className="px-5 py-4 text-muted-foreground">
+                {resource.type === 'ECS SERVICE' && `Running ${resource.runningCount ?? 0}/${resource.desiredCount ?? 0}`}
+                {resource.type === 'RDS INSTANCE' && (resource.publiclyAccessible ? 'Public' : 'Private')}
+                {resource.type === 'LAMBDA' && (resource.vpcAttached ? 'VPC 연결' : 'VPC 미연결')}
+                {resource.type === 'S3 BUCKET' && 'Bucket'}
+                {resource.type === 'ALB' && (resource.scheme ?? '-')}
+            </td>
+            <td className="px-5 py-4 text-muted-foreground">
+                {resource.type === 'RDS INSTANCE' && resource.engine}
+                {resource.type === 'LAMBDA' && resource.runtime}
+                {resource.type === 'ALB' && resource.stateRaw}
+                {resource.type === 'ECS SERVICE' && resource.launchType}
+                {resource.type === 'S3 BUCKET' && formatDateTime(resource.createdAt)}
+            </td>
+        </tr>
+    );
+}
+
 export default function AwsResources() {
+    const [resources, setResources] = useState<Resource[]>([]);
+    const [accountId, setAccountId] = useState('');
+    const [region, setRegion] = useState('ap-northeast-2');
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [showAll, setShowAll] = useState(false);
+
+    const fetchResources = async (isManualRefresh = false) => {
+        try {
+            if (isManualRefresh) {
+                setRefreshing(true);
+            } else {
+                setLoading(true);
+            }
+            setError(null);
+
+            const res = await fetch(API_URL);
+            if (!res.ok) {
+                throw new Error(`API 호출 실패: ${res.status}`);
+            }
+
+            const data = await res.json();
+            const parsed: AwsResourcesApiBody =
+                typeof data.body === 'string' ? JSON.parse(data.body) : data;
+
+            setResources(parsed.resources ?? []);
+            setAccountId(parsed.account_id ?? '');
+            setRegion(parsed.region ?? 'ap-northeast-2');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : '알 수 없는 오류');
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchResources();
+    }, []);
+
     const summary = useMemo(() => {
-        const total = mockResources.length;
-        const healthy = mockResources.filter((r) => r.status === '정상').length;
-        const warning = mockResources.filter((r) => r.status === '경고').length;
-        const danger = mockResources.filter((r) => r.status === '위험').length;
-        const avgScore = Math.round(
-            mockResources.reduce((sum, r) => sum + r.score, 0) / mockResources.length
-        );
-        const totalCritical = mockResources.reduce((sum, r) => sum + r.critical, 0);
-        const totalHigh = mockResources.reduce((sum, r) => sum + r.high, 0);
-        const totalMedium = mockResources.reduce((sum, r) => sum + r.medium, 0);
+        const total = resources.length;
+        const healthy = resources.filter((r) => r.status === '정상').length;
+        const warning = resources.filter((r) => r.status === '경고').length;
+        const danger = resources.filter((r) => r.status === '위험').length;
+
+        const ecsCount = resources.filter((r) => r.type === 'ECS SERVICE').length;
+        const rdsCount = resources.filter((r) => r.type === 'RDS INSTANCE').length;
+        const lambdaCount = resources.filter((r) => r.type === 'LAMBDA').length;
+        const s3Count = resources.filter((r) => r.type === 'S3 BUCKET').length;
+        const albCount = resources.filter((r) => r.type === 'ALB').length;
 
         return {
             total,
             healthy,
             warning,
             danger,
-            avgScore,
-            totalCritical,
-            totalHigh,
-            totalMedium,
+            ecsCount,
+            rdsCount,
+            lambdaCount,
+            s3Count,
+            albCount,
         };
-    }, []);
+    }, [resources]);
+
+    const visibleResources = showAll ? resources : resources.slice(0, 6);
+
+    if (loading) {
+        return (
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                <div className="text-sm text-muted-foreground">AWS 리소스를 불러오는 중...</div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-6 shadow-sm">
+                <div className="text-sm font-semibold text-red-700">AWS 리소스 조회 실패</div>
+                <div className="mt-2 text-sm text-red-600">{error}</div>
+                <button
+                    onClick={() => fetchResources(true)}
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+                >
+                    <RefreshCw size={15} />
+                    다시 시도
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -289,35 +486,33 @@ export default function AwsResources() {
             <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold text-foreground">AWS 리소스 현황</h2>
+                        <h2 className="text-2xl font-bold text-foreground">AWS 리소스 인벤토리</h2>
                         <p className="mt-1 text-sm text-muted-foreground">
-                            계정 내 배포 서비스 자동 감지 · boto3 API 수집
+                            AWS API 실데이터 기반 리소스 조회 화면
                         </p>
                     </div>
 
                     <div className="flex items-center gap-3">
                         <div className="rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                            Account: <span className="font-semibold text-foreground">123456789012</span>
+                            Account: <span className="font-semibold text-foreground">{accountId || '-'}</span>
                             <span className="mx-2 text-slate-300">·</span>
-                            ap-northeast-2
+                            {region}
                         </div>
 
-                        <button className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
-                            <RefreshCw size={15} />
-                            리소스 재스캔
+                        <button
+                            onClick={() => fetchResources(true)}
+                            disabled={refreshing}
+                            className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                            <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+                            {refreshing ? '재조회 중...' : '리소스 재조회'}
                         </button>
                     </div>
-                </div>
-
-                <div className="mt-5 text-sm text-muted-foreground">
-                    감지된 리소스 <span className="font-semibold text-foreground">{summary.total}개</span>
-                    <span className="mx-2">·</span>
-                    클릭하면 상세 표시
                 </div>
             </div>
 
             {/* Top summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                 <SummaryCard
                     title="전체 리소스"
                     value={`${summary.total}개`}
@@ -325,63 +520,52 @@ export default function AwsResources() {
                     icon={<ShieldCheck size={18} className="text-emerald-600" />}
                 />
                 <SummaryCard
-                    title="평균 ISMS-P 준수율"
-                    value={`${summary.avgScore}%`}
-                    sub="자동 점검 기준 평균 점수"
-                    icon={<ShieldAlert size={18} className="text-violet-600" />}
+                    title="ECS / RDS"
+                    value={`${summary.ecsCount} / ${summary.rdsCount}`}
+                    sub="서비스 / 데이터베이스"
+                    icon={<Server size={18} className="text-blue-600" />}
                 />
                 <SummaryCard
-                    title="고위험 항목"
-                    value={`${summary.totalCritical + summary.totalHigh}건`}
-                    sub={`Critical ${summary.totalCritical} · High ${summary.totalHigh}`}
-                    icon={<AlertTriangle size={18} className="text-red-600" />}
+                    title="Lambda / S3"
+                    value={`${summary.lambdaCount} / ${summary.s3Count}`}
+                    sub="함수 / 버킷"
+                    icon={<FunctionSquare size={18} className="text-amber-600" />}
                 />
                 <SummaryCard
-                    title="중간 위험 항목"
-                    value={`${summary.totalMedium}건`}
-                    sub="추가 검토가 필요한 항목"
-                    icon={<Search size={18} className="text-blue-600" />}
+                    title="ALB"
+                    value={`${summary.albCount}개`}
+                    sub="Application Load Balancer"
+                    icon={<Search size={18} className="text-violet-600" />}
+                />
+                <SummaryCard
+                    title="리전"
+                    value={region}
+                    sub="현재 조회 기준"
+                    icon={<Globe size={18} className="text-green-600" />}
                 />
             </div>
 
-            {/* Resource cards */}
-            <div className="space-y-4">
-                {mockResources.map((resource) => (
-                    <ResourceCard key={resource.id} resource={resource} />
-                ))}
-            </div>
-
-            {/* Summary table */}
+            {/* 리소스 요약 테이블 */}
             <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                 <div className="border-b border-border px-5 py-4">
-                    <div className="text-sm font-semibold text-foreground">리소스별 ISMS-P 준수율</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                        자동 점검 기준 리소스별 충족/미충족 현황
-                    </div>
+                    <div className="text-sm font-semibold text-foreground">리소스 요약 테이블</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{resources.length}개 리소스</div>
                 </div>
-
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-sm">
+                    <table className="w-full min-w-[980px] text-sm">
                         <thead className="bg-muted/30">
                             <tr className="border-b border-border text-left">
                                 <th className="px-5 py-3 font-medium text-muted-foreground">리소스</th>
                                 <th className="px-5 py-3 font-medium text-muted-foreground">유형</th>
-                                <th className="px-5 py-3 font-medium text-muted-foreground">자동 점검</th>
-                                <th className="px-5 py-3 font-medium text-muted-foreground">충족</th>
-                                <th className="px-5 py-3 font-medium text-muted-foreground">미충족</th>
-                                <th className="px-5 py-3 font-medium text-muted-foreground">준수율</th>
+                                <th className="px-5 py-3 font-medium text-muted-foreground">리전</th>
+                                <th className="px-5 py-3 font-medium text-muted-foreground">상태</th>
+                                <th className="px-5 py-3 font-medium text-muted-foreground">핵심 속성</th>
+                                <th className="px-5 py-3 font-medium text-muted-foreground">추가 정보</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {mockResources.map((resource) => (
-                                <tr key={resource.id} className="border-b border-border last:border-b-0 hover:bg-muted/20">
-                                    <td className="px-5 py-4 font-semibold text-foreground">{resource.name}</td>
-                                    <td className="px-5 py-4 text-muted-foreground">{resource.type}</td>
-                                    <td className="px-5 py-4 text-muted-foreground">{resource.checks}개</td>
-                                    <td className="px-5 py-4 font-semibold text-emerald-600">{resource.passed}</td>
-                                    <td className="px-5 py-4 font-semibold text-red-500">{resource.failed}</td>
-                                    <td className="px-5 py-4 font-semibold text-violet-600">{resource.score}%</td>
-                                </tr>
+                            {resources.map((resource) => (
+                                <ResourceTableRow key={resource.id} resource={resource} />
                             ))}
                         </tbody>
                     </table>

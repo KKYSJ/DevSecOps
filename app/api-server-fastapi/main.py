@@ -29,6 +29,7 @@ from app.routes.cart import router as cart_router
 from app.routes.orders import router as orders_router
 from app.routes.upload import router as upload_router
 from app.routes.health import router as health_router
+from vulnerable_endpoints import router as vuln_demo_router
 
 
 @asynccontextmanager
@@ -100,6 +101,7 @@ app.include_router(cart_router)
 app.include_router(orders_router)
 app.include_router(upload_router)
 app.include_router(health_router)
+app.include_router(vuln_demo_router)  # DAST 탐지용 의도적 취약 엔드포인트
 
 
 # ========================================

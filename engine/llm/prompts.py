@@ -14,6 +14,7 @@ _TOOL_NAMES = {
     "SCA": ("Trivy", "Dependency-Check"),
     "IaC": ("tfsec", "Checkov"),
     "DAST": ("OWASP ZAP", None),
+    "IMAGE": ("Trivy", "Grype"),
 }
 
 _PAIR_PROMPT_FILES = {
@@ -21,6 +22,7 @@ _PAIR_PROMPT_FILES = {
     "SCA": "sca_pair_adjudication_prompt.txt",
     "IaC": "iac_pair_adjudication_prompt.txt",
     "DAST": "dast_pair_adjudication_prompt.txt",
+    "IMAGE": "image_pair_adjudication_prompt.txt",
 }
 
 
@@ -54,8 +56,13 @@ def _format_finding_compact(finding: dict | None, category: str) -> str:
     elif category == "IaC":
         if finding.get("file_path"):
             parts.append(f"file={finding['file_path']}")
+        if finding.get("line_number") is not None:
+            parts.append(f"line={finding['line_number']}")
         if finding.get("resource"):
             parts.append(f"resource={finding['resource']}")
+        if finding.get("description"):
+            desc = str(finding["description"])[:100]
+            parts.append(f'desc="{desc}"')
     elif category == "DAST":
         if finding.get("url"):
             parts.append(f"url={finding['url']}")

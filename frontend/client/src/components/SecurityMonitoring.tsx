@@ -1,6 +1,4 @@
-// DevSecOps Dashboard - Security Monitoring Component
-// Design: Clean Governance Dashboard | IBM Plex Sans + IBM Plex Mono
-
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -12,238 +10,379 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
 } from 'recharts';
-import { Shield, AlertTriangle, Activity, TrendingUp } from 'lucide-react';
-import type {
-  SecurityMonitoringSummary,
-  ServiceStatus,
-  EventItem,
-  TrendChartData,
-} from '@/lib/types';
+import {
+  Shield,
+  AlertTriangle,
+  Activity,
+  TrendingUp,
+  RefreshCw,
+  Clock3,
+} from 'lucide-react';
 
-interface SecurityMonitoringProps {
-  summary: SecurityMonitoringSummary;
-  serviceStatuses: ServiceStatus[];
-  eventItems: EventItem[];
-  trendData: TrendChartData[];
+const MONITORING_API_URL =
+  'https://kfaqoo0o1c.execute-api.ap-northeast-2.amazonaws.com/aws/monitoring';
+
+type Summary = {
+  activeAlarms: number;
+  guardDutyFindings: number;
+  securityHubFindings: number;
+  cloudTrailStatus: string;
+  recentEventTime: string;
+};
+
+type ServiceStatusItem = {
+  service: string;
+  status: string;
+  details: Record<string, any>;
+};
+
+type EventItem = {
+  time: string;
+  service: string;
+  eventType: string;
+  severity: 'HIGH' | 'MEDIUM' | 'LOW' | string;
+  resource: string;
+  status: string;
+  description: string;
+};
+
+const formatRecentTime = (time?: string) => {
+  if (!time) return '-';
+
+  const date = new Date(time);
+
+  return date.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false, // 👉 오전/오후 제거 (24시간 형식)
+  });
+};
+
+function getSeverityColor(severity: string) {
+  switch (severity) {
+    case 'HIGH':
+      return 'bg-red-50 text-red-700 border-red-200';
+    case 'MEDIUM':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    case 'LOW':
+      return 'bg-blue-50 text-blue-700 border-blue-200';
+    default:
+      return 'bg-slate-50 text-slate-600 border-slate-200';
+  }
 }
 
-export default function SecurityMonitoring({
-  summary,
-  serviceStatuses,
-  eventItems,
-  trendData,
-}: SecurityMonitoringProps) {
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case '정상':
-        return 'bg-green-50 text-green-700 border-green-200';
-      case '경고':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-      case '주의':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
-      default:
-        return 'bg-slate-50 text-slate-600 border-slate-200';
+function getSeverityDotColor(severity: string) {
+  switch (severity) {
+    case 'HIGH':
+      return 'bg-red-500';
+    case 'MEDIUM':
+      return 'bg-amber-500';
+    case 'LOW':
+      return 'bg-blue-500';
+    default:
+      return 'bg-slate-400';
+  }
+}
+
+function getServiceStatusColor(status: string) {
+  switch (status) {
+    case '정상':
+      return 'bg-green-50 text-green-700 border-green-200';
+    case '경고':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    case '주의':
+      return 'bg-blue-50 text-blue-700 border-blue-200';
+    default:
+      return 'bg-slate-50 text-slate-600 border-slate-200';
+  }
+}
+
+function getMonitoringStatus(summary: Summary) {
+  if (summary.activeAlarms > 0 || summary.guardDutyFindings > 0 || summary.securityHubFindings > 0) {
+    return 'warning';
+  }
+  if (summary.cloudTrailStatus !== 'Enabled') {
+    return 'warning';
+  }
+  return 'normal';
+}
+
+function getMonitoringPercent(summary: Summary) {
+  let score = 100;
+
+  score -= summary.activeAlarms * 12;
+  score -= summary.guardDutyFindings * 10;
+  score -= summary.securityHubFindings * 6;
+  if (summary.cloudTrailStatus !== 'Enabled') score -= 20;
+
+  return Math.max(15, Math.min(100, score));
+}
+
+function getMonitoringBarColor(status: string) {
+  switch (status) {
+    case 'normal':
+      return 'bg-green-500';
+    case 'warning':
+      return 'bg-amber-500';
+    default:
+      return 'bg-red-500';
+  }
+}
+
+function getServiceHealthPercent(service: ServiceStatusItem) {
+  if (service.service === 'CloudWatch') {
+    const count = service.details?.alarmCount ?? 0;
+    return count === 0 ? 92 : Math.max(35, 85 - count * 12);
+  }
+
+  if (service.service === 'GuardDuty') {
+    const count = service.details?.findingCount ?? 0;
+    return count === 0 ? 90 : Math.max(30, 82 - count * 10);
+  }
+
+  if (service.service === 'Security Hub') {
+    const count = service.details?.failedFindings ?? 0;
+    return count === 0 ? 91 : Math.max(35, 84 - count * 8);
+  }
+
+  if (service.service === 'CloudTrail') {
+    return service.details?.enabled ? 95 : 45;
+  }
+
+  return 50;
+}
+
+function getServiceHealthBarColor(status: string) {
+  switch (status) {
+    case '정상':
+      return 'bg-green-500';
+    case '경고':
+      return 'bg-amber-500';
+    case '주의':
+      return 'bg-blue-500';
+    default:
+      return 'bg-slate-400';
+  }
+}
+
+function KpiCard({
+  title,
+  value,
+  description,
+  icon,
+  accentClass,
+}: {
+  title: string;
+  value: React.ReactNode;
+  description: string;
+  icon: React.ReactNode;
+  accentClass: string;
+}) {
+  return (
+    <Card className="border-border shadow-sm">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accentClass}`}>
+            {icon}
+          </div>
+          <div>
+            <div className="text-2xl font-bold text-foreground">{value}</div>
+            <div className="text-sm text-muted-foreground">{title}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">{description}</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function SecurityMonitoring() {
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [serviceStatuses, setServiceStatuses] = useState<ServiceStatusItem[]>([]);
+  const [eventItems, setEventItems] = useState<EventItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchMonitoringData = async (isManualRefresh = false) => {
+    try {
+      if (isManualRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      setError(null);
+
+      const res = await fetch(MONITORING_API_URL);
+      if (!res.ok) {
+        throw new Error(`모니터링 API 호출 실패: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const parsed = typeof data.body === 'string' ? JSON.parse(data.body) : data;
+
+      setSummary(parsed.summary ?? null);
+      setServiceStatuses(parsed.serviceStatuses ?? []);
+      setEventItems(parsed.eventItems ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '알 수 없는 오류');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'HIGH':
-        return 'bg-red-50 text-red-700 border-red-200';
-      case 'MEDIUM':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'LOW':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
-      default:
-        return 'bg-slate-50 text-slate-600 border-slate-200';
-    }
-  };
+  useEffect(() => {
+    fetchMonitoringData();
+  }, []);
 
-  const getSeverityDotColor = (severity: string) => {
-    switch (severity) {
-      case 'HIGH':
-        return 'bg-red-500';
-      case 'MEDIUM':
-        return 'bg-amber-500';
-      case 'LOW':
-        return 'bg-blue-500';
-      default:
-        return 'bg-slate-400';
-    }
-  };
+  const severityChartData = useMemo(
+    () => [
+      {
+        name: 'HIGH',
+        count: eventItems.filter((e) => e.severity === 'HIGH').length,
+      },
+      {
+        name: 'MEDIUM',
+        count: eventItems.filter((e) => e.severity === 'MEDIUM').length,
+      },
+      {
+        name: 'LOW',
+        count: eventItems.filter((e) => e.severity === 'LOW').length,
+      },
+    ],
+    [eventItems]
+  );
 
-  const getMonitoringBarColor = (status: string) => {
-    switch (status) {
-      case 'normal':
-        return 'bg-green-500';
-      case 'warning':
-        return 'bg-amber-500';
-      default:
-        return 'bg-red-500';
-    }
-  };
+  const recentEvents = useMemo(() => eventItems.slice(0, 5), [eventItems]);
 
-  const getMonitoringPercent = (status: string) => {
-    switch (status) {
-      case 'normal':
-        return 90;
-      case 'warning':
-        return 65;
-      default:
-        return 35;
-    }
-  };
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+        <div className="text-sm text-muted-foreground">모니터링 데이터를 불러오는 중...</div>
+      </div>
+    );
+  }
 
-  const getServiceHealthPercent = (status: string) => {
-    switch (status) {
-      case '정상':
-        return 90;
-      case '경고':
-        return 65;
-      case '주의':
-        return 45;
-      default:
-        return 50;
-    }
-  };
+  if (error || !summary) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 shadow-sm">
+        <div className="text-sm font-semibold text-red-700">모니터링 데이터 조회 실패</div>
+        <div className="mt-2 text-sm text-red-600">{error ?? 'summary 데이터가 없습니다.'}</div>
+        <button
+          onClick={() => fetchMonitoringData(true)}
+          className="mt-4 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3.5 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+        >
+          다시 시도
+        </button>
+      </div>
+    );
+  }
 
-  const getServiceHealthBarColor = (status: string) => {
-    switch (status) {
-      case '정상':
-        return 'bg-green-500';
-      case '경고':
-        return 'bg-amber-500';
-      case '주의':
-        return 'bg-blue-500';
-      default:
-        return 'bg-slate-400';
-    }
-  };
-
-  const severityChartData = [
-    {
-      name: 'HIGH',
-      count: eventItems.filter((e) => e.severity === 'HIGH').length,
-    },
-    {
-      name: 'MEDIUM',
-      count: eventItems.filter((e) => e.severity === 'MEDIUM').length,
-    },
-    {
-      name: 'LOW',
-      count: eventItems.filter((e) => e.severity === 'LOW').length,
-    },
-  ];
-
-  const recentEvents = eventItems.slice(0, 5);
+  const monitoringStatus = getMonitoringStatus(summary);
+  const monitoringPercent = getMonitoringPercent(summary);
 
   return (
     <div className="space-y-6">
-      {/* 상단 KPI 카드 */}
+      {/* 상단 헤더 */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">보안 모니터링</h2>
+          <p className="text-sm text-muted-foreground">
+            CloudWatch · GuardDuty · CloudTrail · Security Hub 실데이터 기반 요약
+          </p>
+        </div>
+
+        <button
+          onClick={() => fetchMonitoringData(true)}
+          disabled={refreshing}
+          className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+          {refreshing ? '재조회 중...' : '모니터링 새로고침'}
+        </button>
+      </div>
+
+      {/* KPI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Shield className="w-8 h-8 text-blue-600" />
-              <div>
-                <div className="text-2xl font-bold">{summary.securityScore}</div>
-                <div className="text-sm text-muted-foreground">Security Score</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard
+          title="Security Hub Findings"
+          value={summary.securityHubFindings}
+          description="미해결 finding 수"
+          icon={<Shield className="w-5 h-5 text-blue-700" />}
+          accentClass="bg-blue-100"
+        />
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-8 h-8 text-red-600" />
-              <div>
-                <div className="text-2xl font-bold">{summary.activeAlarms}</div>
-                <div className="text-sm text-muted-foreground">활성 경보</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard
+          title="활성 경보"
+          value={summary.activeAlarms}
+          description="CloudWatch ALARM 상태"
+          icon={<AlertTriangle className="w-5 h-5 text-red-700" />}
+          accentClass="bg-red-100"
+        />
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Activity className="w-8 h-8 text-orange-600" />
-              <div>
-                <div className="text-2xl font-bold">{summary.guardDutyFindings}</div>
-                <div className="text-sm text-muted-foreground">GuardDuty 탐지</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard
+          title="GuardDuty 탐지"
+          value={summary.guardDutyFindings}
+          description="현재 탐지 finding 수"
+          icon={<Activity className="w-5 h-5 text-amber-700" />}
+          accentClass="bg-amber-100"
+        />
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="w-8 h-8 text-green-600" />
-              <div>
-                <div className="text-2xl font-bold">{summary.cloudTrailStatus}</div>
-                <div className="text-sm text-muted-foreground">CloudTrail</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard
+          title="CloudTrail"
+          value={summary.cloudTrailStatus}
+          description="감사 로그 활성 상태"
+          icon={<TrendingUp className="w-5 h-5 text-green-700" />}
+          accentClass="bg-green-100"
+        />
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                <span className="text-sm font-bold">⏰</span>
-              </div>
-              <div>
-                <div className="text-sm font-bold">
-                  {summary.recentEventTime.split('T')[1].split('+')[0]}
-                </div>
-                <div className="text-xs text-muted-foreground">최근 이벤트</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard
+          title="최근 이벤트"
+          value={formatRecentTime(summary.recentEventTime)}
+          description="최근 수집 시각"
+          icon={<Clock3 className="w-5 h-5 text-slate-700" />}
+          accentClass="bg-slate-100"
+        />
 
-        <Card>
+        <Card className="border-border shadow-sm">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center ${summary.monitoringStatus === 'normal'
-                    ? 'bg-green-100'
-                    : summary.monitoringStatus === 'warning'
-                      ? 'bg-amber-100'
-                      : 'bg-red-100'
+                className={`w-10 h-10 rounded-lg flex items-center justify-center ${monitoringStatus === 'normal'
+                  ? 'bg-green-100'
+                  : monitoringStatus === 'warning'
+                    ? 'bg-amber-100'
+                    : 'bg-red-100'
                   }`}
               >
                 <span className="text-sm font-bold">
-                  {summary.monitoringStatus === 'normal'
-                    ? '✓'
-                    : summary.monitoringStatus === 'warning'
-                      ? '⚠'
-                      : '✗'}
+                  {monitoringStatus === 'normal' ? '✓' : monitoringStatus === 'warning' ? '⚠' : '✗'}
                 </span>
               </div>
               <div>
-                <div className="text-sm font-bold capitalize">{summary.monitoringStatus}</div>
-                <div className="text-xs text-muted-foreground">모니터링 상태</div>
+                <div className="text-2xl font-bold capitalize">{monitoringStatus}</div>
+                <div className="text-sm text-muted-foreground">모니터링 상태</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  실데이터 기반 파생 지표
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* 보안 상태 요약 + 심각도 분포 */}
+      {/* 요약 + 심각도 분포 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -253,45 +392,26 @@ export default function SecurityMonitoring({
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
               <div className="relative w-28 h-28 rounded-full border-8 border-blue-100 flex items-center justify-center shrink-0">
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-600">{summary.securityScore}</div>
-                  <div className="text-xs text-muted-foreground">/ 100</div>
+                  <div className="text-3xl font-bold text-blue-600">{monitoringPercent}</div>
+                  <div className="text-xs text-muted-foreground">운영 지수</div>
                 </div>
               </div>
 
               <div className="flex-1 w-full space-y-4">
                 <div>
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span>보안 점수</span>
-                    <span className="font-semibold">{summary.securityScore}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full bg-blue-600 rounded-full"
-                      style={{ width: `${summary.securityScore}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between text-sm mb-1">
                     <span>모니터링 안정도</span>
-                    <span className="font-semibold capitalize">
-                      {summary.monitoringStatus}
-                    </span>
+                    <span className="font-semibold">{monitoringPercent}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${getMonitoringBarColor(
-                        summary.monitoringStatus
-                      )}`}
-                      style={{
-                        width: `${getMonitoringPercent(summary.monitoringStatus)}%`,
-                      }}
+                      className={`h-full rounded-full ${getMonitoringBarColor(monitoringStatus)}`}
+                      style={{ width: `${monitoringPercent}%` }}
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
                   <div className="rounded-md bg-slate-50 p-3">
                     <div className="text-xs text-muted-foreground">활성 경보</div>
                     <div className="text-lg font-bold text-red-600">
@@ -302,6 +422,12 @@ export default function SecurityMonitoring({
                     <div className="text-xs text-muted-foreground">GuardDuty</div>
                     <div className="text-lg font-bold text-amber-600">
                       {summary.guardDutyFindings}
+                    </div>
+                  </div>
+                  <div className="rounded-md bg-slate-50 p-3">
+                    <div className="text-xs text-muted-foreground">Security Hub</div>
+                    <div className="text-lg font-bold text-blue-600">
+                      {summary.securityHubFindings}
                     </div>
                   </div>
                   <div className="rounded-md bg-slate-50 p-3">
@@ -337,7 +463,7 @@ export default function SecurityMonitoring({
       {/* 서비스별 상태 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {serviceStatuses.map((service) => {
-          const healthPercent = getServiceHealthPercent(service.status);
+          const healthPercent = getServiceHealthPercent(service);
           const healthBarColor = getServiceHealthBarColor(service.status);
 
           return (
@@ -346,7 +472,7 @@ export default function SecurityMonitoring({
                 <CardTitle className="text-lg">{service.service}</CardTitle>
               </CardHeader>
               <CardContent>
-                <Badge className={`mb-3 ${getStatusColor(service.status)}`}>
+                <Badge className={`mb-3 border ${getServiceStatusColor(service.status)}`}>
                   {service.status}
                 </Badge>
 
@@ -354,37 +480,26 @@ export default function SecurityMonitoring({
                   {service.service === 'CloudWatch' && (
                     <>
                       <div>알람 개수: {service.details.alarmCount}</div>
-                      <div>
-                        최근 트리거:{' '}
-                        {service.details.recentTrigger.split('T')[1].split('+')[0]}
-                      </div>
                     </>
                   )}
 
                   {service.service === 'GuardDuty' && (
                     <>
                       <div>탐지 건수: {service.details.findingCount}</div>
-                      <div>
-                        심각도: H:{service.details.severityDistribution.HIGH} M:
-                        {service.details.severityDistribution.MEDIUM} L:
-                        {service.details.severityDistribution.LOW}
-                      </div>
                     </>
                   )}
 
                   {service.service === 'CloudTrail' && (
                     <>
                       <div>
-                        수집 활성화: {service.details.collectionEnabled ? '예' : '아니오'}
+                        수집 활성화: {service.details.enabled ? '예' : '아니오'}
                       </div>
-                      <div>API 호출 수: {service.details.apiCallCount}</div>
                     </>
                   )}
 
                   {service.service === 'Security Hub' && (
                     <>
-                      <div>보안 점수: {service.details.securityScore}</div>
-                      <div>실패 컨트롤: {service.details.failedControls}</div>
+                      <div>미해결 Findings: {service.details.failedFindings}</div>
                     </>
                   )}
                 </div>
@@ -407,8 +522,8 @@ export default function SecurityMonitoring({
         })}
       </div>
 
-      {/* 타임라인 + 추세 차트 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* 최근 이벤트 타임라인 */}
+      <div className="grid grid-cols-1 gap-4">
         <Card>
           <CardHeader>
             <CardTitle>최근 이벤트 타임라인</CardTitle>
@@ -419,9 +534,7 @@ export default function SecurityMonitoring({
                 <div key={index} className="flex gap-3">
                   <div className="flex flex-col items-center">
                     <div
-                      className={`w-3 h-3 rounded-full ${getSeverityDotColor(
-                        event.severity
-                      )}`}
+                      className={`w-3 h-3 rounded-full ${getSeverityDotColor(event.severity)}`}
                     />
                     {index !== recentEvents.length - 1 && (
                       <div className="w-px flex-1 bg-border mt-1 min-h-[24px]" />
@@ -438,23 +551,6 @@ export default function SecurityMonitoring({
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>이벤트 추세 (지난 24시간)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="events" stroke="#3b82f6" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
@@ -484,7 +580,7 @@ export default function SecurityMonitoring({
                   <TableCell>{event.service}</TableCell>
                   <TableCell>{event.eventType}</TableCell>
                   <TableCell>
-                    <Badge className={getSeverityColor(event.severity)}>
+                    <Badge className={`border ${getSeverityColor(event.severity)}`}>
                       {event.severity}
                     </Badge>
                   </TableCell>
