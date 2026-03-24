@@ -62,6 +62,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Detect unresolved merge markers in deploy paths
         run: |
@@ -540,12 +542,221 @@ jobs:
           echo "worker_repo=$(terraform output -raw worker_ecr_repository_url)" >> "$GITHUB_OUTPUT"
           echo "external_api_secret_arn=$(terraform output -raw external_api_secret_arn)" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to Amazon ECR
+      - name: Detect changed services
         if: steps.context.outputs.deployment_mode == 'service'
+        id: service_changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          frontend_changed="false"
+          backend_changed="false"
+          worker_changed="false"
+          service_infra_changed="false"
+
+          if [ "${{ github.event_name }}" != "push" ]; then
+            frontend_changed="true"
+            backend_changed="true"
+            worker_changed="true"
+            service_infra_changed="true"
+          else
+            BEFORE_SHA="${{ github.event.before }}"
+            if [ -z "${BEFORE_SHA}" ] || [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+              frontend_changed="true"
+              backend_changed="true"
+              worker_changed="true"
+              service_infra_changed="true"
+            else
+              git diff --name-only "${BEFORE_SHA}" "${GITHUB_SHA}" > /tmp/changed-files.txt
+              echo "Changed files:"
+              cat /tmp/changed-files.txt || true
+
+              while IFS= read -r file; do
+                [ -n "${file}" ] || continue
+
+                if [[ "${file}" == frontend/* ]]; then
+                  frontend_changed="true"
+                fi
+
+                if [[ "${file}" == backend/* ]]; then
+                  backend_changed="true"
+                  worker_changed="true"
+                fi
+
+                if [[ "${file}" == secureflow_dashboard_infra/docker/* ]]; then
+                  worker_changed="true"
+                fi
+
+                if [[ "${file}" == .github/workflows/secureflow-dashboard-deploy.yml ]] || [[ "${file}" =~ ^secureflow_dashboard_infra/.*\.(tf|tfvars|hcl)$ ]]; then
+                  service_infra_changed="true"
+                fi
+              done < /tmp/changed-files.txt
+            fi
+          fi
+
+          # Terraform and workflow changes can affect all runtime services, so keep rollout conservative.
+          if [ "${service_infra_changed}" = "true" ]; then
+            frontend_changed="true"
+            backend_changed="true"
+            worker_changed="true"
+          fi
+
+          service_rollout_required="false"
+          if [ "${frontend_changed}" = "true" ] || [ "${backend_changed}" = "true" ] || [ "${worker_changed}" = "true" ]; then
+            service_rollout_required="true"
+          fi
+
+          echo "frontend_changed=${frontend_changed}" >> "$GITHUB_OUTPUT"
+          echo "backend_changed=${backend_changed}" >> "$GITHUB_OUTPUT"
+          echo "worker_changed=${worker_changed}" >> "$GITHUB_OUTPUT"
+          echo "service_infra_changed=${service_infra_changed}" >> "$GITHUB_OUTPUT"
+          echo "service_rollout_required=${service_rollout_required}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve current ECS service state
+        if: steps.context.outputs.deployment_mode == 'service'
+        id: current_service_state
+        shell: bash
+        env:
+          ECS_CLUSTER_NAME: ${{ steps.service_targets.outputs.ecs_cluster_name }}
+          FRONTEND_SERVICE_NAME: ${{ steps.service_targets.outputs.frontend_service_name }}
+          BACKEND_SERVICE_NAME: ${{ steps.service_targets.outputs.backend_service_name }}
+          WORKER_SERVICE_NAME: ${{ steps.service_targets.outputs.worker_service_name }}
+        run: |
+          set -euo pipefail
+
+          resolve_service_state() {
+            local service_name="$1"
+            local container_name="$2"
+            local output_prefix="$3"
+            local service_json
+            local task_definition
+            local image_uri
+            local desired_count
+
+            service_json="$(aws ecs describe-services \
+              --cluster "${ECS_CLUSTER_NAME}" \
+              --services "${service_name}")"
+
+            task_definition="$(echo "${service_json}" | jq -r '.services[0].taskDefinition // empty')"
+            desired_count="$(echo "${service_json}" | jq -r '.services[0].desiredCount // empty')"
+
+            if [ -z "${task_definition}" ] || [ "${task_definition}" = "null" ]; then
+              echo "Unable to resolve task definition for ${service_name}" >&2
+              exit 1
+            fi
+
+            if [ -z "${desired_count}" ] || [ "${desired_count}" = "null" ]; then
+              desired_count="1"
+            fi
+
+            image_uri="$(aws ecs describe-task-definition \
+              --task-definition "${task_definition}" \
+              --query "taskDefinition.containerDefinitions[?name=='${container_name}'].image | [0]" \
+              --output text)"
+
+            if [ -z "${image_uri}" ] || [ "${image_uri}" = "None" ]; then
+              echo "Unable to resolve image URI for ${service_name}" >&2
+              exit 1
+            fi
+
+            echo "${output_prefix}_task_definition=${task_definition}" >> "$GITHUB_OUTPUT"
+            echo "${output_prefix}_image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
+            echo "${output_prefix}_image_tag=${image_uri##*:}" >> "$GITHUB_OUTPUT"
+            echo "${output_prefix}_desired_count=${desired_count}" >> "$GITHUB_OUTPUT"
+          }
+
+          resolve_service_state "${FRONTEND_SERVICE_NAME}" "frontend" "frontend"
+          resolve_service_state "${BACKEND_SERVICE_NAME}" "backend" "backend"
+          resolve_service_state "${WORKER_SERVICE_NAME}" "worker" "worker"
+
+      - name: Plan changed ECS rollout
+        if: steps.context.outputs.deployment_mode == 'service'
+        id: rollout_plan
+        shell: bash
+        env:
+          DEFAULT_IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
+        run: |
+          set -euo pipefail
+
+          deploy_frontend="${{ steps.service_changes.outputs.frontend_changed }}"
+          deploy_backend="${{ steps.service_changes.outputs.backend_changed }}"
+          deploy_worker="${{ steps.service_changes.outputs.worker_changed }}"
+          service_rollout_required="${{ steps.service_changes.outputs.service_rollout_required }}"
+
+          frontend_image_tag="${{ steps.current_service_state.outputs.frontend_image_tag }}"
+          backend_image_tag="${{ steps.current_service_state.outputs.backend_image_tag }}"
+          worker_image_tag="${{ steps.current_service_state.outputs.worker_image_tag }}"
+
+          if [ "${deploy_frontend}" = "true" ]; then
+            frontend_image_tag="${DEFAULT_IMAGE_TAG}"
+          fi
+
+          if [ "${deploy_backend}" = "true" ]; then
+            backend_image_tag="${DEFAULT_IMAGE_TAG}"
+          fi
+
+          if [ "${deploy_worker}" = "true" ]; then
+            worker_image_tag="${DEFAULT_IMAGE_TAG}"
+          fi
+
+          target_args=""
+          if [ "${deploy_frontend}" = "true" ]; then
+            target_args="${target_args} -target=aws_ecs_task_definition.frontend -target=aws_ecs_service.frontend"
+          fi
+          if [ "${deploy_backend}" = "true" ]; then
+            target_args="${target_args} -target=aws_ecs_task_definition.backend -target=aws_ecs_service.backend"
+          fi
+          if [ "${deploy_worker}" = "true" ]; then
+            target_args="${target_args} -target=aws_ecs_task_definition.worker -target=aws_ecs_service.worker"
+          fi
+          target_args="${target_args# }"
+
+          update_runtime_secrets="false"
+          if [ "${deploy_backend}" = "true" ] || [ "${deploy_worker}" = "true" ]; then
+            update_runtime_secrets="true"
+          fi
+
+          echo "deploy_frontend=${deploy_frontend}" >> "$GITHUB_OUTPUT"
+          echo "deploy_backend=${deploy_backend}" >> "$GITHUB_OUTPUT"
+          echo "deploy_worker=${deploy_worker}" >> "$GITHUB_OUTPUT"
+          echo "service_rollout_required=${service_rollout_required}" >> "$GITHUB_OUTPUT"
+          echo "update_runtime_secrets=${update_runtime_secrets}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image_tag=${frontend_image_tag}" >> "$GITHUB_OUTPUT"
+          echo "backend_image_tag=${backend_image_tag}" >> "$GITHUB_OUTPUT"
+          echo "worker_image_tag=${worker_image_tag}" >> "$GITHUB_OUTPUT"
+          echo "frontend_desired_count=${{ steps.current_service_state.outputs.frontend_desired_count }}" >> "$GITHUB_OUTPUT"
+          echo "backend_desired_count=${{ steps.current_service_state.outputs.backend_desired_count }}" >> "$GITHUB_OUTPUT"
+          echo "worker_desired_count=${{ steps.current_service_state.outputs.worker_desired_count }}" >> "$GITHUB_OUTPUT"
+          {
+            echo "target_args<<EOF"
+            echo "${target_args}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize service rollout plan
+        if: steps.context.outputs.deployment_mode == 'service'
+        run: |
+          {
+            echo "## ECS rollout plan"
+            echo ""
+            echo "- Frontend update: \`${{ steps.rollout_plan.outputs.deploy_frontend }}\`"
+            echo "- Backend update: \`${{ steps.rollout_plan.outputs.deploy_backend }}\`"
+            echo "- Worker update: \`${{ steps.rollout_plan.outputs.deploy_worker }}\`"
+            echo "- Rollout required: \`${{ steps.rollout_plan.outputs.service_rollout_required }}\`"
+            echo "- Frontend tag: \`${{ steps.rollout_plan.outputs.frontend_image_tag }}\`"
+            echo "- Backend tag: \`${{ steps.rollout_plan.outputs.backend_image_tag }}\`"
+            echo "- Worker tag: \`${{ steps.rollout_plan.outputs.worker_image_tag }}\`"
+            echo "- Frontend desired count: \`${{ steps.rollout_plan.outputs.frontend_desired_count }}\`"
+            echo "- Backend desired count: \`${{ steps.rollout_plan.outputs.backend_desired_count }}\`"
+            echo "- Worker desired count: \`${{ steps.rollout_plan.outputs.worker_desired_count }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Log in to Amazon ECR
+        if: steps.context.outputs.deployment_mode == 'service' && steps.rollout_plan.outputs.service_rollout_required == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push backend image
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.rollout_plan.outputs.deploy_backend == 'true'
         env:
           IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
           BACKEND_REPO: ${{ steps.service_targets.outputs.backend_repo }}
@@ -555,7 +766,7 @@ jobs:
           docker push "${BACKEND_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-backend-push.log"
 
       - name: Build and push worker image
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.rollout_plan.outputs.deploy_worker == 'true'
         env:
           IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
           WORKER_REPO: ${{ steps.service_targets.outputs.worker_repo }}
@@ -565,7 +776,7 @@ jobs:
           docker push "${WORKER_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-worker-push.log"
 
       - name: Build and push frontend image
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.rollout_plan.outputs.deploy_frontend == 'true'
         env:
           IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
           FRONTEND_REPO: ${{ steps.service_targets.outputs.frontend_repo }}
@@ -582,7 +793,7 @@ jobs:
           docker push "${FRONTEND_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-frontend-push.log"
 
       - name: Populate external API secret
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.rollout_plan.outputs.update_runtime_secrets == 'true'
         env:
           EXTERNAL_API_SECRET_ARN: ${{ steps.service_targets.outputs.external_api_secret_arn }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -606,7 +817,12 @@ jobs:
         working-directory: secureflow_dashboard_infra
         env:
           DEPLOY_ENVIRONMENT: ${{ steps.context.outputs.deploy_environment }}
-          IMAGE_TAG: ${{ steps.context.outputs.image_tag }}
+          FRONTEND_IMAGE_TAG: ${{ steps.rollout_plan.outputs.frontend_image_tag }}
+          BACKEND_IMAGE_TAG: ${{ steps.rollout_plan.outputs.backend_image_tag }}
+          WORKER_IMAGE_TAG: ${{ steps.rollout_plan.outputs.worker_image_tag }}
+          FRONTEND_DESIRED_COUNT: ${{ steps.rollout_plan.outputs.frontend_desired_count }}
+          BACKEND_DESIRED_COUNT: ${{ steps.rollout_plan.outputs.backend_desired_count }}
+          WORKER_DESIRED_COUNT: ${{ steps.rollout_plan.outputs.worker_desired_count }}
         run: |
           set -euo pipefail
           jq -n \
@@ -615,18 +831,18 @@ jobs:
             --arg managed_by "${MANAGED_BY}" \
             --arg aws_region "${AWS_REGION}" \
             --arg vpc_cidr "${VPC_CIDR}" \
-            --arg frontend_image_tag "${IMAGE_TAG}" \
-            --arg backend_image_tag "${IMAGE_TAG}" \
-            --arg worker_image_tag "${IMAGE_TAG}" \
+            --arg frontend_image_tag "${FRONTEND_IMAGE_TAG}" \
+            --arg backend_image_tag "${BACKEND_IMAGE_TAG}" \
+            --arg worker_image_tag "${WORKER_IMAGE_TAG}" \
             --arg gemini_model "${GEMINI_MODEL}" \
             --arg sonar_host_url "${SONAR_HOST_URL}" \
             --arg sonar_organization "${SONAR_ORGANIZATION}" \
             --arg sonar_project_key "${SONAR_PROJECT_KEY}" \
             --arg alarm_email "${ALARM_EMAIL}" \
             --arg acm_certificate_arn "${ACM_CERTIFICATE_ARN}" \
-            --argjson frontend_desired_count 1 \
-            --argjson backend_desired_count 1 \
-            --argjson worker_desired_count 1 \
+            --argjson frontend_desired_count "${FRONTEND_DESIRED_COUNT}" \
+            --argjson backend_desired_count "${BACKEND_DESIRED_COUNT}" \
+            --argjson worker_desired_count "${WORKER_DESIRED_COUNT}" \
             '{
               project_name: $project_name,
               environment: $environment,
@@ -649,16 +865,18 @@ jobs:
             > ci.auto.tfvars.json
 
       - name: Plan service rollout
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.rollout_plan.outputs.service_rollout_required == 'true'
         working-directory: secureflow_dashboard_infra
+        env:
+          TARGET_ARGS: ${{ steps.rollout_plan.outputs.target_args }}
         run: |
           set -euo pipefail
-          terraform plan -no-color -out=tfplan-service 2>&1 | tee "${ARTIFACT_DIR}/service-plan.log"
+          terraform plan -no-color ${TARGET_ARGS} -out=tfplan-service 2>&1 | tee "${ARTIFACT_DIR}/service-plan.log"
           terraform show -no-color tfplan-service > "${ARTIFACT_DIR}/service-plan.txt"
 
       - name: Apply service rollout
         id: service_apply
-        if: steps.context.outputs.deployment_mode == 'service'
+        if: steps.context.outputs.deployment_mode == 'service' && steps.rollout_plan.outputs.service_rollout_required == 'true'
         working-directory: secureflow_dashboard_infra
         continue-on-error: true
         run: |

@@ -337,14 +337,16 @@ resource "aws_ecs_task_definition" "worker" {
 }
 
 resource "aws_ecs_service" "frontend" {
-  name                              = "${local.name}-frontend"
-  cluster                           = aws_ecs_cluster.main.id
-  task_definition                   = aws_ecs_task_definition.frontend.arn
-  desired_count                     = var.frontend_desired_count
-  launch_type                       = "FARGATE"
-  health_check_grace_period_seconds = 60
-  enable_execute_command            = true
-  wait_for_steady_state             = true
+  name                               = "${local.name}-frontend"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.frontend.arn
+  desired_count                      = var.frontend_desired_count
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+  launch_type                        = "FARGATE"
+  health_check_grace_period_seconds  = 60
+  enable_execute_command             = true
+  wait_for_steady_state              = true
 
   deployment_circuit_breaker {
     enable   = true
@@ -371,14 +373,16 @@ resource "aws_ecs_service" "frontend" {
 }
 
 resource "aws_ecs_service" "backend" {
-  name                              = "${local.name}-backend"
-  cluster                           = aws_ecs_cluster.main.id
-  task_definition                   = aws_ecs_task_definition.backend.arn
-  desired_count                     = var.backend_desired_count
-  launch_type                       = "FARGATE"
-  health_check_grace_period_seconds = 60
-  enable_execute_command            = true
-  wait_for_steady_state             = true
+  name                               = "${local.name}-backend"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.backend.arn
+  desired_count                      = var.backend_desired_count
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+  launch_type                        = "FARGATE"
+  health_check_grace_period_seconds  = 60
+  enable_execute_command             = true
+  wait_for_steady_state              = true
 
   deployment_circuit_breaker {
     enable   = true
@@ -404,13 +408,15 @@ resource "aws_ecs_service" "backend" {
 }
 
 resource "aws_ecs_service" "worker" {
-  name                   = "${local.name}-worker"
-  cluster                = aws_ecs_cluster.main.id
-  task_definition        = aws_ecs_task_definition.worker.arn
-  desired_count          = var.worker_desired_count
-  launch_type            = "FARGATE"
-  enable_execute_command = true
-  wait_for_steady_state  = true
+  name                               = "${local.name}-worker"
+  cluster                            = aws_ecs_cluster.main.id
+  task_definition                    = aws_ecs_task_definition.worker.arn
+  desired_count                      = var.worker_desired_count
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+  launch_type                        = "FARGATE"
+  enable_execute_command             = true
+  wait_for_steady_state              = true
 
   deployment_circuit_breaker {
     enable   = true
