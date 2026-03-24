@@ -364,17 +364,17 @@ jobs:
             -Dsonar.python.version=3.11
             -Dsonar.java.binaries=app/api-server-spring/target/classes
 
-      - name: SonarCloud 분석 ?�료 ?��?
+      - name: SonarCloud 遺꾩꽍 ?꾨즺 ?湲?
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          echo "SonarCloud 분석 ?�료 ?��?�?.."
+          echo "SonarCloud 遺꾩꽍 ?꾨즺 ?湲?以?.."
           for i in $(seq 1 12); do
             STATUS=$(curl -s -u "${SONAR_TOKEN}:" \
               "${SONAR_HOST_URL}/api/ce/activity?component=${{ vars.SONAR_PROJECT_KEY }}&ps=1" \
               | grep -o '"status":"[^"]*"' | head -1 || echo "")
-            echo "  ?�태: $STATUS ($i/12)"
+            echo "  ?곹깭: $STATUS ($i/12)"
             if echo "$STATUS" | grep -q "SUCCESS"; then
-              echo "??분석 ?�료"
+              echo "??遺꾩꽍 ?꾨즺"
               break
             fi
             sleep 10
@@ -688,7 +688,7 @@ jobs:
         run: echo "IaC, SAST, and SCA LLM gates passed for this revision."
 
   upload-to-secureflow:
-    name: "SecureFlow ?�?�보???�로??
+    name: "Upload Results To SecureFlow"
     needs:
       - service-sast-semgrep
       - service-sast-sonarqube
@@ -715,8 +715,8 @@ jobs:
           path: scan-results/
         continue-on-error: true
 
-      - name: ?�집??결과 ?�인
-        run: find scan-results/ -name "*.json" | sort || echo "결과 ?�음"
+      - name: ?섏쭛??寃곌낵 ?뺤씤
+        run: find scan-results/ -name "*.json" | sort || echo "寃곌낵 ?놁쓬"
 
       - name: Disabled legacy raw scan upload step
         if: ${{ false }}
@@ -732,8 +732,8 @@ jobs:
           upload() {
             local tool=$1 file=$2
             if [ -f "$file" ]; then
-              echo "?�로?? $tool"
-              # ?�시 payload ?�일 ?�성 (??JSON??처리 가??
+              echo "?낅줈?? $tool"
+              # ?꾩떆 payload ?뚯씪 ?앹꽦 (??JSON??泥섎━ 媛??
               jq -n --arg tool "$tool" \
                     --arg commit "${COMMIT_SHA}" \
                     --arg project "secureflow" \
@@ -748,7 +748,7 @@ jobs:
                   -d @/tmp/payload.json \
                   --max-time 60 || echo "000")
               else
-                echo "  ??jq ?�패, 직접 ?�송 ?�도"
+                echo "  ??jq ?ㅽ뙣, 吏곸젒 ?꾩넚 ?쒕룄"
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
                   -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
@@ -758,7 +758,7 @@ jobs:
               echo "  ??HTTP $HTTP"
               rm -f /tmp/payload.json
             else
-              echo "건너?�: $tool (?�일 ?�음)"
+              echo "嫄대꼫?: $tool (?뚯씪 ?놁쓬)"
             fi
           }
 
@@ -861,7 +861,7 @@ jobs:
             --max-time 120 || true
         continue-on-error: true
 
-      - name: CI LLM Gate 결과�?백엔?�에 ?�송
+      - name: CI LLM Gate 寃곌낵瑜?諛깆뿏?쒖뿉 ?꾩넚
         if: env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -874,19 +874,19 @@ jobs:
           for stage in iac sast sca; do
             FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
             if [ -f "$FILE" ]; then
-              echo "LLM gate ?�송: $stage"
+              echo "LLM gate ?꾩넚: $stage"
               jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
                 '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
               | curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
                 -H "Content-Type: application/json" \
-                -d @- || echo "  ?�송 ?�패 (무시)"
+                -d @- || echo "  ?꾩넚 ?ㅽ뙣 (臾댁떆)"
             else
-              echo "  $FILE ?�음 (?�킵)"
+              echo "  $FILE ?놁쓬 (?ㅽ궢)"
             fi
           done
         continue-on-error: true
 
-      - name: 개별 취약??LLM ?�정 (?�국??
+      - name: 媛쒕퀎 痍⑥빟??LLM ?먯젙 (?쒓뎅??
         if: env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -894,15 +894,15 @@ jobs:
           SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
         run: |
           pip install -q httpx 2>/dev/null
-          python scripts/ci/run_llm_judgments.py || echo "개별 ?�정 ?�패 (무시)"
+          python scripts/ci/run_llm_judgments.py || echo "媛쒕퀎 ?먯젙 ?ㅽ뙣 (臾댁떆)"
         continue-on-error: true
 
-      - name: API_SERVER_URL 미설???�내
+      - name: API_SERVER_URL 誘몄꽕???덈궡
         if: env.API_SERVER_URL == ''
         run: |
-          echo "?�️ API_SERVER_URL secret???�정?��? ?�았?�니??"
-          echo "  SecureFlow 백엔??배포 ??GitHub Secrets??API_SERVER_URL??추�??�면"
-          echo "  ?�캔 결과가 ?�?�보?�에 ?�동 반영?�니??"
+          echo "?좑툘 API_SERVER_URL secret???ㅼ젙?섏? ?딆븯?듬땲??"
+          echo "  SecureFlow 諛깆뿏??諛고룷 ??GitHub Secrets??API_SERVER_URL??異붽??섎㈃"
+          echo "  ?ㅼ틪 寃곌낵媛 ??쒕낫?쒖뿉 ?먮룞 諛섏쁺?⑸땲??"
 
   chain-cd-seo:
     needs:
