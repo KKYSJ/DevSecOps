@@ -427,6 +427,14 @@ jobs:
           python scripts/ci/run_llm_judgments.py || echo "Image judgments failed (ignored)"
         continue-on-error: true
 
+      - name: Upload image gate artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-llm-gate
+          path: artifacts/image/image-llm-gate.json
+          if-no-files-found: ignore
+
   service-dast-zap:
     needs:
       - resolve-context
@@ -991,6 +999,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q httpx 2>/dev/null
 
       - name: Download all gate artifacts
         uses: actions/download-artifact@v4
