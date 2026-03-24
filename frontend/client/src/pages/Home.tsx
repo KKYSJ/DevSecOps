@@ -549,11 +549,23 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
 }
 
 // DAST 전체 섹션 — SAST/SCA와 동일 구조
-function DastFullSection({ gates, judgments, summaries }: { gates: Record<string, any>; judgments: Record<string, any[]>; summaries?: Record<string, any> }) {
+function DastFullSection({ gates, judgments, summaries, currentCommitHash }: { gates: Record<string, any>; judgments: Record<string, any[]>; summaries?: Record<string, any>; currentCommitHash?: string }) {
   const [dastVulnsApi, setDastVulnsApi] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const gate = gates['dast'];
+  const dastJ = judgments['dast'] || [];
+  const imageDecision = ((gates['image']?.decision || gates['image']?.gate_result || '') as string).toLowerCase();
+  const imageBlocked = imageDecision === 'fail' || imageDecision === 'block';
+  const hasCurrentDastData = Boolean(gate?.commit_hash || dastJ.length > 0);
   useEffect(() => {
-    fetchJson<any>('/vulns?category=DAST&limit=50').then(res => {
+    if (!currentCommitHash || !hasCurrentDastData) {
+      setDastVulnsApi([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    fetchJson<any>(`/vulns?category=DAST&limit=50&commit_hash=${encodeURIComponent(currentCommitHash)}`).then(res => {
       const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
       const vulns = (res?.vulnerabilities || [])
         .filter((v: any) => (v.severity || '').toUpperCase() !== 'INFO')
@@ -573,10 +585,7 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
         }));
       setDastVulnsApi(vulns);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
-
-  const gate = gates['dast'];
-  const dastJ = judgments['dast'] || [];
+  }, [currentCommitHash, hasCurrentDastData]);
 
   // judgments + vulns API 합치기
   const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -614,6 +623,9 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
   const dastVulns = [...jVulns, ...extraWithJ].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
 
   if (loading && dastJ.length === 0) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
+  if (!hasCurrentDastData) {
+    return <div className="bg-card rounded-lg border border-border p-8 text-center text-muted-foreground"><p className="text-sm">{imageBlocked ? '이미지 게이트 차단으로 이번 실행의 DAST는 수행되지 않았습니다' : '현재 실행의 DAST 결과가 아직 없습니다'}</p><p className="text-xs mt-1">{imageBlocked ? '과거 DAST 결과는 현재 화면에서 숨깁니다' : '현재 커밋 기준 결과만 표시합니다'}</p></div>;
+  }
   const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
   dastVulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
 
@@ -1084,6 +1096,7 @@ export default function Home({ params }: HomeProps) {
   const [llmGates, setLlmGates] = useState<Record<string, any>>({});
   const [llmJudgments, setLlmJudgments] = useState<Record<string, any[]>>({});
   const [llmSummaries, setLlmSummaries] = useState<Record<string, any>>({});
+  const [currentGateCommitHash, setCurrentGateCommitHash] = useState<string>('');
 
   // judgments 기반 데이터 로드 (매칭 불필요 — judgment에 한국어+원본 모두 포함)
   useEffect(() => {
@@ -1100,6 +1113,7 @@ export default function Home({ params }: HomeProps) {
       console.log('gatesData.judgments keys:', Object.keys(gatesData.judgments || {}));
       console.log('gatesData.gates.judgments?', !!gatesData.gates?.judgments);
       const rawGates = gatesData.gates || {};
+      setCurrentGateCommitHash(gatesData.commit_hash || '');
 
       // judgments 찾기 — top-level을 우선 (merge된 데이터)
       let jByStage: Record<string, any[]> = {};
@@ -1921,7 +1935,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'dast' && (
             <div className="space-y-4">
-              <DastFullSection gates={llmGates} judgments={llmJudgments} summaries={llmSummaries} />
+              <DastFullSection gates={llmGates} judgments={llmJudgments} summaries={llmSummaries} currentCommitHash={currentGateCommitHash} />
             </div>
           )}
 

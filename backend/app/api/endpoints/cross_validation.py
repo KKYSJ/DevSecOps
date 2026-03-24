@@ -1,6 +1,8 @@
 """
-교차 검증 대시보드 엔드포인트
+Cross-validation dashboard endpoints.
 """
+
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -19,20 +21,33 @@ _EMPTY_REPORT = {
         "judgement_counts": {"TRUE_POSITIVE": 0, "REVIEW_NEEDED": 0, "FALSE_POSITIVE": 0},
     },
     "sections": {"SAST": [], "SCA": [], "IaC": [], "DAST": []},
-    "message": "스캔 결과가 없습니다. CI 파이프라인을 실행하세요.",
+    "message": "No cross-validation report is available yet.",
 }
+
+
+def _extract_commit_hash(payload: dict | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+
+    direct = payload.get("commit_hash")
+    if direct:
+        return direct
+
+    gate_result = payload.get("gate_result")
+    if isinstance(gate_result, dict):
+        nested = gate_result.get("commit_hash")
+        if nested:
+            return nested
+
+    return None
 
 
 @router.get("")
 def get_cross_validation(db: Session = Depends(get_db)):
-    """최신 교차 검증 대시보드 리포트를 반환합니다."""
+    """Return the latest dashboard report with findings, if available."""
     from backend.app.models.tool_result import ToolResult
 
     try:
-        # findings가 있는 최신 report를 우선 반환
-        from sqlalchemy import cast, Integer
-        from sqlalchemy.dialects.postgresql import JSONB
-
         records = (
             db.query(ToolResult)
             .filter(ToolResult.name == "report")
@@ -46,7 +61,6 @@ def get_cross_validation(db: Session = Depends(get_db)):
                 if total > 0:
                     return record.data
 
-        # findings 있는 게 없으면 최신 반환
         if records and records[0] and records[0].data:
             return records[0].data
     except Exception:
@@ -57,7 +71,7 @@ def get_cross_validation(db: Session = Depends(get_db)):
 
 @router.get("/history")
 def get_cross_validation_history(db: Session = Depends(get_db)):
-    """교차 검증 리포트 이력을 반환합니다."""
+    """Return recent dashboard report history."""
     from backend.app.models.tool_result import ToolResult
 
     try:
@@ -71,23 +85,25 @@ def get_cross_validation_history(db: Session = Depends(get_db)):
         history = []
         for rec in records:
             data = rec.data or {}
-            history.append({
-                "id": str(rec.id),
-                "report_id": data.get("report_id", str(rec.id)),
-                "generated_at": data.get("generated_at", ""),
-                "project_name": data.get("project_name", "secureflow"),
-                "commit_hash": data.get("commit_hash"),
-                "gate_decision": data.get("gate_decision", "ALLOW"),
-                "total_score": data.get("total_score", 0.0),
-            })
+            history.append(
+                {
+                    "id": str(rec.id),
+                    "report_id": data.get("report_id", str(rec.id)),
+                    "generated_at": data.get("generated_at", ""),
+                    "project_name": data.get("project_name", "secureflow"),
+                    "commit_hash": data.get("commit_hash"),
+                    "gate_decision": data.get("gate_decision", "ALLOW"),
+                    "total_score": data.get("total_score", 0.0),
+                }
+            )
         return {"history": history, "total": len(history)}
     except Exception:
         return {"history": [], "total": 0}
 
 
 @router.get("/gates")
-def get_llm_gates(db: Session = Depends(get_db)):
-    """CI의 LLM gate 결과를 반환합니다."""
+def get_llm_gates(commit_hash: Optional[str] = None, db: Session = Depends(get_db)):
+    """Return LLM gate outputs for a single commit."""
     from backend.app.models.tool_result import ToolResult
 
     try:
@@ -95,40 +111,60 @@ def get_llm_gates(db: Session = Depends(get_db)):
             db.query(ToolResult)
             .filter(ToolResult.name.like("llm-gate-%"))
             .order_by(ToolResult.id.desc())
-            .limit(10)
+            .limit(30)
             .all()
         )
-        gates = {}
+
+        resolved_commit = commit_hash
+        if not resolved_commit:
+            for rec in records:
+                resolved_commit = _extract_commit_hash(rec.data or {})
+                if resolved_commit:
+                    break
+
+        gates: dict[str, dict] = {}
         for rec in records:
             data = rec.data or {}
+            record_commit = _extract_commit_hash(data)
+            if resolved_commit and record_commit != resolved_commit:
+                continue
+
             stage = data.get("stage", "unknown")
-            if stage not in gates:  # 카테고리별 최신 1건만
+            if stage not in gates:
                 gates[stage] = data
 
-        # 개별 판정 결과 (judgments) — 여러 건 merge
-        judgments: dict = {}
+        judgments: dict[str, list] = {}
+        summaries: dict[str, dict] = {}
         j_records = (
             db.query(ToolResult)
             .filter(ToolResult.name == "llm-gate-judgments")
             .order_by(ToolResult.id.desc())
-            .limit(5)
+            .limit(10)
             .all()
         )
-        summaries: dict = {}
-        for j_rec in reversed(j_records):  # 오래된 것부터 → 최신이 덮어씀
+        for j_rec in reversed(j_records):
             j_data = j_rec.data or {}
+            record_commit = _extract_commit_hash(j_data)
+            if resolved_commit and record_commit != resolved_commit:
+                continue
+
             j_inner = j_data.get("judgments", {})
             if isinstance(j_inner, dict):
                 for stage_key, items in j_inner.items():
-                    if isinstance(items, list) and len(items) > 0:
+                    if isinstance(items, list) and items:
                         judgments[stage_key] = items
-            # summaries도 merge
+
             s_inner = j_data.get("summaries", {})
             if isinstance(s_inner, dict):
                 for stage_key, sdata in s_inner.items():
                     if isinstance(sdata, dict) and (sdata.get("summary") or sdata.get("verdict")):
                         summaries[stage_key] = sdata
 
-        return {"gates": gates, "judgments": judgments, "summaries": summaries}
+        return {
+            "commit_hash": resolved_commit,
+            "gates": gates,
+            "judgments": judgments,
+            "summaries": summaries,
+        }
     except Exception:
-        return {"gates": {}, "judgments": {}}
+        return {"commit_hash": commit_hash, "gates": {}, "judgments": {}, "summaries": {}}

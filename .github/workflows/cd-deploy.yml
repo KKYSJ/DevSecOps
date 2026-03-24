@@ -658,6 +658,8 @@ jobs:
       - resolve-context
       - service-dast-zap
       - service-dast-nuclei
+    outputs:
+      gate_decision: ${{ steps.gate-check.outputs.decision }}
     if: |
       always() &&
       needs.resolve-context.outputs.proceed == 'true' &&
@@ -704,6 +706,18 @@ jobs:
           name: dast-llm-gate
           path: artifacts/dast/dast-llm-gate.json
         # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/scans/gate-result.
+
+      - name: Check DAST gate decision
+        id: gate-check
+        if: always()
+        run: |
+          if [ -f artifacts/dast/dast-llm-gate.json ]; then
+            DECISION=$(jq -r '.decision // "unknown"' artifacts/dast/dast-llm-gate.json)
+            echo "decision=$DECISION"
+            echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          else
+            echo "decision=unknown" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload DAST gate result to SecureFlow
         if: always()
@@ -837,7 +851,12 @@ jobs:
       needs.deploy-staging-spring.result != 'failure' &&
       needs.deploy-staging-frontend.result != 'failure' &&
       needs.llm-image-gate.result != 'failure' &&
-      needs.llm-dast-gate.result != 'failure'
+      needs.llm-dast-gate.result != 'failure' &&
+      needs.llm-image-gate.outputs.gate_decision != 'fail' &&
+      (
+        needs.llm-dast-gate.result == 'skipped' ||
+        needs.llm-dast-gate.outputs.gate_decision != 'fail'
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
