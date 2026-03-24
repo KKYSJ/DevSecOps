@@ -1,2 +1,390 @@
-def run(payload=None):
-    return {"component": "analyzer", "payload": payload}
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
+TIMEOUT_SECONDS = 60
+MAX_RETRIES = 2
+
+SYSTEM_PROMPT = (
+    "너는 DevSecOps 보안 게이트 분석 전문가다. "
+    "반드시 한국어로 응답하라. "
+    "recommended_decision은 pass, review, fail 중 하나로 판정하고, "
+    "summary, reasons, provider_notes를 모두 한국어로 작성하라. "
+    "유효한 JSON만 반환하라."
+)
+
+
+def run(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    prompt = build_prompt(payload)
+
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    openai_model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+    gemini_configured = bool(gemini_key)
+    openai_configured = bool(openai_key)
+
+    if gemini_key:
+        try:
+            raw = call_gemini(prompt, gemini_key, gemini_model)
+            parsed = parse_json_object(raw)
+            return normalize_result(
+                parsed,
+                "gemini",
+                gemini_model,
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["gemini"],
+            )
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            if openai_key:
+                try:
+                    raw = call_openai(prompt, openai_key, openai_model)
+                    parsed = parse_json_object(raw)
+                    return normalize_result(
+                        parsed,
+                        "openai",
+                        openai_model,
+                        fallback_reason=f"gemini_failed: {exc}",
+                        gemini_configured=gemini_configured,
+                        openai_configured=openai_configured,
+                        attempted_providers=["gemini", "openai"],
+                    )
+                except Exception as openai_exc:  # pragma: no cover - defensive fallback
+                    return fallback_result(
+                        reason=f"gemini_failed: {exc}; openai_failed: {openai_exc}",
+                        prompt_preview=prompt[:600],
+                        gemini_configured=gemini_configured,
+                        openai_configured=openai_configured,
+                        attempted_providers=["gemini", "openai"],
+                    )
+            return fallback_result(
+                reason=f"gemini_failed: {exc}",
+                prompt_preview=prompt[:600],
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["gemini"],
+            )
+
+    if openai_key:
+        try:
+            raw = call_openai(prompt, openai_key, openai_model)
+            parsed = parse_json_object(raw)
+            return normalize_result(
+                parsed,
+                "openai",
+                openai_model,
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["openai"],
+            )
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            return fallback_result(
+                reason=f"openai_failed: {exc}",
+                prompt_preview=prompt[:600],
+                gemini_configured=gemini_configured,
+                openai_configured=openai_configured,
+                attempted_providers=["openai"],
+            )
+
+    return fallback_result(
+        reason="missing_llm_api_keys",
+        prompt_preview=prompt[:600],
+        gemini_configured=gemini_configured,
+        openai_configured=openai_configured,
+        attempted_providers=[],
+    )
+
+
+def build_prompt(payload: dict[str, Any]) -> str:
+    mode = str(payload.get("mode", "gate")).strip().lower() or "gate"
+    prompt_file = Path(str(payload.get("prompt_file", "")))
+    prompt_hint = prompt_file.stem if prompt_file.name else f"{payload.get('stage', 'unknown')}_gate"
+
+    if mode == "match_adjudication":
+        compact_payload = {
+            "stage": payload.get("stage"),
+            "prompt_hint": prompt_hint,
+            "match_candidates": payload.get("match_candidates", []),
+        }
+        return (
+            f"{SYSTEM_PROMPT}\n\n"
+            "Evaluate whether each candidate pair from two security tools refers to the same underlying vulnerability.\n"
+            "Use these decision meanings exactly:\n"
+            "- same: the two findings describe the same underlying vulnerability in the same code location\n"
+            "- related: the findings are security-related and nearby, but not clearly the same vulnerability\n"
+            "- different: the findings describe different vulnerabilities or unrelated issues\n\n"
+            "Be conservative. Only return `same` when the file, location, and vulnerability meaning clearly align.\n"
+            "Use this JSON schema exactly:\n"
+            "{\n"
+            '  "recommended_decision": "pass | review | fail",\n'
+            '  "confidence": "low | medium | high",\n'
+            '  "summary": "short summary",\n'
+            '  "reasons": ["reason 1", "reason 2"],\n'
+            '  "candidate_decisions": [\n'
+            "    {\n"
+            '      "candidate_id": "candidate id",\n'
+            '      "decision": "same | related | different",\n'
+            '      "confidence": "low | medium | high",\n'
+            '      "reason": "short reason"\n'
+            "    }\n"
+            "  ],\n"
+            '  "provider_notes": "optional note"\n'
+            "}\n\n"
+            "Input:\n"
+            f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
+        )
+
+    tool_lines = []
+    for item in payload.get("tool_summaries", []):
+        summary = item.get("summary", {})
+        tool_lines.append(
+            {
+                "tool": item.get("tool"),
+                "executed": item.get("executed", True),
+                "disabled_reason": item.get("disabled_reason"),
+                "summary": {
+                    "total": summary.get("total", 0),
+                    "critical": summary.get("critical", 0),
+                    "high": summary.get("high", 0),
+                    "medium": summary.get("medium", 0),
+                    "low": summary.get("low", 0),
+                    "info": summary.get("info", 0),
+                },
+            }
+        )
+
+    compact_payload = {
+        "stage": payload.get("stage"),
+        "prompt_hint": prompt_hint,
+        "combined_summary": payload.get("combined_summary", {}),
+        "divergence_ratio": payload.get("divergence_ratio", 0),
+        "tool_summaries": tool_lines,
+    }
+    if payload.get("confirmed_summary"):
+        compact_payload["confirmed_summary"] = payload.get("confirmed_summary", {})
+    if payload.get("mismatch_summary"):
+        compact_payload["mismatch_summary"] = payload.get("mismatch_summary", {})
+    if payload.get("matching"):
+        compact_payload["matching"] = payload.get("matching", {})
+    if payload.get("unmatched_findings"):
+        compact_payload["unmatched_findings"] = payload.get("unmatched_findings", {})
+    if payload.get("unmatched_truncated"):
+        compact_payload["unmatched_truncated"] = payload.get("unmatched_truncated", {})
+
+    return (
+        f"{SYSTEM_PROMPT}\n\n"
+        "아래 CI/CD 보안 게이트 데이터를 분석하라.\n"
+        "보수적으로 판단: 도구 간 결과가 크게 다르거나 중요 도구가 미실행이면 review를 권장하라.\n"
+        "unmatched_findings가 있으면, 실제 취약점인지, 도구별 노이즈인지, 수동 검토가 필요한지 판단하라.\n"
+        "matched findings는 명시적 critical 확인이 없는 한 재판정하지 마라.\n"
+        "반드시 한국어로 응답하고, 아래 JSON 스키마를 정확히 따르라:\n"
+        "{\n"
+        '  "recommended_decision": "pass | review | fail",\n'
+        '  "confidence": "low | medium | high",\n'
+        '  "summary": "한국어 요약 1~2문장",\n'
+        '  "reasons": ["한국어 근거 1", "한국어 근거 2"],\n'
+        '  "provider_notes": "한국어 추가 분석 노트"\n'
+        "}\n\n"
+        "입력 데이터:\n"
+        f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
+    )
+
+
+def call_openai(prompt: str, api_key: str, model: str) -> str:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+    }
+    raw = http_post(
+        url=OPENAI_URL,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        payload=payload,
+        provider="openai",
+    )
+    data = json.loads(raw)
+    return data["choices"][0]["message"]["content"]
+
+
+def call_gemini(prompt: str, api_key: str, model: str) -> str:
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json",
+        },
+    }
+    raw = http_post(
+        url=f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
+        headers={"Content-Type": "application/json"},
+        payload=payload,
+        provider="gemini",
+    )
+    data = json.loads(raw)
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def http_post(url: str, headers: dict[str, str], payload: dict[str, Any], provider: str) -> str:
+    body = json.dumps(payload).encode("utf-8")
+    last_error: Exception | None = None
+
+    for attempt in range(MAX_RETRIES + 1):
+        request = urllib.request.Request(url=url, headers=headers, data=body, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+                return response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:
+                time.sleep(2 ** attempt)
+                continue
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"{provider}_http_{exc.code}: {detail[:300]}") from exc
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            last_error = exc
+            if attempt < MAX_RETRIES:
+                time.sleep(2 ** attempt)
+                continue
+
+    raise RuntimeError(f"{provider}_request_failed: {last_error}")
+
+
+def parse_json_object(raw_text: str) -> dict[str, Any]:
+    text = raw_text.strip()
+
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        data = json.loads(match.group(0))
+        if isinstance(data, dict):
+            return data
+
+    raise ValueError("llm_response_not_json_object")
+
+
+def normalize_result(
+    data: dict[str, Any],
+    provider: str,
+    model: str,
+    fallback_reason: str | None = None,
+    gemini_configured: bool = False,
+    openai_configured: bool = False,
+    attempted_providers: list[str] | None = None,
+) -> dict[str, Any]:
+    recommended = normalize_decision(data.get("recommended_decision"))
+    confidence = str(data.get("confidence", "medium")).strip().lower()
+    if confidence not in {"low", "medium", "high"}:
+        confidence = "medium"
+
+    reasons = data.get("reasons")
+    if not isinstance(reasons, list):
+        reasons = [str(reasons)] if reasons else []
+
+    candidate_decisions = []
+    raw_candidate_decisions = data.get("candidate_decisions")
+    if isinstance(raw_candidate_decisions, list):
+        for item in raw_candidate_decisions:
+            if not isinstance(item, dict):
+                continue
+            decision = str(item.get("decision", "related")).strip().lower()
+            if decision not in {"same", "related", "different"}:
+                decision = "related"
+            item_confidence = str(item.get("confidence", "medium")).strip().lower()
+            if item_confidence not in {"low", "medium", "high"}:
+                item_confidence = "medium"
+            candidate_decisions.append(
+                {
+                    "candidate_id": str(item.get("candidate_id", "")).strip(),
+                    "decision": decision,
+                    "confidence": item_confidence,
+                    "reason": str(item.get("reason", "")).strip(),
+                }
+            )
+
+    result = {
+        "component": "analyzer",
+        "provider": provider,
+        "model": model,
+        "recommended_decision": recommended,
+        "confidence": confidence,
+        "summary": str(data.get("summary", "")).strip(),
+        "reasons": [str(reason) for reason in reasons if str(reason).strip()],
+        "provider_notes": str(data.get("provider_notes", "")).strip() or None,
+        "gemini_configured": gemini_configured,
+        "openai_configured": openai_configured,
+        "attempted_providers": attempted_providers or [],
+    }
+    if candidate_decisions:
+        result["candidate_decisions"] = candidate_decisions
+    if fallback_reason:
+        result["fallback_reason"] = fallback_reason
+    return result
+
+
+def normalize_decision(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    mapping = {
+        "pass": "pass",
+        "allow": "pass",
+        "approve": "pass",
+        "review": "review",
+        "manual_review": "review",
+        "needs_review": "review",
+        "fail": "fail",
+        "block": "fail",
+        "deny": "fail",
+    }
+    return mapping.get(text, "review")
+
+
+def fallback_result(
+    reason: str,
+    prompt_preview: str | None = None,
+    gemini_configured: bool = False,
+    openai_configured: bool = False,
+    attempted_providers: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "component": "analyzer",
+        "provider": "fallback",
+        "model": None,
+        "recommended_decision": "review",
+        "confidence": "low",
+        "summary": "LLM API was unavailable, so the gate used fallback handling.",
+        "reasons": [reason],
+        "provider_notes": None,
+        "prompt_preview": prompt_preview,
+        "gemini_configured": gemini_configured,
+        "openai_configured": openai_configured,
+        "attempted_providers": attempted_providers or [],
+    }

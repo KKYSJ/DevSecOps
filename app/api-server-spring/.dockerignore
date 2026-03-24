@@ -1,0 +1,7 @@
+.git
+target/
+data/*.mv.db
+data/*.lock.db
+uploads/*
+!uploads/.gitkeep
+application-prod.yml

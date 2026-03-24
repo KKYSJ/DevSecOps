@@ -1,0 +1,27 @@
+Evaluate the following CI/CD SCA security gate context.
+
+Be conservative:
+- If tools disagree materially or important tools did not execute, prefer review.
+- Focus on unmatched findings and whether they are likely true positives, likely tool-specific noise, or need manual review.
+- Do not re-judge already matched findings unless the payload explicitly indicates confirmed criticality.
+
+Stage-specific guidance:
+- For SCA, package identity and vulnerability identity are the strongest signals.
+- The same package and same CVE should usually be treated as the same underlying issue even when wording differs.
+- The same package with different CVEs, or different packages with the same weakness class, should usually stay unmatched.
+
+Language requirements:
+- Keep enum values such as `recommended_decision` and `confidence` in English exactly as defined by the schema.
+- Write `summary`, every item in `reasons`, and `provider_notes` in natural Korean.
+
+Use this JSON schema exactly:
+{
+  "recommended_decision": "pass | review | fail",
+  "confidence": "low | medium | high",
+  "summary": "short summary",
+  "reasons": ["reason 1", "reason 2"],
+  "provider_notes": "optional note"
+}
+
+Input:
+{{INPUT_JSON}}

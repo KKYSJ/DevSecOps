@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+uploads/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+vulnerable_example.py
