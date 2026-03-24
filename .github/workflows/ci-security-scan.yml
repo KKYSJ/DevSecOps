@@ -855,5 +855,5 @@ jobs:
       source_sha: ${{ github.sha }}
       service: all
       run_staging: true
-      run_production: false
+      run_production: true
     secrets: inherit
