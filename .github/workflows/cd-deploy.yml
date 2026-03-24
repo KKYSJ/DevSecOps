@@ -339,6 +339,8 @@ jobs:
       - resolve-context
       - image-scan
     if: always() && needs.resolve-context.outputs.proceed == 'true'
+    outputs:
+      gate_decision: ${{ steps.gate-check.outputs.decision }}
     runs-on: ubuntu-latest
     env:
       BACKEND_URL: ${{ secrets.BACKEND_URL }}
@@ -435,6 +437,18 @@ jobs:
           path: artifacts/image/image-llm-gate.json
           if-no-files-found: ignore
 
+      - name: Check image gate decision
+        id: gate-check
+        if: always()
+        run: |
+          if [ -f artifacts/image/image-llm-gate.json ]; then
+            DECISION=$(jq -r '.decision // "unknown"' artifacts/image/image-llm-gate.json)
+            echo "decision=$DECISION"
+            echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          else
+            echo "decision=unknown" >> $GITHUB_OUTPUT
+          fi
+
   service-dast-zap:
     needs:
       - resolve-context
@@ -442,6 +456,7 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
     if: |
       always() &&
       needs.resolve-context.outputs.proceed == 'true' &&
@@ -450,7 +465,8 @@ jobs:
       needs.deploy-staging-fastapi.result != 'failure' &&
       needs.deploy-staging-node.result != 'failure' &&
       needs.deploy-staging-spring.result != 'failure' &&
-      needs.deploy-staging-frontend.result != 'failure'
+      needs.deploy-staging-frontend.result != 'failure' &&
+      (needs.resolve-context.outputs.branch_name != 'main' || needs.llm-image-gate.outputs.gate_decision != 'fail')
     runs-on: ubuntu-latest
 
     steps:
@@ -525,6 +541,7 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
     if: |
       always() &&
       needs.resolve-context.outputs.proceed == 'true' &&
@@ -533,7 +550,8 @@ jobs:
       needs.deploy-staging-fastapi.result != 'failure' &&
       needs.deploy-staging-node.result != 'failure' &&
       needs.deploy-staging-spring.result != 'failure' &&
-      needs.deploy-staging-frontend.result != 'failure'
+      needs.deploy-staging-frontend.result != 'failure' &&
+      (needs.resolve-context.outputs.branch_name != 'main' || needs.llm-image-gate.outputs.gate_decision != 'fail')
     runs-on: ubuntu-latest
 
     steps:
