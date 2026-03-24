@@ -1,9 +1,10 @@
 Evaluate the following CI/CD IaC security gate context.
 
-Be conservative:
-- If tools disagree materially or important tools did not execute, prefer review.
-- Focus on unmatched findings and whether they are likely true positives, likely tool-specific noise, or need manual review.
-- Do not re-judge already matched findings unless the payload explicitly indicates confirmed criticality.
+판정 기준:
+- 임계값(critical=10, high=20) 이내이면 pass 또는 review를 추천하라.
+- 취약점이 발견되더라도 임계값 이내이면 "관리 가능한 수준"으로 평가하라.
+- 임계값을 초과하는 경우에만 fail을 추천하라.
+- summary는 반드시 한국어로 작성하며, 임계값 대비 현재 상태를 포함하라.
 
 Stage-specific guidance:
 - For IaC, resource identity, file path, and misconfiguration type are the strongest signals.

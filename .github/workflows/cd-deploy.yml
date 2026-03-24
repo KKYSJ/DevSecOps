@@ -1077,6 +1077,7 @@ jobs:
           merge-multiple: false
 
       - name: Collect gate files and generate overall verdict
+        continue-on-error: true
         run: |
           mkdir -p scan-results/iac-llm-gate scan-results/sast-llm-gate scan-results/sca-llm-gate scan-results/image-llm-gate scan-results/dast-llm-gate
 
@@ -1119,26 +1120,31 @@ jobs:
               print('No gate files found, skipping verdict')
               sys.exit(0)
 
-          print(f'종합 판정 대상: {len(stage_details)}개 stage')
+          # 최종 gate 결과 판단
+          has_fail = any('gate=fail' in s for s in stage_details)
+          final_decision = 'BLOCK (배포 차단)' if has_fail else 'ALLOW (배포 허용)'
+
+          print(f'종합 판정 대상: {len(stage_details)}개 stage, 최종: {final_decision}')
 
           prompt = '''너는 DevSecOps 보안 파이프라인의 최종 판정을 내리는 전문가다.
           아래는 각 보안 검사 단계의 분석 결과이다. 이를 종합하여 최종 판정을 한국어로 작성하라.
 
-          ''' + chr(10).join(stage_details) + '''
+          ''' + chr(10).join(stage_details) + f'''
 
-          게이트 차단 조건:
-          - CRITICAL TRUE_POSITIVE >= 1건
-          - total_score >= 100
-          - HIGH TRUE_POSITIVE >= 3건
+          ★★★ 최종 게이트 판정 결과: {final_decision} ★★★
+
+          위 최종 판정 결과를 반드시 반영하여 작성하라.
+          - ALLOW인 경우: 배포가 허용된 이유, 발견된 취약점이 임계값 이내인 점, 전반적 보안 상태가 양호한 점을 서술
+          - BLOCK인 경우: 배포가 차단된 이유, 어떤 단계에서 임계값을 초과했는지, 즉시 조치 항목을 서술
 
           다음을 포함하여 작성하라:
-          1. 어떤 단계에서 어떤 이유로 차단(또는 통과)되었는지
-          2. 가장 심각한 취약점이 무엇이고 왜 위험한지
-          3. 즉시 조치가 필요한 항목과 우선순위
+          1. 최종 판정 결과 (ALLOW 또는 BLOCK)와 그 이유
+          2. 각 단계별 주요 발견사항 요약
+          3. 권고 조치 항목 (ALLOW여도 개선사항, BLOCK이면 필수 조치)
           4. 전체적인 보안 상태 평가
 
           아래 JSON 형식으로만 응답하라:
-          {\"verdict\": \"5~8문장의 상세한 종합 판정 (한국어)\", \"priority_actions\": [\"우선 조치1\", \"우선 조치2\", \"우선 조치3\"]}
+          {{\"verdict\": \"5~8문장의 상세한 종합 판정 (한국어)\", \"priority_actions\": [\"권고 조치1\", \"권고 조치2\", \"권고 조치3\"]}}
           '''
 
           from engine.llm.client import call_llm
