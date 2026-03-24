@@ -1872,7 +1872,7 @@ export default function Home({ params }: HomeProps) {
                       })}
                       {/* 종합 분석 */}
                       {(() => {
-                        const overall = llmSummaries?.['_overall'] || {};
+                        const overall = llmSummaries?.['_overall'] || llmGates?.['overall-verdict']?.summaries?.['_overall'] || {};
                         const verdict = overall.verdict || '';
                         const actions = overall.priority_actions || [];
                         const hasLlmVerdict = !!verdict;

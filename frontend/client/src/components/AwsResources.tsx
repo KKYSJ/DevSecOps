@@ -364,7 +364,7 @@ function ResourceTableRow({ resource }: { resource: Resource }) {
             <td className="px-5 py-4 font-semibold text-foreground">{resource.name}</td>
             <td className="px-5 py-4 text-muted-foreground">{resource.type}</td>
             <td className="px-5 py-4 text-muted-foreground">{resource.region}</td>
-            <td className="px-5 py-4">
+            <td className="px-5 py-4 whitespace-nowrap">
                 <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${status.badge}`}>
                     {status.label}
                 </span>
@@ -545,17 +545,12 @@ export default function AwsResources() {
                 />
             </div>
 
-            {/* Full inventory detail — Accordion */}
-            <AwsAccordion title="전체 리소스 상세" subtitle={`${resources.length}개 리소스 · AWS 실제 속성`}>
-                <div className="p-5 space-y-4">
-                    {resources.map((resource) => (
-                        <ResourceDetailCard key={resource.id} resource={resource} />
-                    ))}
+            {/* 리소스 요약 테이블 */}
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div className="border-b border-border px-5 py-4">
+                    <div className="text-sm font-semibold text-foreground">리소스 요약 테이블</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{resources.length}개 리소스</div>
                 </div>
-            </AwsAccordion>
-
-            {/* Inventory summary table — Accordion */}
-            <AwsAccordion title="리소스 요약 테이블" subtitle="빠르게 전체 리소스 확인">
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[980px] text-sm">
                         <thead className="bg-muted/30">
@@ -575,7 +570,7 @@ export default function AwsResources() {
                         </tbody>
                     </table>
                 </div>
-            </AwsAccordion>
+            </div>
         </div>
     );
 }
