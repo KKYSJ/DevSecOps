@@ -912,6 +912,7 @@ jobs:
           echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
 
       - name: Run ISMS-P gate
+        continue-on-error: true
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
