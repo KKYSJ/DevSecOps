@@ -1223,8 +1223,9 @@ def apply_llm_recommendation(
         return decision, reasons
 
     if llm_decision == "fail":
-        decision = "fail"
-        reasons.append("llm recommended fail for unmatched findings")
+        if decision == "pass":
+            decision = "review"
+        reasons.append("llm recommended review for unmatched findings")
     elif llm_decision == "review" and decision == "pass":
         decision = "review"
         reasons.append("llm recommended manual review for unmatched findings")
