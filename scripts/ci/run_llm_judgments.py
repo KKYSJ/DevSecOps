@@ -107,11 +107,11 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
 
 
 def main():
-    backend_url = os.getenv("BACKEND_URL", "").strip()
+    api_server_url = os.getenv("API_SERVER_URL", "").strip().rstrip("/")
     commit_hash = os.getenv("COMMIT_SHA", "").strip()
 
-    if not backend_url:
-        print("BACKEND_URL 미설정, 스킵")
+    if not api_server_url:
+        print("API_SERVER_URL 미설정, 스킵")
         return
 
     all_stages = {"sast": "SAST", "sca": "SCA", "iac": "IaC", "dast": "DAST", "image": "IMAGE"}
@@ -305,7 +305,7 @@ def main():
             },
         }).encode("utf-8")
 
-        url = f"{backend_url}/api/v1/scans/gate-result"
+        url = f"{api_server_url}/scans/gate-result"
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         try:
             resp = urllib.request.urlopen(req, timeout=30)
