@@ -174,13 +174,31 @@ def main():
         tp_titles = [p.get("title_ko", "") for p in tp[:5]]
         rv_titles = [p.get("title_ko", "") for p in rv[:3]]
 
+        # gate decision 확인
+        gate_file = f"scan-results/{stage}-llm-gate/{stage}-llm-gate.json"
+        gate_decision = "unknown"
+        if os.path.exists(gate_file):
+            try:
+                gate_data = json.load(open(gate_file))
+                gate_decision = gate_data.get("decision", "unknown")
+            except Exception:
+                pass
+
+        tone_guide = ""
+        if gate_decision in ("pass", "review"):
+            tone_guide = f"\n★ 이 단계의 게이트 판정은 '{gate_decision.upper()}' (통과)입니다. 긍정적 톤으로 작성하고, 발견된 취약점이 관리 가능한 수준임을 강조하세요."
+        elif gate_decision == "fail":
+            tone_guide = f"\n★ 이 단계의 게이트 판정은 'BLOCK' (차단)입니다. 심각성을 강조하고 즉시 조치가 필요함을 명확히 하세요."
+
         summary_prompt = f"""너는 DevSecOps 보안 분석 전문가다. 아래 교차검증 결과를 한국어로 요약하라.
 
 카테고리: {stage.upper()}
+게이트 판정: {gate_decision.upper()}
 동시 탐지 (두 도구 모두 발견): {len(tp)}건
 {chr(10).join(f'  - {t}' for t in tp_titles) if tp_titles else '  없음'}
 단독 탐지 (한 도구만 발견): {len(rv)}건
 {chr(10).join(f'  - {t}' for t in rv_titles) if rv_titles else '  없음'}
+{tone_guide}
 
 아래 JSON 형식으로만 응답하라:
 {{"summary": "2~3문장 한국어 요약", "reasons": ["근거1", "근거2"]}}
