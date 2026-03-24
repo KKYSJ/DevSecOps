@@ -54,14 +54,18 @@ type EventItem = {
   description: string;
 };
 
-function formatRecentTime(value?: string) {
-  if (!value) return '-';
-  if (value.includes('T')) {
-    const timePart = value.split('T')[1] ?? '';
-    return timePart.split('+')[0]?.replace('Z', '') || value;
-  }
-  return value;
-}
+const formatRecentTime = (time?: string) => {
+  if (!time) return '-';
+
+  const date = new Date(time);
+
+  return date.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false, // 👉 오전/오후 제거 (24시간 형식)
+  });
+};
 
 function getSeverityColor(severity: string) {
   switch (severity) {
