@@ -33,15 +33,50 @@ import StageCrossAnalysis from '@/components/StageCrossAnalysis';
 import AwsResources from '@/components/AwsResources';
 import { fetchJson } from '@/lib/api';
 
-const PIPELINE_STAGES = [
+const SCAN_STAGES = [
   { id: 'iac', label: 'IaC 스캔', subtitle: 'tfsec + Checkov', icon: Cloud },
   { id: 'sast', label: 'SAST', subtitle: 'SonarQube + Semgrep', icon: Code2 },
   { id: 'sca', label: 'SCA', subtitle: 'Trivy + Dep-Check', icon: ShieldCheck },
-  { id: 'cross', label: '교차 검증', subtitle: 'LLM 판정', icon: GitBranch },
   { id: 'image', label: '이미지 스캔', subtitle: 'Trivy + Grype', icon: Image },
-  { id: 'deploy', label: '배포', subtitle: 'ECS Fargate', icon: Server },
   { id: 'dast', label: 'DAST', subtitle: 'ZAP + Nuclei', icon: Bug },
 ];
+const CROSS_STAGE = { id: 'cross', label: '교차 검증', subtitle: 'LLM 종합 분석', icon: GitBranch };
+
+// gate 결과 기반으로 BLOCK된 위치를 찾아 교차검증을 동적 삽입
+function buildDynamicPipeline(gates: Record<string, any>) {
+  const getDecision = (g: any) => {
+    const d = (g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase();
+    if (d === 'fail' || d === 'block') return 'block';
+    return d;
+  };
+
+  // BLOCK된 stage 찾기
+  const scanOrder = ['iac', 'sast', 'sca', 'image', 'dast'];
+  let blockIdx = -1;
+  for (let i = 0; i < scanOrder.length; i++) {
+    if (getDecision(gates[scanOrder[i]]) === 'block') {
+      blockIdx = i;
+      break;
+    }
+  }
+
+  const stages = [...SCAN_STAGES];
+  if (blockIdx >= 0) {
+    // BLOCK된 stage의 SCAN_STAGES 내 인덱스 찾기
+    const blockStageId = scanOrder[blockIdx];
+    const insertAfter = stages.findIndex(s => s.id === blockStageId);
+    if (insertAfter >= 0) {
+      stages.splice(insertAfter + 1, 0, CROSS_STAGE);
+    }
+  } else {
+    // BLOCK 없으면 맨 뒤에
+    stages.push(CROSS_STAGE);
+  }
+  return stages;
+}
+
+// 하위 호환용
+const PIPELINE_STAGES = SCAN_STAGES;
 
 type PipelineStepState = 'pending' | 'running' | 'success' | 'failed';
 
@@ -83,25 +118,27 @@ function getStepStateFromGates(
   const relevantGates = stageGateMap[stageId] || [];
 
   if (stageId === 'cross') {
-    const hasBlock = relevantGates.some(g => getGateDecision(gates[g]) === 'block');
-    const hasAny = relevantGates.some(g => gates[g]);
+    // 교차검증은 BLOCK/REVIEW와 무관하게 분석 완료 표시
+    const allGateKeys = ['sast', 'sca', 'iac', 'image', 'dast'];
+    const hasAny = allGateKeys.some(g => gates[g]);
     if (!hasAny) return 'pending';
-    return hasBlock ? 'failed' : 'success';
+    return 'success'; // 분석 완료
   }
 
-  // BLOCK된 단계 이후는 전부 회색
-  const stageOrder = ['iac', 'sast', 'sca', 'cross', 'image', 'deploy', 'dast'];
-  const currentStageIdx = stageOrder.indexOf(stageId);
-  for (let i = 0; i < currentStageIdx; i++) {
-    const prevId = stageOrder[i];
-    const prevGates = stageGateMap[prevId] || [];
-    const prevDecision = prevGates.length > 0 ? getGateDecision(gates[prevGates[0]]) : '';
-    if (prevDecision === 'block') return 'pending';  // 이전에 BLOCK → 회색
-    // cross는 Phase 1 중 BLOCK이 있으면
-    if (prevId === 'cross') {
-      const hasBlock = ['sast', 'sca', 'iac'].some(g => getGateDecision(gates[g]) === 'block');
-      if (hasBlock) return 'pending';
+  // BLOCK된 단계 이후는 전부 회색 (교차검증 제외)
+  const scanOrder = ['iac', 'sast', 'sca', 'image', 'dast'];
+  const currentStageIdx = scanOrder.indexOf(stageId);
+  if (currentStageIdx >= 0) {
+    for (let i = 0; i < currentStageIdx; i++) {
+      const prevId = scanOrder[i];
+      const prevGates2 = stageGateMap[prevId] || [];
+      const prevDecision = prevGates2.length > 0 ? getGateDecision(gates[prevGates2[0]]) : '';
+      if (prevDecision === 'block') return 'pending';
     }
+  }
+  // 교차검증: BLOCK된 stage가 있으면 그 이전 stage 기준으로 판단
+  if (stageId === 'cross') {
+    // BLOCK 이후에 위치하므로 항상 표시 (pending 아님)
   }
 
   if (stageId === 'deploy') {
@@ -512,11 +549,23 @@ function ImageScanSection({ judgments, summaries, gates }: { judgments?: any[]; 
 }
 
 // DAST 전체 섹션 — SAST/SCA와 동일 구조
-function DastFullSection({ gates, judgments, summaries }: { gates: Record<string, any>; judgments: Record<string, any[]>; summaries?: Record<string, any> }) {
+function DastFullSection({ gates, judgments, summaries, currentCommitHash }: { gates: Record<string, any>; judgments: Record<string, any[]>; summaries?: Record<string, any>; currentCommitHash?: string }) {
   const [dastVulnsApi, setDastVulnsApi] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const gate = gates['dast'];
+  const dastJ = judgments['dast'] || [];
+  const imageDecision = ((gates['image']?.decision || gates['image']?.gate_result || '') as string).toLowerCase();
+  const imageBlocked = imageDecision === 'fail' || imageDecision === 'block';
+  const hasCurrentDastData = Boolean(gate?.commit_hash || dastJ.length > 0);
   useEffect(() => {
-    fetchJson<any>('/vulns?category=DAST&limit=50').then(res => {
+    if (!currentCommitHash || !hasCurrentDastData) {
+      setDastVulnsApi([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    fetchJson<any>(`/vulns?category=DAST&limit=50&commit_hash=${encodeURIComponent(currentCommitHash)}`).then(res => {
       const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
       const vulns = (res?.vulnerabilities || [])
         .filter((v: any) => (v.severity || '').toUpperCase() !== 'INFO')
@@ -536,10 +585,7 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
         }));
       setDastVulnsApi(vulns);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
-
-  const gate = gates['dast'];
-  const dastJ = judgments['dast'] || [];
+  }, [currentCommitHash, hasCurrentDastData]);
 
   // judgments + vulns API 합치기
   const _s: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -577,6 +623,9 @@ function DastFullSection({ gates, judgments, summaries }: { gates: Record<string
   const dastVulns = [...jVulns, ...extraWithJ].sort((a: any, b: any) => (_s[a.severity] ?? 9) - (_s[b.severity] ?? 9));
 
   if (loading && dastJ.length === 0) return <div className="text-center py-10 text-muted-foreground">DAST 데이터 로딩 중...</div>;
+  if (!hasCurrentDastData) {
+    return <div className="bg-card rounded-lg border border-border p-8 text-center text-muted-foreground"><p className="text-sm">{imageBlocked ? '이미지 게이트 차단으로 이번 실행의 DAST는 수행되지 않았습니다' : '현재 실행의 DAST 결과가 아직 없습니다'}</p><p className="text-xs mt-1">{imageBlocked ? '과거 DAST 결과는 현재 화면에서 숨깁니다' : '현재 커밋 기준 결과만 표시합니다'}</p></div>;
+  }
   const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
   dastVulns.forEach(v => { if (counts[v.severity as keyof typeof counts] !== undefined) counts[v.severity as keyof typeof counts]++; });
 
@@ -1047,6 +1096,7 @@ export default function Home({ params }: HomeProps) {
   const [llmGates, setLlmGates] = useState<Record<string, any>>({});
   const [llmJudgments, setLlmJudgments] = useState<Record<string, any[]>>({});
   const [llmSummaries, setLlmSummaries] = useState<Record<string, any>>({});
+  const [currentGateCommitHash, setCurrentGateCommitHash] = useState<string>('');
 
   // judgments 기반 데이터 로드 (매칭 불필요 — judgment에 한국어+원본 모두 포함)
   useEffect(() => {
@@ -1063,6 +1113,7 @@ export default function Home({ params }: HomeProps) {
       console.log('gatesData.judgments keys:', Object.keys(gatesData.judgments || {}));
       console.log('gatesData.gates.judgments?', !!gatesData.gates?.judgments);
       const rawGates = gatesData.gates || {};
+      setCurrentGateCommitHash(gatesData.commit_hash || '');
 
       // judgments 찾기 — top-level을 우선 (merge된 데이터)
       let jByStage: Record<string, any[]> = {};
@@ -1233,7 +1284,7 @@ export default function Home({ params }: HomeProps) {
       activeSection === 'siem' ? '모니터링' :
         activeSection === 'aws' ? 'AWS 리소스 현황' : '');
 
-  const isPipelineStage = PIPELINE_STAGES.some(stage => stage.id === activeSection);
+  const isPipelineStage = [...SCAN_STAGES, CROSS_STAGE].some(stage => stage.id === activeSection);
 
 
 
@@ -1415,9 +1466,17 @@ export default function Home({ params }: HomeProps) {
                               )}
                             </button>
 
-                            {opts.showConnector && index < PIPELINE_STAGES.length - 1 && (
+                            {opts.showConnector && index < buildDynamicPipeline(llmGates).length - 1 && (
                               <div className="hidden sm:block mx-2">
-                                <div className={`h-[2px] w-10 rounded-full ${c.line}`} />
+                                {(() => {
+                                  const dynamicStages = buildDynamicPipeline(llmGates);
+                                  const nextStage = dynamicStages[index + 1];
+                                  const nextState = nextStage && Object.keys(llmGates).length > 0
+                                    ? getStepStateFromGates(nextStage.id, llmGates)
+                                    : 'pending';
+                                  const lineColor = nextState === 'pending' ? 'bg-gray-300' : c.line;
+                                  return <div className={`h-[2px] w-10 rounded-full ${lineColor}`} />;
+                                })()}
                               </div>
                             )}
                           </div>
@@ -1428,13 +1487,13 @@ export default function Home({ params }: HomeProps) {
                         <>
                           {/* Mobile: stack (no overlap, no connector) */}
                           <div className="sm:hidden space-y-2">
-                            {PIPELINE_STAGES.map((stage, index) => renderStep(stage, index, { showConnector: false, fullWidth: true }))}
+                            {buildDynamicPipeline(llmGates).map((stage, index) => renderStep(stage, index, { showConnector: false, fullWidth: true }))}
                           </div>
 
                           {/* Desktop: horizontal sequence with connectors */}
                           <div className="hidden sm:block overflow-x-auto">
                             <div className="flex items-center gap-x-3 py-1 min-w-max">
-                              {PIPELINE_STAGES.map((stage, index) => renderStep(stage, index, { showConnector: true }))}
+                              {buildDynamicPipeline(llmGates).map((stage, index) => renderStep(stage, index, { showConnector: true }))}
                             </div>
                           </div>
                         </>
@@ -1607,41 +1666,144 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'cross' && (
             <div className="space-y-5">
-              {/* 게이트 판정 배너 */}
+
+              {/* 파이프라인 실행 상태 + 보안 검사 단계 */}
               {(() => {
-                // judgments 기반 전체 통계
-                const allJ = [...(llmJudgments['sast'] || []), ...(llmJudgments['sca'] || []), ...(llmJudgments['iac'] || [])];
-                const totalConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b).length;
-                const criticalConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.reassessed_severity || j.severity || '').toUpperCase() === 'CRITICAL').length;
-                const highConfirmed = allJ.filter(j => j.judgement_code === 'TRUE_POSITIVE' && j.finding_b && (j.reassessed_severity || j.severity || '').toUpperCase() === 'HIGH').length;
-                const isBlock = criticalConfirmed > 0 || totalConfirmed >= 3;
-                const reason = criticalConfirmed > 0
-                  ? `CRITICAL 동시탐지 ${criticalConfirmed}건 발견 → 즉시 수정 필요`
-                  : highConfirmed > 0
-                  ? `HIGH 동시탐지 ${highConfirmed}건 발견 → 수정 권장`
-                  : totalConfirmed > 0
-                  ? `동시탐지 ${totalConfirmed}건 발견 → 검토 필요`
-                  : '동시탐지 항목 없음';
+                const getDecisionX = (g: any) => {
+                  const dx = (g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase();
+                  return (dx === 'fail' || dx === 'block') ? 'block' : dx;
+                };
+                const hasBlock = ['iac', 'sast', 'sca', 'image', 'dast'].some(s => getDecisionX(llmGates[s]) === 'block');
+                const blockedAt = ['iac', 'sast', 'sca', 'image', 'dast'].find(s => getDecisionX(llmGates[s]) === 'block');
+                const labelMapX: Record<string, string> = { iac: 'IaC', sast: 'SAST', sca: 'SCA', image: '이미지 스캔', dast: 'DAST' };
+                // llmGates에서 commit_hash 추출
+                const firstGate = llmGates['sast'] || llmGates['sca'] || llmGates['iac'] || llmGates['image'] || {};
+                const commit = (firstGate.commit_hash || '').slice(0, 8) || '—';
+                const gate = hasBlock ? 'BLOCK' : 'REVIEW';
+                const timeStr2 = firstGate.commit_hash ? new Date().toLocaleString('ko-KR') : '—';
+
+                // 보안 검사 단계 동적 생성
+                const scanSteps = [
+                  { label: 'IaC 스캔 (tfsec + Checkov)', key: 'iac' },
+                  { label: 'SAST (SonarQube + Semgrep)', key: 'sast' },
+                  { label: 'SCA (Trivy + Dep-Check)', key: 'sca' },
+                ];
+                // Phase 1 gate
+                const phase1Block = ['iac', 'sast', 'sca'].some(s => getDecisionX(llmGates[s]) === 'block');
+
+                type StepInfo = { label: string; status: string; state: 'ok' | 'fail' | 'skip' };
+                const steps: StepInfo[] = [];
+
+                // Phase 1
+                steps.push({ label: 'Phase 1 — SAST + SCA + IaC', status: '완료', state: 'ok' });
+                steps.push({ label: '교차검증 + LLM 판정', status: '완료', state: 'ok' });
+
+                if (phase1Block) {
+                  steps.push({ label: '게이트 판정 (Phase 1)', status: 'BLOCK', state: 'fail' });
+                  steps.push({ label: 'Docker 이미지 빌드', status: '차단됨', state: 'skip' });
+                  steps.push({ label: '이미지 스캔 (Trivy + Grype)', status: '미실행', state: 'skip' });
+                  steps.push({ label: 'Phase 2 — DAST (ZAP + Nuclei)', status: '미실행', state: 'skip' });
+                  steps.push({ label: '배포 (ECS Fargate)', status: '차단됨', state: 'skip' });
+                } else {
+                  steps.push({ label: '게이트 판정 (Phase 1)', status: 'PASS', state: 'ok' });
+                  steps.push({ label: 'Docker 이미지 빌드', status: '완료', state: 'ok' });
+                  const imageBlock = getDecisionX(llmGates['image']) === 'block';
+                  steps.push({ label: '이미지 스캔 (Trivy + Grype)', status: imageBlock ? 'BLOCK' : '완료', state: imageBlock ? 'fail' : 'ok' });
+                  if (imageBlock) {
+                    steps.push({ label: 'Phase 2 — DAST (ZAP + Nuclei)', status: '미실행', state: 'skip' });
+                    steps.push({ label: '배포 (ECS Fargate)', status: '차단됨', state: 'skip' });
+                  } else {
+                    const dastBlock = getDecisionX(llmGates['dast']) === 'block';
+                    steps.push({ label: 'Phase 2 — DAST (ZAP + Nuclei)', status: dastBlock ? 'BLOCK' : '완료', state: dastBlock ? 'fail' : 'ok' });
+                    steps.push({ label: '배포 (ECS Fargate)', status: dastBlock ? '차단됨' : '완료', state: dastBlock ? 'skip' : 'ok' });
+                  }
+                }
 
                 return (
-                  <div className={`rounded-lg border-2 p-5 ${isBlock ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`text-lg font-bold ${isBlock ? 'text-red-700' : 'text-green-700'}`}>
-                        {isBlock ? '🔴 배포 차단' : '🟢 배포 허용'}
-                      </span>
+                  <>
+                    {/* 배포 판정 배너 */}
+                    <div className={`rounded-lg border-2 p-5 ${hasBlock ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`text-lg font-bold ${hasBlock ? 'text-red-700' : 'text-green-700'}`}>
+                          {hasBlock ? <><span className="inline-block w-3 h-3 rounded-full bg-red-500 mr-1" />배포 차단</> : '배포 허용'}
+                        </span>
+                      </div>
+                      <div className={`text-sm ${hasBlock ? 'text-red-600' : 'text-green-600'}`}>
+                        {hasBlock
+                          ? `${labelMapX[blockedAt!]} 단계에서 CRITICAL 취약점이 발견되어 배포가 차단되었습니다.`
+                          : '모든 보안 검사를 통과하여 배포가 허용되었습니다.'}
+                      </div>
                     </div>
-                    <div className={`text-sm ${isBlock ? 'text-red-600' : 'text-green-600'}`}>{reason}</div>
-                  </div>
+
+                    {/* 파이프라인 실행 상태 */}
+                    <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+                      <h3 className="text-sm font-bold text-foreground mb-4">파이프라인 실행 상태</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-muted rounded-lg p-4">
+                          <div className="text-xs text-muted-foreground mb-1">최근 커밋</div>
+                          <div className="text-sm font-mono font-bold text-foreground">{commit}</div>
+                        </div>
+                        <div className="bg-muted rounded-lg p-4">
+                          <div className="text-xs text-muted-foreground mb-1">게이트 판정</div>
+                          <div className={`text-sm font-bold ${hasBlock ? 'text-red-600' : 'text-green-600'}`}>{gate}</div>
+                        </div>
+                        <div className="bg-muted rounded-lg p-4">
+                          <div className="text-xs text-muted-foreground mb-1">Phase</div>
+                          <div className="text-sm font-bold text-foreground">{phase1Block ? 'Phase 1 차단' : blockedAt ? 'Phase 2 차단' : '전체 통과'}</div>
+                        </div>
+                        <div className="bg-muted rounded-lg p-4">
+                          <div className="text-xs text-muted-foreground mb-1">실행 시각</div>
+                          <div className="text-xs font-mono text-foreground">{timeStr2}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 보안 검사 단계 */}
+                    <div className="bg-card rounded-lg border border-border shadow-sm p-5">
+                      <h3 className="text-sm font-bold text-foreground mb-4">보안 검사 단계</h3>
+                      <div className="space-y-3">
+                        {steps.map((step, i) => (
+                          <div key={i} className="flex items-center gap-3">
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                              step.state === 'ok' ? 'bg-green-500' : step.state === 'fail' ? 'bg-red-500' : 'bg-gray-300'
+                            }`}>
+                              {step.state === 'ok' ? '✓' : step.state === 'fail' ? '✕' : '—'}
+                            </span>
+                            <span className={`text-sm flex-1 ${step.state === 'skip' ? 'text-muted-foreground' : 'text-foreground'}`}>{step.label}</span>
+                            <span className={`text-xs font-semibold ${
+                              step.state === 'ok' ? 'text-green-600' : step.state === 'fail' ? 'text-red-600' : 'text-muted-foreground'
+                            }`}>{step.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
                 );
               })()}
 
-              {/* 카테고리별 교차검증 요약 */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
+              {/* 카테고리별 교차검증 요약 — BLOCK 시점까지 동적 */}
+              {(() => {
+                const getDecision3 = (g: any) => {
+                  const d3 = (g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase();
+                  return (d3 === 'fail' || d3 === 'block') ? 'block' : d3;
+                };
+                const allCards = [
                   { key: 'sast', label: 'SAST', sub: 'SonarQube + Semgrep', mode: 'cross' as const },
                   { key: 'sca', label: 'SCA', sub: 'Trivy + Dep-Check', mode: 'cross' as const },
                   { key: 'iac', label: 'IaC', sub: 'tfsec + Checkov', mode: 'combined' as const },
-                ].map(({ key, label, sub, mode }) => {
+                  { key: 'image', label: '이미지 스캔', sub: 'Trivy + Grype', mode: 'cross' as const },
+                  { key: 'dast', label: 'DAST', sub: 'ZAP + Nuclei', mode: 'cross' as const },
+                ];
+                // BLOCK 시점까지만 포함
+                const visibleCards: typeof allCards = [];
+                for (const c of allCards) {
+                  visibleCards.push(c);
+                  if (getDecision3(llmGates[c.key]) === 'block') break;
+                }
+                const cols = visibleCards.length <= 3 ? 'md:grid-cols-3' : visibleCards.length === 4 ? 'md:grid-cols-4' : 'md:grid-cols-5';
+                return (
+              <div className={`grid grid-cols-1 ${cols} gap-4`}>
+                {visibleCards.map(({ key, label, sub, mode }) => {
                   const j = llmJudgments[key] || [];
                   const confirmed = j.filter((x: any) => x.judgement_code === 'TRUE_POSITIVE' && x.finding_b).length;
                   const review = j.length - confirmed;
@@ -1681,34 +1843,79 @@ export default function Home({ params }: HomeProps) {
                   );
                 })}
               </div>
+                );
+              })()}
 
-              {/* LLM 분석 종합 */}
+              {/* BLOCK 사유 배너 제거됨 — 배포 판정 배너에서 표시 */}
+
+              {/* LLM 단계별 분석 + 종합 분석 */}
               {(() => {
-                const stages = ['sast', 'sca', 'iac'];
-                const summaries = stages.map(s => llmGates[s]?.llm_analysis?.summary).filter(Boolean);
-                if (summaries.length === 0) return null;
+                const getDecision = (g: any) => {
+                  const d2 = (g?.decision || g?.gate_result || g?.llm_analysis?.recommended_decision || '').toLowerCase();
+                  return (d2 === 'fail' || d2 === 'block') ? 'block' : d2;
+                };
+                // BLOCK 이전까지의 stage만 포함
+                const scanOrder2 = ['iac', 'sast', 'sca', 'image', 'dast'];
+                const activeStages: string[] = [];
+                for (const s of scanOrder2) {
+                  activeStages.push(s);
+                  if (getDecision(llmGates[s]) === 'block') break;
+                }
+                const labelMap: Record<string, string> = { sast: 'SAST', sca: 'SCA', iac: 'IaC', image: '이미지 스캔', dast: 'DAST' };
+                const hasSummary = activeStages.some(s => llmGates[s]?.llm_analysis?.summary);
+                if (!hasSummary) return null;
+                const blockedStage = activeStages.find(s => getDecision(llmGates[s]) === 'block');
                 return (
                   <div className="bg-card rounded-lg border border-border shadow-sm p-5">
                     <h3 className="text-sm font-bold text-foreground mb-3">Gemini LLM 종합 분석</h3>
                     <div className="space-y-3">
-                      {stages.map(s => {
+                      {/* 단계별 분석 */}
+                      {activeStages.map(s => {
                         const gate = llmGates[s];
                         if (!gate?.llm_analysis?.summary) return null;
-                        const label = s === 'sast' ? 'SAST' : s === 'sca' ? 'SCA' : 'IaC';
+                        const isBlock = getDecision(gate) === 'block';
                         return (
-                          <div key={s} className="bg-muted rounded-lg p-3">
-                            <div className="text-xs font-bold text-foreground mb-1">{label}</div>
+                          <div key={s} className={`rounded-lg p-3 ${isBlock ? 'bg-red-50 border border-red-200' : 'bg-muted'}`}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="text-xs font-bold text-foreground">{labelMap[s]}</div>
+                              {isBlock && <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">BLOCK</span>}
+                            </div>
                             <div className="text-sm text-muted-foreground">{gate.llm_analysis.summary}</div>
                           </div>
                         );
                       })}
+                      {/* 종합 분석 */}
+                      {(() => {
+                        const overall = llmSummaries?.['_overall'] || llmGates?.['overall-verdict']?.summaries?.['_overall'] || {};
+                        const verdict = overall.verdict || '';
+                        const actions = overall.priority_actions || [];
+                        const hasLlmVerdict = !!verdict;
+                        // 폴백 텍스트
+                        const fallback = blockedStage
+                          ? `${labelMap[blockedStage]} 단계에서 CRITICAL 수준의 취약점이 확인되어 파이프라인이 차단(BLOCK)되었습니다. 다음 CI/CD 실행 시 LLM 종합 분석이 생성됩니다.`
+                          : '모든 단계를 통과했습니다. 일부 REVIEW 항목이 있으나 배포를 차단할 수준은 아닙니다.';
+                        return (
+                        <div className="bg-indigo-50 border-2 border-indigo-300 rounded-lg p-4 mt-2">
+                          <div className="text-xs font-bold text-indigo-700 mb-2">종합 판정</div>
+                          <div className="text-sm text-indigo-800 leading-relaxed">{hasLlmVerdict ? verdict : fallback}</div>
+                          {actions.length > 0 && (
+                            <div className="mt-3 space-y-1">
+                              <div className="text-xs font-bold text-indigo-700">우선 조치 항목</div>
+                              {actions.map((a: string, i: number) => (
+                                <div key={i} className="text-sm text-indigo-700 flex gap-2"><span className="font-bold">{i + 1}.</span> {a}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
               })()}
 
               {/* 스코어 트렌드 — cross/history 기반 */}
-              <PipelineTimeline />
+              {/* PipelineTimeline 제거 */}
             </div>
           )}
 
@@ -1728,7 +1935,7 @@ export default function Home({ params }: HomeProps) {
 
           {activeSection === 'dast' && (
             <div className="space-y-4">
-              <DastFullSection gates={llmGates} judgments={llmJudgments} summaries={llmSummaries} />
+              <DastFullSection gates={llmGates} judgments={llmJudgments} summaries={llmSummaries} currentCommitHash={currentGateCommitHash} />
             </div>
           )}
 

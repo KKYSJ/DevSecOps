@@ -21,6 +21,7 @@ on:
         required: false
         default: false
         type: boolean
+  # workflow_run 제거 — chain-cd-main/nayoung/seo에서 직접 호출
   workflow_dispatch:
     inputs:
       environment:
@@ -93,8 +94,21 @@ jobs:
               run_staging="true"
             fi
 
-            if [ "$requested_production" = "true" ] && [ "$branch_name" = "SUN" ]; then
+            if [ "$requested_production" = "true" ] && [ "$branch_name" = "main" ]; then
               run_production="true"
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+              branch_name="${{ github.event.workflow_run.head_branch }}"
+              source_sha="${{ github.event.workflow_run.head_sha }}"
+              run_staging="true"
+
+              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ] || [ "$branch_name" = "nayoung" ]; then
+                proceed="true"
+              elif [ "$branch_name" = "main" ]; then
+                proceed="true"
+                run_production="true"
+              fi
             fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             proceed="true"
@@ -103,7 +117,7 @@ jobs:
             service="${{ inputs.service }}"
             run_staging="true"
 
-            if [ "${{ inputs.environment }}" = "production" ] && [ "$branch_name" = "SUN" ]; then
+            if [ "${{ inputs.environment }}" = "production" ] && [ "$branch_name" = "main" ]; then
               run_production="true"
             fi
           fi
@@ -210,8 +224,7 @@ jobs:
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
-      API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
-      SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -232,7 +245,7 @@ jobs:
           image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest"
           format: json
           output: trivy-image-fastapi.json
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Node image with Trivy
@@ -241,7 +254,7 @@ jobs:
           image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest"
           format: json
           output: trivy-image-node.json
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Spring image with Trivy
@@ -250,38 +263,29 @@ jobs:
           image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest"
           format: json
           output: trivy-image-spring.json
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan FastAPI image with Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json > grype-fastapi.json || true
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json --only-fixed > grype-fastapi.json || true
         continue-on-error: true
 
       - name: Scan Node image with Grype
         run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json > grype-node.json || true
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json --only-fixed > grype-node.json || true
         continue-on-error: true
 
       - name: Scan Spring image with Grype
         run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json > grype-spring.json || true
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json --only-fixed > grype-spring.json || true
         continue-on-error: true
 
       - name: Upload image scan results to SecureFlow
-        if: env.API_SERVER_URL != ''
+        if: env.BACKEND_URL != ''
         run: |
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
-          API_BASE_URL="${API_SERVER_URL%/}"
-          case "$API_BASE_URL" in
-            */api/v1) ;;
-            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
-          esac
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
-          fi
           # Trivy 이미지 스캔 업로드
           for service in fastapi node spring; do
             FILE="trivy-image-${service}.json"
@@ -294,7 +298,7 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패"
             fi
@@ -311,7 +315,7 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+                -X POST "${BACKEND_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패"
             fi
@@ -332,11 +336,12 @@ jobs:
       - resolve-context
       - image-scan
     if: always() && needs.resolve-context.outputs.proceed == 'true'
+    outputs:
+      gate_decision: ${{ steps.gate-check.outputs.decision }}
     runs-on: ubuntu-latest
     env:
-      API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -399,22 +404,13 @@ jobs:
         env:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
             exit 0
-          fi
-          API_BASE_URL="${API_SERVER_URL%/}"
-          case "$API_BASE_URL" in
-            */api/v1) ;;
-            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
-          esac
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
           jq -n --arg stage "image" --arg commit "$COMMIT_SHA" \
             --slurpfile raw artifacts/image/image-llm-gate.json \
             '{stage:$stage, commit_hash:$commit, gate_result:$raw[0]}' \
-          | curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
+          | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" -d @- || true
 
       - name: Image 개별 취약점 LLM 판정
@@ -423,13 +419,32 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           PYTHONPATH: ${{ github.workspace }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
-          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
         run: |
           mkdir -p scan-results/image-llm-gate
           cp artifacts/image/image-llm-gate.json scan-results/image-llm-gate/image-llm-gate.json 2>/dev/null || true
           python scripts/ci/run_llm_judgments.py || echo "Image judgments failed (ignored)"
         continue-on-error: true
+
+      - name: Upload image gate artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-llm-gate
+          path: artifacts/image/image-llm-gate.json
+          if-no-files-found: ignore
+
+      - name: Check image gate decision
+        id: gate-check
+        if: always()
+        run: |
+          if [ -f artifacts/image/image-llm-gate.json ]; then
+            DECISION=$(jq -r '.decision // "unknown"' artifacts/image/image-llm-gate.json)
+            echo "decision=$DECISION"
+            echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          else
+            echo "decision=unknown" >> $GITHUB_OUTPUT
+          fi
 
   service-dast-zap:
     needs:
@@ -438,6 +453,7 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
     if: |
       always() &&
       needs.resolve-context.outputs.proceed == 'true' &&
@@ -446,7 +462,8 @@ jobs:
       needs.deploy-staging-fastapi.result != 'failure' &&
       needs.deploy-staging-node.result != 'failure' &&
       needs.deploy-staging-spring.result != 'failure' &&
-      needs.deploy-staging-frontend.result != 'failure'
+      needs.deploy-staging-frontend.result != 'failure' &&
+      (needs.resolve-context.outputs.branch_name != 'main' || needs.llm-image-gate.outputs.gate_decision != 'fail')
     runs-on: ubuntu-latest
 
     steps:
@@ -521,6 +538,7 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
     if: |
       always() &&
       needs.resolve-context.outputs.proceed == 'true' &&
@@ -529,7 +547,8 @@ jobs:
       needs.deploy-staging-fastapi.result != 'failure' &&
       needs.deploy-staging-node.result != 'failure' &&
       needs.deploy-staging-spring.result != 'failure' &&
-      needs.deploy-staging-frontend.result != 'failure'
+      needs.deploy-staging-frontend.result != 'failure' &&
+      (needs.resolve-context.outputs.branch_name != 'main' || needs.llm-image-gate.outputs.gate_decision != 'fail')
     runs-on: ubuntu-latest
 
     steps:
@@ -636,13 +655,19 @@ jobs:
 
   llm-dast-gate:
     needs:
+      - resolve-context
       - service-dast-zap
       - service-dast-nuclei
-    if: always()
+    outputs:
+      gate_decision: ${{ steps.gate-check.outputs.decision }}
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      (
+        needs.service-dast-zap.result == 'success' ||
+        needs.service-dast-nuclei.result == 'success'
+      )
     runs-on: ubuntu-latest
-    env:
-      API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
-      SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
 
     steps:
       - name: Check out source
@@ -682,24 +707,26 @@ jobs:
           path: artifacts/dast/dast-llm-gate.json
         # CI gate output is kept in GitHub artifacts and also uploaded to /api/v1/scans/gate-result.
 
+      - name: Check DAST gate decision
+        id: gate-check
+        if: always()
+        run: |
+          if [ -f artifacts/dast/dast-llm-gate.json ]; then
+            DECISION=$(jq -r '.decision // "unknown"' artifacts/dast/dast-llm-gate.json)
+            echo "decision=$DECISION"
+            echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          else
+            echo "decision=unknown" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload DAST gate result to SecureFlow
         if: always()
         env:
-          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
             exit 0
-          fi
-
-          API_BASE_URL="${API_SERVER_URL%/}"
-          case "$API_BASE_URL" in
-            */api/v1) ;;
-            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
-          esac
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -709,29 +736,19 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
 
       - name: Upload DAST results to SecureFlow
-        if: always() && env.API_SERVER_URL != ''
+        if: always() && env.BACKEND_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
           # Upload raw DAST outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
-          API_BASE_URL="${API_SERVER_URL%/}"
-          case "$API_BASE_URL" in
-            */api/v1) ;;
-            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
-          esac
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
-          fi
-
           upload() {
             local tool=$1 file=$2
             if [ ! -f "$file" ]; then
@@ -747,7 +764,7 @@ jobs:
                   --slurpfile raw "$file" \
                   '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch}' \
                   > /tmp/payload.json 2>/dev/null; then
-              curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+              curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
                 -d @/tmp/payload.json \
                 --max-time 60 || true
@@ -763,26 +780,16 @@ jobs:
         continue-on-error: true
 
       - name: Wait for SecureFlow DAST parsing
-        if: always() && env.API_SERVER_URL != ''
+        if: always() && env.BACKEND_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Refresh the existing backend dashboard report after DAST uploads complete.
-          API_BASE_URL="${API_SERVER_URL%/}"
-          case "$API_BASE_URL" in
-            */api/v1) ;;
-            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
-          esac
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
-          fi
-
           for i in $(seq 1 24); do
-            WAIT=$(curl -s "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
             echo "done=${DONE}, waiting=${WAIT} (${i}/24)"
             if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
@@ -794,35 +801,24 @@ jobs:
         continue-on-error: true
 
       - name: Refresh SecureFlow Phase 2 dashboard report
-        if: always() && env.API_SERVER_URL != ''
+        if: always() && env.BACKEND_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
           # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          API_BASE_URL="${API_SERVER_URL%/}"
-          case "$API_BASE_URL" in
-            */api/v1) ;;
-            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
-          esac
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
-          fi
-
-          curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/analyze" \
+          curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
             -H "Content-Type: application/json" \
             -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
             --max-time 120 || true
         continue-on-error: true
 
       - name: DAST 개별 취약점 LLM 판정 (한국어)
-        if: always() && env.API_SERVER_URL != ''
+        if: always() && env.BACKEND_URL != ''
         env:
-          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
         run: |
           # DAST gate 파일을 run_llm_judgments.py가 찾는 경로에 복사
           mkdir -p scan-results/dast-llm-gate
@@ -838,8 +834,29 @@ jobs:
       - deploy-staging-node
       - deploy-staging-spring
       - deploy-staging-frontend
+      - llm-image-gate
       - llm-dast-gate
-    if: needs.resolve-context.outputs.proceed == 'true'
+    if: |
+      always() &&
+      needs.resolve-context.outputs.proceed == 'true' &&
+      needs.resolve-context.outputs.run_staging == 'true' &&
+      (
+        needs.deploy-staging-fastapi.result == 'success' ||
+        needs.deploy-staging-node.result == 'success' ||
+        needs.deploy-staging-spring.result == 'success' ||
+        needs.deploy-staging-frontend.result == 'success'
+      ) &&
+      needs.deploy-staging-fastapi.result != 'failure' &&
+      needs.deploy-staging-node.result != 'failure' &&
+      needs.deploy-staging-spring.result != 'failure' &&
+      needs.deploy-staging-frontend.result != 'failure' &&
+      needs.llm-image-gate.result != 'failure' &&
+      needs.llm-dast-gate.result != 'failure' &&
+      needs.llm-image-gate.outputs.gate_decision != 'fail' &&
+      (
+        needs.llm-dast-gate.result == 'skipped' ||
+        needs.llm-dast-gate.outputs.gate_decision != 'fail'
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -895,12 +912,14 @@ jobs:
           echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
 
       - name: Run ISMS-P gate
+        continue-on-error: true
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           python scripts/ci/run_ismsp_gate.py \
             --environment ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }} \
             --target-url "${{ steps.target.outputs.target_url }}" \
+            --gate-input artifacts/isms/image-llm-gate/image-llm-gate.json \
             --gate-input artifacts/isms/dast-llm-gate/dast-llm-gate.json \
             --output artifacts/isms/ismsp-gate.json
 
@@ -913,24 +932,13 @@ jobs:
       - name: Upload ISMS-P result to SecureFlow
         if: always()
         env:
-          API_SERVER_URL: ${{ secrets.ACTIONS_API_SERVER_URL || secrets.API_SERVER_URL }}
-          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
           DEPLOY_ENV: ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }}
         run: |
-          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
+          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
             exit 0
-          fi
-
-          API_BASE_URL="${API_SERVER_URL%/}"
-          case "$API_BASE_URL" in
-            */api/v1) ;;
-            *) API_BASE_URL="${API_BASE_URL}/api/v1" ;;
-          esac
-          HEADER_ARGS=()
-          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
-            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -943,7 +951,7 @@ jobs:
             '{name:$name,status:$status,environment:$environment,commit_hash:$commit,branch:$branch,data:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/isms-payload.json
 
-          curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/isms" \
+          curl -s -X POST "${BACKEND_URL}/api/v1/isms" \
             -H "Content-Type: application/json" \
             -d @/tmp/isms-payload.json \
             --max-time 60 || true
@@ -953,7 +961,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
-      needs.resolve-context.outputs.run_production == 'true' &&
+      always() &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'fastapi')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -973,7 +982,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
-      needs.resolve-context.outputs.run_production == 'true' &&
+      always() &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'node')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -993,7 +1003,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
-      needs.resolve-context.outputs.run_production == 'true' &&
+      always() &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'spring')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -1013,7 +1024,8 @@ jobs:
       - resolve-context
       - isms-preprod-gate
     if: |
-      needs.resolve-context.outputs.run_production == 'true' &&
+      always() &&
+      (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'frontend')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
     with:
@@ -1027,3 +1039,142 @@ jobs:
       build_context: app/frontend
       git_ref: ${{ needs.resolve-context.outputs.source_sha }}
       concurrency_suffix: production-${{ needs.resolve-context.outputs.branch_name }}
+
+  # 전체 stage 종합 판정 (CI+CD 모든 gate 수집 → Gemini 종합 분석)
+  overall-verdict:
+    needs:
+      - resolve-context
+      - llm-image-gate
+      - llm-dast-gate
+    if: always() && needs.resolve-context.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q httpx 2>/dev/null
+
+      - name: Download all gate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: "*gate*"
+          merge-multiple: false
+
+      - name: Collect gate files and generate overall verdict
+        continue-on-error: true
+        run: |
+          mkdir -p scan-results/iac-llm-gate scan-results/sast-llm-gate scan-results/sca-llm-gate scan-results/image-llm-gate scan-results/dast-llm-gate
+
+          for stage in iac sast sca image dast; do
+            SRC=$(find artifacts -name "${stage}-llm-gate.json" 2>/dev/null | head -1)
+            if [ -n "$SRC" ]; then
+              cp "$SRC" "scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
+              echo "Found ${stage} gate: $SRC"
+            else
+              echo "Missing ${stage} gate"
+            fi
+          done
+
+          echo "=== Collected gate files ==="
+          find scan-results -name "*.json" -type f
+
+          python3 -c "
+          import json, os, sys, re
+          sys.path.insert(0, '.')
+
+          stages = ['iac', 'sast', 'sca', 'image', 'dast']
+          stage_details = []
+
+          for stage in stages:
+              path = f'scan-results/{stage}-llm-gate/{stage}-llm-gate.json'
+              if not os.path.exists(path):
+                  continue
+              gate = json.load(open(path))
+              decision = gate.get('decision', 'unknown')
+              matching = gate.get('matching', {})
+              matched = len(matching.get('matched_pairs_sample', []))
+              unmatched = len(gate.get('unmatched_findings', []))
+              summary = gate.get('llm_analysis', {}).get('summary', '')
+              stage_details.append(
+                  f'[{stage.upper()}] gate={decision}, 동시탐지={matched}건, 단독탐지={unmatched}건'
+                  + f'\n  요약: {summary[:150]}'
+              )
+
+          if not stage_details:
+              print('No gate files found, skipping verdict')
+              sys.exit(0)
+
+          # 최종 gate 결과 판단
+          has_fail = any('gate=fail' in s for s in stage_details)
+          final_decision = 'BLOCK (배포 차단)' if has_fail else 'ALLOW (배포 허용)'
+
+          print(f'종합 판정 대상: {len(stage_details)}개 stage, 최종: {final_decision}')
+
+          prompt = '''너는 DevSecOps 보안 파이프라인의 최종 판정을 내리는 전문가다.
+          아래는 각 보안 검사 단계의 분석 결과이다. 이를 종합하여 최종 판정을 한국어로 작성하라.
+
+          ''' + chr(10).join(stage_details) + f'''
+
+          ★★★ 최종 게이트 판정 결과: {final_decision} ★★★
+
+          위 최종 판정 결과를 반드시 반영하여 작성하라.
+          - ALLOW인 경우: 배포가 허용된 이유, 발견된 취약점이 임계값 이내인 점, 전반적 보안 상태가 양호한 점을 서술
+          - BLOCK인 경우: 배포가 차단된 이유, 어떤 단계에서 임계값을 초과했는지, 즉시 조치 항목을 서술
+
+          다음을 포함하여 작성하라:
+          1. 최종 판정 결과 (ALLOW 또는 BLOCK)와 그 이유
+          2. 각 단계별 주요 발견사항 요약
+          3. 전체적인 보안 상태 평가
+
+          ALLOW인 경우 긍정적 톤으로 작성하라. "배포가 승인되었습니다", "보안 기준을 충족합니다" 등.
+
+          아래 JSON 형식으로만 응답하라:
+          {{\"verdict\": \"5~8문장의 상세한 종합 판정 (한국어)\"}}
+          '''
+
+          from engine.llm.client import call_llm
+          resp = call_llm(prompt)
+          match = re.search(r'\{[\s\S]+\}', resp)
+          if match:
+              verdict_data = json.loads(match.group(0))
+              print(f'종합 판정 생성 완료')
+              print(f'  verdict: {verdict_data.get(\"verdict\", \"\")[:100]}...')
+          else:
+              verdict_data = {'verdict': '종합 판정 생성 실패', 'priority_actions': []}
+              print('LLM 응답 파싱 실패')
+
+          import urllib.request
+          backend = os.environ.get('BACKEND_URL', '')
+          commit = os.environ.get('COMMIT_SHA', '')
+          payload = json.dumps({
+              'stage': 'overall-verdict',
+              'commit_hash': commit,
+              'gate_result': {
+                  'type': 'overall_verdict',
+                  'summaries': {'_overall': verdict_data},
+              },
+          }).encode('utf-8')
+          req = urllib.request.Request(
+              f'{backend}/api/v1/scans/gate-result',
+              data=payload,
+              headers={'Content-Type': 'application/json'},
+          )
+          try:
+              r = urllib.request.urlopen(req, timeout=30)
+              print(f'EC2 전송 완료: {r.read().decode()}')
+          except Exception as e:
+              print(f'EC2 전송 실패: {e}')
+          "

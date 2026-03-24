@@ -17,11 +17,13 @@ def list_vulnerabilities(
     severity: Optional[str] = None,
     tool: Optional[str] = None,
     category: Optional[str] = None,
+    commit_hash: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
     """취약점 목록을 반환합니다. severity, tool, category 파라미터로 필터링 가능합니다."""
+    from backend.app.models.scan import Scan
     from backend.app.models.vulnerability import Vulnerability
 
     try:
@@ -33,6 +35,8 @@ def list_vulnerabilities(
             query = query.filter(Vulnerability.tool == tool.lower())
         if category:
             query = query.filter(Vulnerability.category == category.upper())
+        if commit_hash:
+            query = query.join(Scan, Vulnerability.scan_id == Scan.id).filter(Scan.commit_hash == commit_hash)
 
         total = query.count()
         vulns = query.order_by(Vulnerability.id.desc()).offset(offset).limit(limit).all()

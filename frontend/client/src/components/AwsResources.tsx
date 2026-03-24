@@ -16,6 +16,24 @@ import {
     ChevronUp,
 } from 'lucide-react';
 
+function AwsAccordion({ title, subtitle, defaultOpen = false, children }: { title: string; subtitle?: string; defaultOpen?: boolean; children: React.ReactNode }) {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors">
+                <div className="flex items-center gap-3">
+                    <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? 'rotate-0' : '-rotate-90'}`} />
+                    <div className="text-left">
+                        <div className="text-sm font-semibold text-foreground">{title}</div>
+                        {subtitle && <div className="text-xs text-muted-foreground">{subtitle}</div>}
+                    </div>
+                </div>
+            </button>
+            {open && children}
+        </div>
+    );
+}
+
 type ResourceStatus = '정상' | '경고' | '위험';
 type ResourceType = 'ECS SERVICE' | 'RDS INSTANCE' | 'LAMBDA' | 'S3 BUCKET' | 'ALB';
 
@@ -346,7 +364,7 @@ function ResourceTableRow({ resource }: { resource: Resource }) {
             <td className="px-5 py-4 font-semibold text-foreground">{resource.name}</td>
             <td className="px-5 py-4 text-muted-foreground">{resource.type}</td>
             <td className="px-5 py-4 text-muted-foreground">{resource.region}</td>
-            <td className="px-5 py-4">
+            <td className="px-5 py-4 whitespace-nowrap">
                 <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${status.badge}`}>
                     {status.label}
                 </span>
@@ -527,43 +545,12 @@ export default function AwsResources() {
                 />
             </div>
 
-            {/* Full inventory detail */}
-            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                <div className="border-b border-border px-5 py-4 flex items-center justify-between gap-3">
-                    <div>
-                        <div className="text-sm font-semibold text-foreground">전체 리소스 상세</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                            AWS에서 내려온 실제 속성만 표시
-                        </div>
-                    </div>
-
-                    {resources.length > 6 && (
-                        <button
-                            onClick={() => setShowAll((prev) => !prev)}
-                            className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                        >
-                            {showAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            {showAll ? '접기' : `더보기 (${resources.length - 6})`}
-                        </button>
-                    )}
-                </div>
-
-                <div className="p-5 space-y-4">
-                    {visibleResources.map((resource) => (
-                        <ResourceDetailCard key={resource.id} resource={resource} />
-                    ))}
-                </div>
-            </div>
-
-            {/* Inventory summary table */}
+            {/* 리소스 요약 테이블 */}
             <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                 <div className="border-b border-border px-5 py-4">
                     <div className="text-sm font-semibold text-foreground">리소스 요약 테이블</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                        빠르게 전체 리소스 확인
-                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">{resources.length}개 리소스</div>
                 </div>
-
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[980px] text-sm">
                         <thead className="bg-muted/30">
