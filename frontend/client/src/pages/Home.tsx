@@ -1041,6 +1041,8 @@ export default function Home({ params }: HomeProps) {
   const [apiCross, setApiCross] = useState<CrossAnalysisItem[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
   const [apiIsmsData, setApiIsmsData] = useState<any>(null);
+  const [ismsFilter, setIsmsFilter] = useState<string>('all');
+  const [ismsOpenSections, setIsmsOpenSections] = useState<Record<string, boolean>>({});
   const [apiSiemData, setApiSiemData] = useState<any>(null);
   const [llmGates, setLlmGates] = useState<Record<string, any>>({});
   const [llmJudgments, setLlmJudgments] = useState<Record<string, any[]>>({});
@@ -1754,71 +1756,180 @@ export default function Home({ params }: HomeProps) {
             </div>
           )}
 
-          {activeSection === 'isms' && (
-            <div className="space-y-5">
-              <div className="bg-card rounded-lg p-4 shadow-sm border border-border">
-                <div className="flex items-start justify-between mb-3 gap-4">
+          {activeSection === 'isms' && (() => {
+            const items = apiIsmsData?.items || apiIsmsData?.automated_results || [];
+            const s = apiIsmsData?.summary || {};
+            const counts = {
+              ok: s.compliant || 0,
+              ng: s.non_compliant || 0,
+              manual: s.manual_required || 0,
+              insufficient: s.insufficient_data || 0,
+            };
+            const rate = s.compliance_rate_pct || 0;
+            const total = s.total || items.length;
+
+            const statusMap: Record<string, string> = {
+              'COMPLIANT': 'ok', 'NON_COMPLIANT': 'ng',
+              'MANUAL_REQUIRED': 'manual', 'INSUFFICIENT_DATA': 'insufficient',
+              'NOT_APPLICABLE': 'manual',
+            };
+
+            const toggleSection = (key: string) => setIsmsOpenSections((prev: Record<string, boolean>) => ({ ...prev, [key]: !prev[key] }));
+
+            const filtered = ismsFilter === 'all' ? items : items.filter((r: any) => statusMap[r.status] === ismsFilter);
+
+            // 3대 도메인 그룹핑
+            const domainGroups: { key: string; label: string; items: any[] }[] = [
+              { key: '1', label: '1. 관리체계 수립 및 운영', items: [] },
+              { key: '2', label: '2. 보호대책 요구사항', items: [] },
+              { key: '3', label: '3. 개인정보 처리 단계별 요구사항', items: [] },
+            ];
+            filtered.forEach((r: any) => {
+              const section = (r.isms_p_id || '').charAt(0);
+              const group = domainGroups.find(g => g.key === section);
+              if (group) group.items.push(r);
+            });
+
+            const statusDot = (status: string) => {
+              const colors: Record<string, string> = {
+                'COMPLIANT': 'bg-emerald-500', 'NON_COMPLIANT': 'bg-red-500',
+                'MANUAL_REQUIRED': 'bg-amber-400', 'INSUFFICIENT_DATA': 'bg-blue-400',
+                'NOT_APPLICABLE': 'bg-gray-300',
+              };
+              return <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5 ${colors[status] || 'bg-gray-300'}`} />;
+            };
+
+            const statusLabel = (status: string) => {
+              const map: Record<string, { label: string; cls: string }> = {
+                'COMPLIANT': { label: '적합', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                'NON_COMPLIANT': { label: '부적합', cls: 'text-red-700 bg-red-50 border-red-200' },
+                'MANUAL_REQUIRED': { label: '수동 확인', cls: 'text-amber-700 bg-amber-50 border-amber-200' },
+                'INSUFFICIENT_DATA': { label: '데이터 부족', cls: 'text-blue-700 bg-blue-50 border-blue-200' },
+                'NOT_APPLICABLE': { label: '해당없음', cls: 'text-gray-500 bg-gray-50 border-gray-200' },
+              };
+              const s = map[status] || { label: status, cls: 'text-gray-500 bg-gray-50 border-gray-200' };
+              return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${s.cls}`}>{s.label}</span>;
+            };
+
+            const sectionBadges = (sectionItems: any[]) => {
+              const ok = sectionItems.filter(r => r.status === 'COMPLIANT').length;
+              const ng = sectionItems.filter(r => r.status === 'NON_COMPLIANT').length;
+              const manual = sectionItems.filter(r => r.status === 'MANUAL_REQUIRED').length;
+              return (
+                <div className="flex gap-2">
+                  {ok > 0 && <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">적합 {ok}</span>}
+                  {ng > 0 && <span className="text-[10px] font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded">부적합 {ng}</span>}
+                  {manual > 0 && <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">수동 {manual}</span>}
+                </div>
+              );
+            };
+
+            return (
+            <div className="space-y-4">
+              {/* 1. 상단 요약 카드 */}
+              <div className="bg-card rounded-lg p-5 shadow-sm border border-border">
+                <div className="flex items-center justify-between mb-4">
                   <div>
-                    <div className="text-sm font-semibold text-foreground">ISMS-P 연관 항목</div>
-                    <div className="text-xs text-muted-foreground mt-1">충족률</div>
+                    <div className="text-sm font-semibold text-foreground">ISMS-P 컴플라이언스</div>
+                    <div className="text-xs text-muted-foreground">KISA ISMS-P 2023 · AWS 인프라 자동 점검 결과</div>
                   </div>
-
-                  <div className="flex flex-col items-end gap-2">
-                    <button
-                      onClick={handleIsmpCheck}
-                      disabled={scanState.isIsmpChecking}
-                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {scanState.isIsmpChecking ? '점검 실행 중...' : 'ISMS-P 점검 실행'}
-                    </button>
-
-                    {scanState.isIsmpChecking && (
-                      <div className="w-56">
-                        <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
-                          <span>{scanState.stage}</span>
-                          <span>{scanState.progress}%</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-emerald-500 rounded-full transition-all duration-300"
-                            style={{ width: `${scanState.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
+                  <div className="text-right">
+                    <div className="text-2xl font-bold font-mono text-emerald-600">{rate.toFixed(1)}%</div>
+                    <div className="text-[10px] text-muted-foreground">자동화 준수율</div>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <div className="text-2xl font-bold font-mono text-emerald-600">
-                      {currentSummary.ismsPCompliance.toFixed(1)}%
-                    </div>
-                    <div className="mt-2 h-2 bg-emerald-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                        style={{ width: `${currentSummary.ismsPCompliance}%` }}
-                      />
-                    </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
+                  <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${rate}%` }} />
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-emerald-700">{counts.ok}</div>
+                    <div className="text-[10px] text-emerald-600 font-medium">적합</div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    <div>총 {apiIsmsData?.summary?.total_automated ?? mockIsmpItems.length}개 항목 중</div>
-                    <div>{apiIsmsData?.summary?.compliant ?? Math.round(mockIsmpItems.length * currentSummary.ismsPCompliance / 100)}개 충족</div>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-red-700">{counts.ng}</div>
+                    <div className="text-[10px] text-red-600 font-medium">부적합</div>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-amber-700">{counts.manual}</div>
+                    <div className="text-[10px] text-amber-600 font-medium">수동 확인</div>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                    <div className="text-xl font-bold text-blue-700">{counts.insufficient}</div>
+                    <div className="text-[10px] text-blue-600 font-medium">데이터 부족</div>
                   </div>
                 </div>
+                <div className="text-[10px] text-muted-foreground mt-2 text-right">전체 {total}개 항목 · 점검: {apiIsmsData?.metadata?.checked_at ? new Date(apiIsmsData.metadata.checked_at).toLocaleString('ko-KR') : '-'}</div>
               </div>
 
-              <IsmpSection items={apiIsmsData?.automated_results ? apiIsmsData.automated_results.map((r: any, i: number) => ({
-                id: `isms-${i}`,
-                controlId: r.isms_p_id || '',
-                domain: r.isms_p_name || '',
-                requirement: r.manual_supplement || '',
-                status: r.status === 'COMPLIANT' ? 'PASS' : r.status === 'NON_COMPLIANT' ? 'FAIL' : 'N/A',
-                evidence: r.check_details?.map((c: any) => c.reason).join(', ') || '점검 데이터 부족',
-                lastChecked: apiIsmsData.metadata?.checked_at || new Date().toISOString(),
-              })) : mockIsmpItems} compliance={apiIsmsData?.summary?.compliance_rate_pct ?? currentSummary.ismsPCompliance} />
+              {/* 부적합 경고 */}
+              {counts.ng > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
+                  <div className="text-red-600 text-sm font-semibold">⚠ 부적합 {counts.ng}건 즉시 조치 필요</div>
+                </div>
+              )}
+
+              {/* 2. 필터 버튼 */}
+              <div className="flex gap-2">
+                {[
+                  { key: 'all', label: '전체', count: items.length },
+                  { key: 'ng', label: '부적합', count: counts.ng },
+                  { key: 'ok', label: '적합', count: counts.ok },
+                  { key: 'manual', label: '수동 확인', count: counts.manual },
+                ].map(f => (
+                  <button key={f.key} onClick={() => setIsmsFilter(f.key)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${ismsFilter === f.key ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border hover:bg-muted'}`}>
+                    {f.label} <span className="font-mono ml-1">{f.count}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* 3. 섹션별 accordion */}
+              {domainGroups.filter(g => g.items.length > 0).map(group => (
+                <div key={group.key} className="bg-card rounded-lg shadow-sm border border-border overflow-hidden">
+                  <button onClick={() => toggleSection(group.key)}
+                    className="w-full flex items-center justify-between px-6 py-3.5 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <ChevronDown size={14} className={`text-muted-foreground transition-transform ${ismsOpenSections[group.key] === true ? 'rotate-0' : '-rotate-90'}`} />
+                      <span className="text-base font-semibold text-foreground">{group.label}</span>
+                      {sectionBadges(group.items)}
+                    </div>
+                    <span className="text-xs text-muted-foreground">{group.items.length}개 항목</span>
+                  </button>
+
+                  {ismsOpenSections[group.key] === true && (
+                    <div className="border-t border-border divide-y divide-border/50">
+                      {group.items.map((r: any, i: number) => {
+                        const details = (r.check_details || []).map((c: any) => c.reason).filter(Boolean).join(' · ');
+                        const reason = r.reason || details || '';
+                        const isNg = r.status === 'NON_COMPLIANT';
+                        return (
+                          <div key={i} id={`isms-${r.isms_p_id}`} className={`px-6 py-3 flex items-start gap-4 ${isNg ? 'bg-red-50/50' : ''}`}>
+                            {statusDot(r.status)}
+                            <div className="w-14 flex-shrink-0 font-mono text-sm font-bold text-muted-foreground">{r.isms_p_id}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-foreground">{r.isms_p_name}</span>
+                                {statusLabel(r.status)}
+                              </div>
+                              {reason && (
+                                <div className={`text-xs mt-0.5 ${isNg ? 'text-red-600' : 'text-muted-foreground'}`}>{reason}</div>
+                              )}
+                              {!reason && r.manual_supplement && r.status === 'MANUAL_REQUIRED' && (
+                                <div className="text-xs mt-0.5 text-muted-foreground">{r.manual_supplement}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+
             </div>
-          )}
+            );
+          })()}
         </div>
       </main>
     </div>
