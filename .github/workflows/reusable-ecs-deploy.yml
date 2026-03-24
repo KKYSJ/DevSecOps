@@ -87,7 +87,8 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           SHORT_SHA="${GITHUB_SHA::12}"
-          IMAGE_TAG="${SHORT_SHA}-${GITHUB_RUN_ID}"
+          ENV_SUFFIX="${{ inputs.ecs_cluster }}"
+          IMAGE_TAG="${SHORT_SHA}-${ENV_SUFFIX##*-}-${GITHUB_RUN_ID}"
           IMAGE_URI="${REGISTRY}/${{ inputs.ecr_repository }}:${IMAGE_TAG}"
           docker build -t "${IMAGE_URI}" "${{ inputs.build_context }}"
           docker push "${IMAGE_URI}"
