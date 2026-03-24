@@ -51,7 +51,7 @@ DEFAULT_THRESHOLDS = {
     "sast": {"critical": 10, "high": 20, "medium_review": 50},
     "sca": {"critical": 10, "high": 20, "medium_review": 50},
     "dast": {"critical": 10, "high": 20, "medium_review": 50},
-    "image": {"critical": 10, "high": 20, "medium_review": 50},
+    "image": {"critical": 10, "high": 100, "medium_review": 200},
 }
 SEVERITY_ALIASES = {
     "blocker": "critical",
