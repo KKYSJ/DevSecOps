@@ -31,7 +31,7 @@ permissions:
 
 concurrency:
   group: secureflow-dashboard-${{ github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -52,6 +52,9 @@ jobs:
       TF_VAR_actions_upload_bypass_key: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
+      TF_LOCK_RETRY_ATTEMPTS: "10"
+      TF_LOCK_RETRY_SLEEP_SECONDS: "30"
+      TF_LOCK_STALE_MINUTES: "45"
       ARTIFACT_DIR: ${{ github.workspace }}/artifacts/terraform
 
     steps:
@@ -490,14 +493,15 @@ jobs:
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
-          terraform plan -no-color \
+          bash "${GITHUB_WORKSPACE}/scripts/ci/terraform_with_lock_recovery.sh" "${ARTIFACT_DIR}/dashboard-waf-plan.log" \
+            terraform plan -no-color \
             -target=aws_wafv2_web_acl.alb \
             -target=aws_wafv2_web_acl_association.alb \
             -target=aws_wafv2_web_acl_logging_configuration.alb \
             -target=aws_wafv2_web_acl.cloudfront \
             -target=aws_wafv2_web_acl_logging_configuration.cloudfront \
             -target=aws_cloudfront_distribution.app \
-            -out=tfplan-waf 2>&1 | tee "${ARTIFACT_DIR}/dashboard-waf-plan.log"
+            -out=tfplan-waf
           terraform show -no-color tfplan-waf > "${ARTIFACT_DIR}/dashboard-waf-plan.txt"
 
       - name: Apply WAF-only changes
@@ -505,14 +509,16 @@ jobs:
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
-          terraform apply -no-color -auto-approve tfplan-waf 2>&1 | tee "${ARTIFACT_DIR}/dashboard-waf-apply.log"
+          bash "${GITHUB_WORKSPACE}/scripts/ci/terraform_with_lock_recovery.sh" "${ARTIFACT_DIR}/dashboard-waf-apply.log" \
+            terraform apply -no-color -auto-approve tfplan-waf
 
       - name: Plan base dashboard infrastructure
         if: steps.context.outputs.deployment_mode == 'infra_only'
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
-          terraform plan -no-color -out=tfplan 2>&1 | tee "${ARTIFACT_DIR}/dashboard-plan.log"
+          bash "${GITHUB_WORKSPACE}/scripts/ci/terraform_with_lock_recovery.sh" "${ARTIFACT_DIR}/dashboard-plan.log" \
+            terraform plan -no-color -out=tfplan
           terraform show -no-color tfplan > "${ARTIFACT_DIR}/dashboard-plan.txt"
 
       - name: Apply base dashboard infrastructure
@@ -520,7 +526,8 @@ jobs:
         working-directory: secureflow_dashboard_infra
         run: |
           set -euo pipefail
-          terraform apply -no-color -auto-approve tfplan 2>&1 | tee "${ARTIFACT_DIR}/dashboard-apply.log"
+          bash "${GITHUB_WORKSPACE}/scripts/ci/terraform_with_lock_recovery.sh" "${ARTIFACT_DIR}/dashboard-apply.log" \
+            terraform apply -no-color -auto-approve tfplan
 
       - name: Resolve service deployment targets
         if: steps.context.outputs.deployment_mode == 'service'
@@ -866,7 +873,8 @@ jobs:
           TARGET_ARGS: ${{ steps.rollout_plan.outputs.target_args }}
         run: |
           set -euo pipefail
-          terraform plan -no-color ${TARGET_ARGS} -out=tfplan-service 2>&1 | tee "${ARTIFACT_DIR}/service-plan.log"
+          bash "${GITHUB_WORKSPACE}/scripts/ci/terraform_with_lock_recovery.sh" "${ARTIFACT_DIR}/service-plan.log" \
+            terraform plan -no-color ${TARGET_ARGS} -out=tfplan-service
           terraform show -no-color tfplan-service > "${ARTIFACT_DIR}/service-plan.txt"
 
       - name: Apply service rollout
@@ -876,7 +884,8 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          terraform apply -no-color -auto-approve tfplan-service 2>&1 | tee "${ARTIFACT_DIR}/service-apply.log"
+          bash "${GITHUB_WORKSPACE}/scripts/ci/terraform_with_lock_recovery.sh" "${ARTIFACT_DIR}/service-apply.log" \
+            terraform apply -no-color -auto-approve tfplan-service
 
       - name: Collect deployment outputs
         id: deploy_outputs
