@@ -249,9 +249,9 @@ export default function Deployments() {
                   </div>
                   <div className="bg-muted rounded-md p-3">
                     <div className="text-2xl font-bold text-blue-600">
-                      {pipeline.gate_score?.toFixed(1) || '0'}
+                      {pipeline.gate_score ? (pipeline.gate_score / (pipeline.gate_score + 100) * 100).toFixed(1) : '0'}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">위험 점수</div>
+                    <div className="text-xs text-muted-foreground mt-1">위험 점수 / 100</div>
                   </div>
                 </div>
 

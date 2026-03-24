@@ -201,6 +201,60 @@ def main():
                 "reasons": []
             }
 
+    # 종합 판정 생성 — 전체 stage를 종합 분석
+    overall_verdict = ""
+    if summaries:
+        # 각 stage별 요약 + gate decision 수집
+        stage_details = []
+        for stage, analyzed in all_judgments.items():
+            tp = [p for p in analyzed if p.get("judgement_code") == "TRUE_POSITIVE" and p.get("finding_b")]
+            rv = [p for p in analyzed if not (p.get("judgement_code") == "TRUE_POSITIVE" and p.get("finding_b"))]
+            critical = [p for p in analyzed if (p.get("reassessed_severity") or p.get("severity", "")).upper() == "CRITICAL"]
+            high = [p for p in analyzed if (p.get("reassessed_severity") or p.get("severity", "")).upper() == "HIGH"]
+            gate = load_gate(stage)
+            decision = (gate or {}).get("decision", "unknown")
+            stage_details.append(
+                f"[{stage.upper()}] gate={decision}, 동시탐지={len(tp)}건, 단독탐지={len(rv)}건, "
+                f"CRITICAL={len(critical)}건, HIGH={len(high)}건"
+                f"\n  요약: {summaries.get(stage, {}).get('summary', '없음')}"
+            )
+
+        verdict_prompt = f"""너는 DevSecOps 보안 파이프라인의 최종 판정을 내리는 전문가다.
+아래는 각 보안 검사 단계의 분석 결과이다. 이를 종합하여 최종 판정을 한국어로 작성하라.
+
+{chr(10).join(stage_details)}
+
+게이트 차단 조건:
+- CRITICAL TRUE_POSITIVE ≥ 1건
+- total_score ≥ 100
+- HIGH TRUE_POSITIVE ≥ 3건
+
+다음을 포함하여 작성하라:
+1. 어떤 단계에서 어떤 이유로 차단(또는 통과)되었는지
+2. 가장 심각한 취약점이 무엇이고 왜 위험한지
+3. 즉시 조치가 필요한 항목과 우선순위
+4. 전체적인 보안 상태 평가
+
+아래 JSON 형식으로만 응답하라:
+{{"verdict": "5~8문장의 상세한 종합 판정 (한국어)", "priority_actions": ["우선 조치1", "우선 조치2", "우선 조치3"]}}
+"""
+        try:
+            from engine.llm.client import call_llm
+            vresp = call_llm(verdict_prompt)
+            import re
+            json_match = re.search(r'\{[\s\S]+\}', vresp)
+            if json_match:
+                vdata = json.loads(json_match.group(0))
+                summaries["_overall"] = vdata
+                overall_verdict = vdata.get("verdict", "")
+                print(f"  종합 판정 생성 완료")
+        except Exception as e:
+            print(f"  종합 판정 실패 ({e})")
+            summaries["_overall"] = {
+                "verdict": "종합 판정을 생성할 수 없습니다.",
+                "priority_actions": []
+            }
+
     # EC2로 전송
     if all_judgments:
         import urllib.request

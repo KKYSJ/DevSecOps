@@ -38,6 +38,25 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
 
         {/* Main navigation */}
         <nav className="flex items-center gap-2">
+          <a
+            href="/"
+            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'oklch(0.55 0.015 250)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'oklch(0.20 0.02 250)';
+              e.currentTarget.style.color = 'oklch(0.78 0.01 250)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = 'oklch(0.55 0.015 250)';
+            }}
+          >
+            <span>배포 결과</span>
+          </a>
+
           <button
             onClick={() => onSectionChange('iac')}
             className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150"
@@ -120,9 +139,6 @@ export default function Sidebar({ activeSection, onSectionChange }: SidebarProps
           >
             <span>모니터링</span>
           </button>
-
-
-
 
 
         </nav>
