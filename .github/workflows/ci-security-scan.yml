@@ -364,17 +364,17 @@ jobs:
             -Dsonar.python.version=3.11
             -Dsonar.java.binaries=app/api-server-spring/target/classes
 
-      - name: SonarCloud 분석 완료 대기
+      - name: SonarCloud 분석 ?�료 ?��?
         if: steps.sonar-config.outputs.enabled == 'true'
         run: |
-          echo "SonarCloud 분석 완료 대기 중..."
+          echo "SonarCloud 분석 ?�료 ?��?�?.."
           for i in $(seq 1 12); do
             STATUS=$(curl -s -u "${SONAR_TOKEN}:" \
               "${SONAR_HOST_URL}/api/ce/activity?component=${{ vars.SONAR_PROJECT_KEY }}&ps=1" \
               | grep -o '"status":"[^"]*"' | head -1 || echo "")
-            echo "  상태: $STATUS ($i/12)"
+            echo "  ?�태: $STATUS ($i/12)"
             if echo "$STATUS" | grep -q "SUCCESS"; then
-              echo "✅ 분석 완료"
+              echo "??분석 ?�료"
               break
             fi
             sleep 10
@@ -688,7 +688,7 @@ jobs:
         run: echo "IaC, SAST, and SCA LLM gates passed for this revision."
 
   upload-to-secureflow:
-    name: "SecureFlow 대시보드 업로드"
+    name: "SecureFlow ?�?�보???�로??
     needs:
       - service-sast-semgrep
       - service-sast-sonarqube
@@ -715,11 +715,10 @@ jobs:
           path: scan-results/
         continue-on-error: true
 
-      - name: 수집된 결과 확인
-        run: find scan-results/ -name "*.json" | sort || echo "결과 없음"
+      - name: ?�집??결과 ?�인
+        run: find scan-results/ -name "*.json" | sort || echo "결과 ?�음"
 
-      - name: SecureFlow 백엔드에 결과 업로드
-        if: env.API_SERVER_URL != ''
+      - name: Disabled legacy raw scan upload step
         if: ${{ false }}
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -733,8 +732,8 @@ jobs:
           upload() {
             local tool=$1 file=$2
             if [ -f "$file" ]; then
-              echo "업로드: $tool"
-              # 임시 payload 파일 생성 (큰 JSON도 처리 가능)
+              echo "?�로?? $tool"
+              # ?�시 payload ?�일 ?�성 (??JSON??처리 가??
               jq -n --arg tool "$tool" \
                     --arg commit "${COMMIT_SHA}" \
                     --arg project "secureflow" \
@@ -749,17 +748,17 @@ jobs:
                   -d @/tmp/payload.json \
                   --max-time 60 || echo "000")
               else
-                echo "  ⚠ jq 실패, 직접 전송 시도"
+                echo "  ??jq ?�패, 직접 ?�송 ?�도"
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
                   -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
                   -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
                   --max-time 30 || echo "000")
               fi
-              echo "  → HTTP $HTTP"
+              echo "  ??HTTP $HTTP"
               rm -f /tmp/payload.json
             else
-              echo "건너뜀: $tool (파일 없음)"
+              echo "건너?�: $tool (?�일 ?�음)"
             fi
           }
 
@@ -862,7 +861,7 @@ jobs:
             --max-time 120 || true
         continue-on-error: true
 
-      - name: CI LLM Gate 결과를 백엔드에 전송
+      - name: CI LLM Gate 결과�?백엔?�에 ?�송
         if: env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -875,19 +874,19 @@ jobs:
           for stage in iac sast sca; do
             FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
             if [ -f "$FILE" ]; then
-              echo "LLM gate 전송: $stage"
+              echo "LLM gate ?�송: $stage"
               jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
                 '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
               | curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
                 -H "Content-Type: application/json" \
-                -d @- || echo "  전송 실패 (무시)"
+                -d @- || echo "  ?�송 ?�패 (무시)"
             else
-              echo "  $FILE 없음 (스킵)"
+              echo "  $FILE ?�음 (?�킵)"
             fi
           done
         continue-on-error: true
 
-      - name: 개별 취약점 LLM 판정 (한국어)
+      - name: 개별 취약??LLM ?�정 (?�국??
         if: env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
@@ -895,15 +894,15 @@ jobs:
           SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
         run: |
           pip install -q httpx 2>/dev/null
-          python scripts/ci/run_llm_judgments.py || echo "개별 판정 실패 (무시)"
+          python scripts/ci/run_llm_judgments.py || echo "개별 ?�정 ?�패 (무시)"
         continue-on-error: true
 
-      - name: API_SERVER_URL 미설정 안내
+      - name: API_SERVER_URL 미설???�내
         if: env.API_SERVER_URL == ''
         run: |
-          echo "⚠️ API_SERVER_URL secret이 설정되지 않았습니다."
-          echo "  SecureFlow 백엔드 배포 후 GitHub Secrets에 API_SERVER_URL을 추가하면"
-          echo "  스캔 결과가 대시보드에 자동 반영됩니다."
+          echo "?�️ API_SERVER_URL secret???�정?��? ?�았?�니??"
+          echo "  SecureFlow 백엔??배포 ??GitHub Secrets??API_SERVER_URL??추�??�면"
+          echo "  ?�캔 결과가 ?�?�보?�에 ?�동 반영?�니??"
 
   chain-cd-seo:
     needs:
