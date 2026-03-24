@@ -21,10 +21,7 @@ on:
         required: false
         default: false
         type: boolean
-  workflow_run:
-    workflows: ["CI Security Scan"]
-    types:
-      - completed
+  # workflow_run 제거 — chain-cd-main/nayoung/seo에서 직접 호출
   workflow_dispatch:
     inputs:
       environment:
