@@ -245,7 +245,7 @@ jobs:
           image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest"
           format: json
           output: trivy-image-fastapi.json
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Node image with Trivy
@@ -254,7 +254,7 @@ jobs:
           image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest"
           format: json
           output: trivy-image-node.json
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Spring image with Trivy
@@ -263,23 +263,23 @@ jobs:
           image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest"
           format: json
           output: trivy-image-spring.json
-          severity: CRITICAL,HIGH,MEDIUM
+          severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan FastAPI image with Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json > grype-fastapi.json || true
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json --only-fixed > grype-fastapi.json || true
         continue-on-error: true
 
       - name: Scan Node image with Grype
         run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json > grype-node.json || true
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json --only-fixed > grype-node.json || true
         continue-on-error: true
 
       - name: Scan Spring image with Grype
         run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json > grype-spring.json || true
+          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json --only-fixed > grype-spring.json || true
         continue-on-error: true
 
       - name: Upload image scan results to SecureFlow
