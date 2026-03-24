@@ -42,7 +42,9 @@ Notes:
 
 ## GitHub Actions deployment
 
-`cd-deploy.yml` is now the entrypoint for GitHub Actions deployment, and it calls `secureflow-dashboard-deploy.yml` internally.
+`.github/workflows/secureflow-dashboard-deploy.yml` is now the service deployment entrypoint for GitHub Actions.
+
+The previous DevSecOps scan and sample-service deployment workflows are preserved under `.github/workflow-backups/`.
 
 This deployment flow is infrastructure-only:
 
@@ -56,7 +58,7 @@ This deployment flow is infrastructure-only:
 
 There is also a service deployment mode:
 
-- It builds the current `backend`, `frontend`, and `infra/docker/Dockerfile.worker` images
+- It builds the current `backend`, `frontend`, and `secureflow_dashboard_infra/docker/Dockerfile.worker` images
 - It pushes those images to the ECR repositories created by Terraform
 - It stores `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `SONAR_TOKEN` in the runtime Secrets Manager secret
 - It reapplies Terraform with ECS desired counts set to `1`
@@ -92,9 +94,9 @@ Notes:
 - When CloudFront and WAF are enabled, set Terraform variable `actions_upload_bypass_key` and GitHub secret `SECUREFLOW_UPLOAD_KEY` to the same long random value so GitHub Actions scan uploads can pass WAF safely.
 - Because `actions_upload_bypass_key` is a Terraform variable, protect your remote state and do not commit real values into the repository.
 
-The deployment workflow runs automatically on every push to the `SUN` branch in `service` mode.
+The service deployment workflow runs automatically on pushes to the `SUN` branch when `backend/**`, `frontend/**`, `secureflow_dashboard_infra/**`, or the workflow file itself changes.
 
-You can also run it manually with `workflow_dispatch`.
+You can also run it manually with `workflow_dispatch` and choose the `dev` or `prod` environment.
 
 Important behavior:
 

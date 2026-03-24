@@ -1,24 +1,6 @@
 name: SecureFlow Dashboard Terraform Apply
 
 on:
-  push:
-    branches:
-      - SUN
-    paths:
-      - .github/workflows/secureflow-dashboard-deploy.yml
-      - backend/**
-      - frontend/**
-      - secureflow_dashboard_infra/**
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: "Select deployment target environment"
-        required: true
-        default: "dev"
-        type: choice
-        options:
-          - dev
-          - prod
   workflow_call:
     inputs:
       environment:
@@ -71,6 +53,7 @@ jobs:
             .github/workflows \
             backend \
             frontend \
+            infra/docker \
             secureflow_dashboard_infra \
             -g '!backend/venv/**'; then
             echo "Unresolved merge markers were found in the current deployment paths."
@@ -90,15 +73,6 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          effective_deployment_mode="${{ inputs.deployment_mode }}"
-
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            effective_deployment_mode="service"
-          fi
-
-          if [ -z "${effective_deployment_mode}" ]; then
-            effective_deployment_mode="infra_only"
-          fi
 
           for name in AWS_REGION AWS_ACCOUNT_ID AWS_ROLE_TO_ASSUME; do
             if [ -z "${!name}" ]; then
@@ -111,14 +85,14 @@ jobs:
             exit 1
           fi
 
-          if [ "${effective_deployment_mode}" = "waf_only" ]; then
+          if [ "${{ inputs.deployment_mode }}" = "waf_only" ]; then
             if [ -z "${SECUREFLOW_UPLOAD_KEY}" ]; then
               echo "Missing required GitHub secret for WAF upload bypass: SECUREFLOW_UPLOAD_KEY"
               exit 1
             fi
           fi
 
-          if [ "${effective_deployment_mode}" = "service" ]; then
+          if [ "${{ inputs.deployment_mode }}" = "service" ]; then
             for name in GEMINI_MODEL SONAR_HOST_URL SONAR_ORGANIZATION SONAR_PROJECT_KEY; do
               if [ -z "${!name}" ]; then
                 echo "Missing recommended GitHub variable for service deployment: $name"
@@ -139,33 +113,13 @@ jobs:
 
       - name: Start deployment summary
         run: |
-          resolved_environment="${{ inputs.environment }}"
-          resolved_mode="${{ inputs.deployment_mode }}"
-
-          if [ "${{ github.event_name }}" = "push" ]; then
-            resolved_environment="dev"
-            resolved_mode="service"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            resolved_environment="${{ inputs.environment }}"
-            resolved_mode="service"
-          fi
-
-          if [ -z "${resolved_environment}" ]; then
-            resolved_environment="dev"
-          fi
-
-          if [ -z "${resolved_mode}" ]; then
-            resolved_mode="infra_only"
-          fi
-
           {
             echo "## SecureFlow Dashboard deployment started"
             echo ""
-            echo "- Trigger: \`${{ github.event_name }}\`"
             echo "- Branch: \`${GITHUB_REF_NAME}\`"
             echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Resolved environment: \`${resolved_environment}\`"
-            echo "- Mode: \`${resolved_mode}\`"
+            echo "- Requested environment: \`${{ inputs.environment || 'dev' }}\`"
+            echo "- Mode: \`${{ inputs.deployment_mode || 'infra_only' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Terraform
@@ -185,13 +139,6 @@ jobs:
           set -euo pipefail
           deploy_environment="${{ inputs.environment }}"
           deployment_mode="${{ inputs.deployment_mode }}"
-
-          if [ "${{ github.event_name }}" = "push" ]; then
-            deploy_environment="dev"
-            deployment_mode="service"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            deployment_mode="service"
-          fi
 
           if [ -z "${deploy_environment}" ]; then
             deploy_environment="dev"
@@ -561,7 +508,7 @@ jobs:
           WORKER_REPO: ${{ steps.service_targets.outputs.worker_repo }}
         run: |
           set -euo pipefail
-          docker build -f secureflow_dashboard_infra/docker/Dockerfile.worker -t "${WORKER_REPO}:${IMAGE_TAG}" . 2>&1 | tee "${ARTIFACT_DIR}/docker-worker-build.log"
+          docker build -f infra/docker/Dockerfile.worker -t "${WORKER_REPO}:${IMAGE_TAG}" . 2>&1 | tee "${ARTIFACT_DIR}/docker-worker-build.log"
           docker push "${WORKER_REPO}:${IMAGE_TAG}" 2>&1 | tee "${ARTIFACT_DIR}/docker-worker-push.log"
 
       - name: Build and push frontend image
