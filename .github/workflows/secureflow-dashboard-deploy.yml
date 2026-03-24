@@ -1,9 +1,6 @@
 name: SecureFlow Dashboard Terraform Apply
 
 on:
-  push:
-    branches:
-      - SUN
   workflow_dispatch:
     inputs:
       environment:

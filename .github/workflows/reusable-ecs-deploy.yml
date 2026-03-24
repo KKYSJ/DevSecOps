@@ -27,6 +27,14 @@ on:
       build_context:
         required: true
         type: string
+      image_tag_environment:
+        required: false
+        default: ""
+        type: string
+      source_image_uri:
+        required: false
+        default: ""
+        type: string
       git_ref:
         required: false
         default: ""
@@ -85,13 +93,48 @@ jobs:
         id: build-image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG_ENVIRONMENT: ${{ inputs.image_tag_environment }}
+          SOURCE_IMAGE_URI: ${{ inputs.source_image_uri }}
         run: |
           SHORT_SHA="${GITHUB_SHA::12}"
-          ENV_SUFFIX="${{ inputs.ecs_cluster }}"
-          IMAGE_TAG="${SHORT_SHA}-${ENV_SUFFIX##*-}-${GITHUB_RUN_ID}"
+          if [ -z "${IMAGE_TAG_ENVIRONMENT}" ]; then
+            echo "image_tag_environment input is required."
+            exit 1
+          fi
+
+          IMAGE_TAG="${SHORT_SHA}-${IMAGE_TAG_ENVIRONMENT}-${GITHUB_RUN_ID}"
           IMAGE_URI="${REGISTRY}/${{ inputs.ecr_repository }}:${IMAGE_TAG}"
-          docker build -t "${IMAGE_URI}" "${{ inputs.build_context }}"
-          docker push "${IMAGE_URI}"
+
+          if [ -n "${SOURCE_IMAGE_URI}" ]; then
+            SOURCE_REGISTRY_AND_REPO="${SOURCE_IMAGE_URI%:*}"
+            SOURCE_IMAGE_TAG="${SOURCE_IMAGE_URI##*:}"
+            SOURCE_REPOSITORY="${SOURCE_REGISTRY_AND_REPO##*/}"
+            SOURCE_REGISTRY="${SOURCE_REGISTRY_AND_REPO%/*}"
+            SOURCE_REGISTRY_ID="${SOURCE_REGISTRY%%.*}"
+            TARGET_REGISTRY_ID="${REGISTRY%%.*}"
+
+            IMAGE_MANIFEST="$(aws ecr batch-get-image \
+              --registry-id "${SOURCE_REGISTRY_ID}" \
+              --repository-name "${SOURCE_REPOSITORY}" \
+              --image-ids imageTag="${SOURCE_IMAGE_TAG}" \
+              --query 'images[0].imageManifest' \
+              --output text)"
+
+            if [ -z "${IMAGE_MANIFEST}" ] || [ "${IMAGE_MANIFEST}" = "None" ]; then
+              echo "Unable to resolve source image manifest for ${SOURCE_IMAGE_URI}."
+              exit 1
+            fi
+
+            aws ecr put-image \
+              --registry-id "${TARGET_REGISTRY_ID}" \
+              --repository-name "${{ inputs.ecr_repository }}" \
+              --image-tag "${IMAGE_TAG}" \
+              --image-manifest "${IMAGE_MANIFEST}" >/dev/null
+          else
+            docker build -t "${IMAGE_URI}" "${{ inputs.build_context }}"
+            docker push "${IMAGE_URI}"
+          fi
+
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch current ECS task definition

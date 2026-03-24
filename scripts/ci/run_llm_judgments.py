@@ -108,6 +108,7 @@ def gate_to_pairs(gate: dict, category: str) -> list[dict]:
 
 def main():
     api_server_url = os.getenv("API_SERVER_URL", "").strip().rstrip("/")
+    upload_key = os.getenv("SECUREFLOW_UPLOAD_KEY", "").strip()
     commit_hash = os.getenv("COMMIT_SHA", "").strip()
 
     if not api_server_url:
@@ -306,7 +307,11 @@ def main():
         }).encode("utf-8")
 
         url = f"{api_server_url}/scans/gate-result"
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        headers = {"Content-Type": "application/json"}
+        if upload_key:
+            headers["X-SecureFlow-Upload-Key"] = upload_key
+
+        req = urllib.request.Request(url, data=payload, headers=headers)
         try:
             resp = urllib.request.urlopen(req, timeout=30)
             print(f"\n개별 판정 결과 EC2 전송 완료: {resp.read().decode()}")

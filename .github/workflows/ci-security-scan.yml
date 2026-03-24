@@ -2,7 +2,7 @@ name: CI Security Scan
 
 on:
   push:
-    branches-ignore:
+    branches:
       - SUN
   pull_request:
   workflow_dispatch:
@@ -231,6 +231,7 @@ jobs:
         if: always()
         env:
           API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
           COMMIT_SHA: ${{ github.sha }}
           BRANCH_NAME: ${{ github.ref_name }}
           RUN_ID: ${{ github.run_id }}
@@ -240,6 +241,10 @@ jobs:
           fi
 
           API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
 
           jq -n \
             --arg stage "iac" \
@@ -248,7 +253,7 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
+          curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -487,6 +492,7 @@ jobs:
         if: always()
         env:
           API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
           COMMIT_SHA: ${{ github.sha }}
           BRANCH_NAME: ${{ github.ref_name }}
           RUN_ID: ${{ github.run_id }}
@@ -496,6 +502,10 @@ jobs:
           fi
 
           API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
 
           jq -n \
             --arg stage "sast" \
@@ -504,7 +514,7 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
+          curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -639,6 +649,7 @@ jobs:
         if: always()
         env:
           API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
           COMMIT_SHA: ${{ github.sha }}
           BRANCH_NAME: ${{ github.ref_name }}
           RUN_ID: ${{ github.run_id }}
@@ -648,6 +659,10 @@ jobs:
           fi
 
           API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
 
           jq -n \
             --arg stage "sca" \
@@ -656,7 +671,7 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
+          curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
@@ -688,6 +703,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+      SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
 
     steps:
       - name: Check out source
@@ -708,6 +724,10 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           # Upload raw scanner outputs only. LLM gate JSON is uploaded separately to /scans/gate-result.
           upload() {
             local tool=$1 file=$2
@@ -723,14 +743,14 @@ jobs:
                     > /tmp/payload.json 2>/dev/null
               if [ $? -eq 0 ]; then
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${API_BASE_URL}/scans" \
+                  -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
                   -d @/tmp/payload.json \
                   --max-time 60 || echo "000")
               else
                 echo "  ⚠ jq 실패, 직접 전송 시도"
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${API_BASE_URL}/scans" \
+                  -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
                   -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
                   --max-time 30 || echo "000")
@@ -756,11 +776,15 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           # Refresh the existing backend dashboard report after raw CI uploads complete.
           for i in $(seq 1 30); do
-            WAIT=$(curl -s "${API_BASE_URL}/scans" \
+            WAIT=$(curl -s "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${API_BASE_URL}/scans" \
+            DONE=$(curl -s "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
             echo "done=${DONE}, waiting=${WAIT} (${i}/30)"
             if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
@@ -777,8 +801,12 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          curl -s -X POST "${API_BASE_URL}/scans/analyze" \
+          curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/analyze" \
             -H "Content-Type: application/json" \
             -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
             --max-time 120 || true
@@ -790,13 +818,17 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           API_BASE_URL="${API_SERVER_URL%/}"
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           for stage in iac sast sca; do
             FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
             if [ -f "$FILE" ]; then
               echo "LLM gate 전송: $stage"
               jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
                 '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
-              | curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
+              | curl -s -X POST "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans/gate-result" \
                 -H "Content-Type: application/json" \
                 -d @- || echo "  전송 실패 (무시)"
             else
@@ -810,6 +842,7 @@ jobs:
         env:
           COMMIT_SHA: ${{ github.sha }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
         run: |
           pip install -q httpx 2>/dev/null
           python scripts/ci/run_llm_judgments.py || echo "개별 판정 실패 (무시)"
@@ -864,6 +897,22 @@ jobs:
     uses: ./.github/workflows/cd-deploy.yml
     with:
       branch_name: main
+      source_sha: ${{ github.sha }}
+      service: all
+      run_staging: true
+      run_production: true
+    secrets: inherit
+
+  chain-cd-sun:
+    needs:
+      - ci-release-gate
+    if: github.event_name == 'push' && github.ref_name == 'SUN'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/cd-deploy.yml
+    with:
+      branch_name: ${{ github.ref_name }}
       source_sha: ${{ github.sha }}
       service: all
       run_staging: true
