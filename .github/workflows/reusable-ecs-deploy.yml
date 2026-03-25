@@ -27,14 +27,6 @@ on:
       build_context:
         required: true
         type: string
-      image_tag_environment:
-        required: false
-        default: ""
-        type: string
-      source_image_uri:
-        required: false
-        default: ""
-        type: string
       git_ref:
         required: false
         default: ""
@@ -43,6 +35,11 @@ on:
         required: false
         default: ""
         type: string
+      existing_image_uri:
+        required: false
+        default: ""
+        type: string
+        description: "Skip build and use this image URI directly"
     outputs:
       image_uri:
         description: "Built container image URI"
@@ -63,7 +60,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     outputs:
-      image_uri: ${{ steps.build-image.outputs.image_uri }}
+      image_uri: ${{ steps.build-image.outputs.image_uri || steps.existing-image.outputs.image_uri }}
       service_url: ${{ steps.discover-service-url.outputs.service_url }}
 
     steps:
@@ -91,51 +88,21 @@ jobs:
 
       - name: Build and push image
         id: build-image
+        if: inputs.existing_image_uri == ''
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG_ENVIRONMENT: ${{ inputs.image_tag_environment }}
-          SOURCE_IMAGE_URI: ${{ inputs.source_image_uri }}
         run: |
           SHORT_SHA="${GITHUB_SHA::12}"
-          if [ -z "${IMAGE_TAG_ENVIRONMENT}" ]; then
-            echo "image_tag_environment input is required."
-            exit 1
-          fi
-
-          IMAGE_TAG="${SHORT_SHA}-${IMAGE_TAG_ENVIRONMENT}-${GITHUB_RUN_ID}"
+          IMAGE_TAG="${SHORT_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           IMAGE_URI="${REGISTRY}/${{ inputs.ecr_repository }}:${IMAGE_TAG}"
-
-          if [ -n "${SOURCE_IMAGE_URI}" ]; then
-            SOURCE_REGISTRY_AND_REPO="${SOURCE_IMAGE_URI%:*}"
-            SOURCE_IMAGE_TAG="${SOURCE_IMAGE_URI##*:}"
-            SOURCE_REPOSITORY="${SOURCE_REGISTRY_AND_REPO##*/}"
-            SOURCE_REGISTRY="${SOURCE_REGISTRY_AND_REPO%/*}"
-            SOURCE_REGISTRY_ID="${SOURCE_REGISTRY%%.*}"
-            TARGET_REGISTRY_ID="${REGISTRY%%.*}"
-
-            IMAGE_MANIFEST="$(aws ecr batch-get-image \
-              --registry-id "${SOURCE_REGISTRY_ID}" \
-              --repository-name "${SOURCE_REPOSITORY}" \
-              --image-ids imageTag="${SOURCE_IMAGE_TAG}" \
-              --query 'images[0].imageManifest' \
-              --output text)"
-
-            if [ -z "${IMAGE_MANIFEST}" ] || [ "${IMAGE_MANIFEST}" = "None" ]; then
-              echo "Unable to resolve source image manifest for ${SOURCE_IMAGE_URI}."
-              exit 1
-            fi
-
-            aws ecr put-image \
-              --registry-id "${TARGET_REGISTRY_ID}" \
-              --repository-name "${{ inputs.ecr_repository }}" \
-              --image-tag "${IMAGE_TAG}" \
-              --image-manifest "${IMAGE_MANIFEST}" >/dev/null
-          else
-            docker build -t "${IMAGE_URI}" "${{ inputs.build_context }}"
-            docker push "${IMAGE_URI}"
-          fi
-
+          docker build -t "${IMAGE_URI}" "${{ inputs.build_context }}"
+          docker push "${IMAGE_URI}"
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+      - name: Use existing image
+        id: existing-image
+        if: inputs.existing_image_uri != ''
+        run: echo "image_uri=${{ inputs.existing_image_uri }}" >> "$GITHUB_OUTPUT"
 
       - name: Fetch current ECS task definition
         run: |
@@ -151,7 +118,7 @@ jobs:
         with:
           task-definition: task-definition-clean.json
           container-name: ${{ inputs.ecs_container_name }}
-          image: ${{ steps.build-image.outputs.image_uri }}
+          image: ${{ steps.build-image.outputs.image_uri || steps.existing-image.outputs.image_uri }}
 
       - name: Deploy to Amazon ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2

@@ -3,6 +3,7 @@ name: CI Security Scan
 on:
   push:
     branches:
+      - main
       - SUN
   pull_request:
   workflow_dispatch:

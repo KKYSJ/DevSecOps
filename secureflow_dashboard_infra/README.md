@@ -94,9 +94,9 @@ Notes:
 - When CloudFront and WAF are enabled, set Terraform variable `actions_upload_bypass_key` and GitHub secret `SECUREFLOW_UPLOAD_KEY` to the same long random value so GitHub Actions scan uploads can pass WAF safely.
 - Because `actions_upload_bypass_key` is a Terraform variable, protect your remote state and do not commit real values into the repository.
 
-The service deployment workflow runs automatically on pushes to the `SUN` branch when `backend/**`, `frontend/**`, `secureflow_dashboard_infra/**`, or the workflow file itself changes.
+You can run the service deployment workflow manually with `workflow_dispatch` and choose the `dev` or `prod` environment.
 
-You can also run it manually with `workflow_dispatch` and choose the `dev` or `prod` environment.
+It can also be invoked from another workflow through `workflow_call`.
 
 Important behavior:
 
