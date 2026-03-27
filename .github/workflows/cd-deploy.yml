@@ -303,12 +303,14 @@ jobs:
                     --arg commit "$COMMIT_SHA" \
                     --arg project "secureflow" \
                     --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                    --argjson defer true \
                     --slurpfile raw "$FILE" \
-                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
+                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch, defer_processing: $defer}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
                 -X POST "${BACKEND_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
-                -d @- || echo "  전송 실패"
+                -d @- \
+                --max-time 60 || echo "  전송 실패"
             fi
           done
           # Grype 이미지 스캔 업로드
@@ -320,12 +322,14 @@ jobs:
                     --arg commit "$COMMIT_SHA" \
                     --arg project "secureflow" \
                     --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                    --argjson defer true \
                     --slurpfile raw "$FILE" \
-                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
+                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch, defer_processing: $defer}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
                 -X POST "${BACKEND_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \
-                -d @- || echo "  전송 실패"
+                -d @- \
+                --max-time 60 || echo "  전송 실패"
             fi
           done
 
@@ -769,8 +773,9 @@ jobs:
                   --arg commit "$COMMIT_SHA" \
                   --arg project "secureflow" \
                   --arg branch "$BRANCH_NAME" \
+                  --argjson defer true \
                   --slurpfile raw "$file" \
-                  '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch}' \
+                  '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, defer_processing:$defer}' \
                   > /tmp/payload.json 2>/dev/null; then
               curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
                 -H "Content-Type: application/json" \

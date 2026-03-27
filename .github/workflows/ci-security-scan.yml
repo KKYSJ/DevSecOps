@@ -713,8 +713,9 @@ jobs:
                     --arg commit "${COMMIT_SHA}" \
                     --arg project "secureflow" \
                     --arg branch "${GITHUB_REF_NAME}" \
+                    --argjson defer true \
                     --slurpfile raw "$file" \
-                    '{tool:$tool, raw_result:$raw[0], commit_hash:$commit, project_name:$project, branch:$branch}' \
+                    '{tool:$tool, raw_result:$raw[0], commit_hash:$commit, project_name:$project, branch:$branch, defer_processing:$defer}' \
                     > /tmp/payload.json 2>/dev/null
               if [ $? -eq 0 ]; then
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -727,7 +728,7 @@ jobs:
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
                   -X POST "${BACKEND_URL}/api/v1/scans" \
                   -H "Content-Type: application/json" \
-                  -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\"}" \
+                  -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\",\"defer_processing\":true}" \
                   --max-time 30 || echo "000")
               fi
               echo "  → HTTP $HTTP"

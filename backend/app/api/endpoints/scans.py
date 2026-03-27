@@ -27,6 +27,7 @@ class ScanSubmitRequest(BaseModel):
     commit_hash: str    # 필수 — 동일 커밋의 스캔들을 Pipeline으로 묶는 키
     project_name: Optional[str] = "secureflow"
     branch: Optional[str] = "main"
+    defer_processing: bool = False
 
 
 class AnalyzeRequest(BaseModel):
@@ -104,13 +105,18 @@ def submit_scan(body: ScanSubmitRequest, db: Session = Depends(get_db)):
 
     # Celery 태스크 트리거 (Redis 없으면 동기 폴백)
     from backend.app.workers.scan_worker import process_scan, _process_scan_sync
+    processing_deferred = False
     try:
         process_scan.delay(scan.id)
         async_mode = True
     except Exception:
-        _process_scan_sync(scan.id)
-        db.refresh(scan)
-        async_mode = False
+        if body.defer_processing:
+            async_mode = False
+            processing_deferred = True
+        else:
+            _process_scan_sync(scan.id)
+            db.refresh(scan)
+            async_mode = False
 
     return {
         "scan_id": scan.id,
@@ -120,6 +126,8 @@ def submit_scan(body: ScanSubmitRequest, db: Session = Depends(get_db)):
         "commit_hash": scan.commit_hash,
         "status": scan.status,
         "async": async_mode,
+        "deferred": processing_deferred,
+        "message": "백그라운드 처리 중" if async_mode else ("저장 완료 (처리 보류)" if processing_deferred else "처리 완료"),
         "message": "백그라운드 처리 중" if async_mode else "처리 완료",
     }
 
