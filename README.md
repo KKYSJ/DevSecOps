@@ -41,17 +41,7 @@ At a high level, the repository works like this:
 5. The backend stores scan data and generates dashboard reports.
 6. CD deploys staging services first, runs image scan / DAST / ISMS-P checks, and only allows production ECS deployment from `main`.
 
-### Architecture Diagram Location
-
-When you upload the architecture image, put it here:
-
-`docs/assets/architecture/secureflow-architecture.png`
-
-After you add the file, you can place this line in the Architecture section:
-
-```md
 ![SecureFlow architecture](docs/assets/architecture/secureflow-architecture.png)
-```
 
 ## Tech Stack
 
