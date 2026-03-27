@@ -60,8 +60,15 @@ else:
 
 import urllib.request
 
-backend = os.environ.get("BACKEND_URL", "")
+backend = os.environ.get("API_SERVER_URL", "")
+backend = backend.rstrip("/")
+if backend and not backend.endswith("/api/v1"):
+    backend = f"{backend}/api/v1"
+upload_key = os.environ.get("SECUREFLOW_UPLOAD_KEY", "")
 commit = os.environ.get("COMMIT_SHA", "")
+if not backend:
+    print("API_SERVER_URL 미설정, overall verdict 업로드 스킵")
+    sys.exit(0)
 payload = json.dumps({
     "stage": "overall-verdict",
     "commit_hash": commit,
@@ -71,9 +78,12 @@ payload = json.dumps({
     },
 }).encode("utf-8")
 req = urllib.request.Request(
-    f"{backend}/api/v1/scans/gate-result",
+    f"{backend}/scans/gate-result",
     data=payload,
-    headers={"Content-Type": "application/json"},
+    headers={
+        "Content-Type": "application/json",
+        **({"X-SecureFlow-Upload-Key": upload_key} if upload_key else {}),
+    },
 )
 try:
     r = urllib.request.urlopen(req, timeout=30)

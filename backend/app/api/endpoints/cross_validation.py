@@ -110,6 +110,7 @@ def get_llm_gates(commit_hash: Optional[str] = None, db: Session = Depends(get_d
         records = (
             db.query(ToolResult)
             .filter(ToolResult.name.like("llm-gate-%"))
+            .filter(ToolResult.name != "llm-gate-judgments")
             .order_by(ToolResult.id.desc())
             .limit(30)
             .all()

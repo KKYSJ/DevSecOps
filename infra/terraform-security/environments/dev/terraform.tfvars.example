@@ -1,0 +1,46 @@
+project_name = "secureflow"
+environment  = "dev"
+aws_region   = "<aws-region>"
+
+default_tags = {
+  Project     = "secureflow"
+  Environment = "dev"
+  ManagedBy   = "Terraform"
+  Stack       = "security-baseline"
+}
+
+create_security_logs_bucket = false
+security_logs_bucket_name   = "<existing-security-logs-bucket>"
+
+trail_name                = "secureflow-dev-trail"
+cloudtrail_log_group_name = "/aws/cloudtrail/secureflow-dev"
+
+enable_cloudtrail        = false
+enable_config            = false
+enable_config_rules      = false
+enable_securityhub       = false
+enable_guardduty         = false
+enable_ecr_registry_scan = false
+
+create_config_service_role   = false
+config_recorder_name         = "default"
+config_delivery_channel_name = "default"
+config_recorder_role_arn     = "<existing-config-recorder-role-arn>"
+
+enable_flow_logs           = false
+create_flow_logs_log_group = false
+flow_logs_log_group_name   = "<existing-dev-flow-log-group>"
+create_flow_logs_iam_role  = false
+flow_logs_role_arn         = "<existing-dev-flow-log-role-arn>"
+managed_vpc_ids            = ["<dev-vpc-id>"]
+flow_log_tags = {
+  Project     = "<project>"
+  Environment = "dev"
+  Service     = "<service>"
+  ManagedBy   = "<owner>"
+}
+
+enable_waf               = false
+existing_waf_web_acl_arn = "<existing-dev-web-acl-arn>"
+
+enable_incident_response = false

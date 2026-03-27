@@ -21,7 +21,7 @@ on:
         required: false
         default: false
         type: boolean
-  # workflow_run 제거 — chain-cd-main/nayoung/seo에서 직접 호출
+  # CI의 chain-cd job 또는 수동 실행에서 직접 호출
   workflow_dispatch:
     inputs:
       environment:
@@ -47,6 +47,10 @@ on:
 permissions:
   contents: read
   id-token: write
+
+env:
+  API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+  SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
 
 jobs:
   resolve-context:
@@ -96,19 +100,6 @@ jobs:
 
             if [ "$requested_production" = "true" ] && [ "$branch_name" = "main" ]; then
               run_production="true"
-            fi
-          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
-            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
-              branch_name="${{ github.event.workflow_run.head_branch }}"
-              source_sha="${{ github.event.workflow_run.head_sha }}"
-              run_staging="true"
-
-              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ] || [ "$branch_name" = "nayoung" ]; then
-                proceed="true"
-              elif [ "$branch_name" = "main" ]; then
-                proceed="true"
-                run_production="true"
-              fi
             fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             proceed="true"
@@ -223,8 +214,6 @@ jobs:
       - deploy-staging-frontend
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
-    env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -240,85 +229,153 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Scan FastAPI image with Trivy
+        if: needs.deploy-staging-fastapi.outputs.image_uri != ''
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest"
+          image-ref: ${{ needs.deploy-staging-fastapi.outputs.image_uri }}
           format: json
           output: trivy-image-fastapi.json
           severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Node image with Trivy
+        if: needs.deploy-staging-node.outputs.image_uri != ''
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest"
+          image-ref: ${{ needs.deploy-staging-node.outputs.image_uri }}
           format: json
           output: trivy-image-node.json
           severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Spring image with Trivy
+        if: needs.deploy-staging-spring.outputs.image_uri != ''
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest"
+          image-ref: ${{ needs.deploy-staging-spring.outputs.image_uri }}
           format: json
           output: trivy-image-spring.json
           severity: HIGH,MEDIUM
         continue-on-error: true
 
+      - name: Scan Frontend image with Trivy
+        if: needs.deploy-staging-frontend.outputs.image_uri != ''
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.deploy-staging-frontend.outputs.image_uri }}
+          format: json
+          output: trivy-image-frontend.json
+          severity: HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Install Grype
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        continue-on-error: true
+
       - name: Scan FastAPI image with Grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json --only-fixed > grype-fastapi.json || true
+        if: needs.deploy-staging-fastapi.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-fastapi.outputs.image_uri }}" -o json --only-fixed > grype-fastapi.json || true
         continue-on-error: true
 
       - name: Scan Node image with Grype
-        run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json --only-fixed > grype-node.json || true
+        if: needs.deploy-staging-node.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-node.outputs.image_uri }}" -o json --only-fixed > grype-node.json || true
         continue-on-error: true
 
       - name: Scan Spring image with Grype
-        run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json --only-fixed > grype-spring.json || true
+        if: needs.deploy-staging-spring.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-spring.outputs.image_uri }}" -o json --only-fixed > grype-spring.json || true
+        continue-on-error: true
+
+      - name: Scan Frontend image with Grype
+        if: needs.deploy-staging-frontend.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-frontend.outputs.image_uri }}" -o json --only-fixed > grype-frontend.json || true
         continue-on-error: true
 
       - name: Upload image scan results to SecureFlow
-        if: env.BACKEND_URL != ''
+        if: env.API_SERVER_URL != ''
         run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
-          # Trivy 이미지 스캔 업로드
-          for service in fastapi node spring; do
-            FILE="trivy-image-${service}.json"
-            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-              echo "이미지 스캔 업로드: trivy-image ${service}"
-              jq -n --arg tool "trivy-image" \
-                    --arg commit "$COMMIT_SHA" \
-                    --arg project "secureflow" \
-                    --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
-                    --slurpfile raw "$FILE" \
-                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
-              | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
-                -H "Content-Type: application/json" \
-                -d @- || echo "  전송 실패"
+          upload_image_scan() {
+            local tool="$1"
+            local service="$2"
+            local file="$3"
+            local payload_file response_file http_code rc
+
+            if [ ! -f "$file" ] || [ ! -s "$file" ]; then
+              return 0
+            fi
+
+            payload_file=$(mktemp)
+            response_file=$(mktemp)
+
+            if ! jq -n --arg tool "$tool" \
+                  --arg commit "$COMMIT_SHA" \
+                  --arg project "secureflow" \
+                  --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
+                  --argjson defer true \
+                  --slurpfile raw "$file" \
+                  '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch, defer_processing: $defer}' \
+                  > "$payload_file"; then
+              echo "이미지 스캔 업로드: ${tool} ${service}"
+              echo "  -> payload 생성 실패"
+              rm -f "$payload_file" "$response_file"
+              return 0
+            fi
+
+            echo "이미지 스캔 업로드: ${tool} ${service}"
+            set +e
+            http_code=$(curl --silent --show-error \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              -X POST "${API_BASE_URL}/scans" \
+              -H "Content-Type: application/json" \
+              "${HEADER_ARGS[@]}" \
+              -d @"$payload_file" \
+              --connect-timeout 10 \
+              --max-time 180)
+            rc=$?
+            set -e
+
+            echo "  -> HTTP ${http_code:-000}"
+            if [ $rc -ne 0 ]; then
+              echo "  -> curl exit ${rc}"
+            fi
+            if [ -s "$response_file" ]; then
+              echo "  -> response:"
+              head -c 400 "$response_file"
+              echo
+            fi
+
+            rm -f "$payload_file" "$response_file"
+            return 0
+          }
+
+          pids=()
+          for service in fastapi node spring frontend; do
+            upload_image_scan "trivy-image" "$service" "trivy-image-${service}.json" &
+            pids+=($!)
+            if [ "${#pids[@]}" -ge 4 ]; then
+              wait -n || true
             fi
           done
-          # Grype 이미지 스캔 업로드
-          for service in fastapi node spring; do
-            FILE="grype-${service}.json"
-            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-              echo "이미지 스캔 업로드: grype ${service}"
-              jq -n --arg tool "grype" \
-                    --arg commit "$COMMIT_SHA" \
-                    --arg project "secureflow" \
-                    --arg branch "${{ needs.resolve-context.outputs.branch_name }}" \
-                    --slurpfile raw "$FILE" \
-                    '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch}' \
-              | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
-                -H "Content-Type: application/json" \
-                -d @- || echo "  전송 실패"
+          for service in fastapi node spring frontend; do
+            upload_image_scan "grype" "$service" "grype-${service}.json" &
+            pids+=($!)
+            if [ "${#pids[@]}" -ge 4 ]; then
+              wait -n || true
             fi
+          done
+          for pid in "${pids[@]}"; do
+            wait "$pid" || true
           done
 
       - name: Upload artifacts
@@ -340,7 +397,7 @@ jobs:
       gate_decision: ${{ steps.gate-check.outputs.decision }}
     runs-on: ubuntu-latest
     env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Check out source
@@ -404,14 +461,44 @@ jobs:
         env:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
+          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
           jq -n --arg stage "image" --arg commit "$COMMIT_SHA" \
             --slurpfile raw artifacts/image/image-llm-gate.json \
             '{stage:$stage, commit_hash:$commit, gate_result:$raw[0]}' \
-          | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
-            -H "Content-Type: application/json" -d @- || true
+            > /tmp/image-gate-payload.json
+
+          set +e
+          HTTP_CODE=$(curl --silent --show-error \
+            --output /tmp/image-gate-response.txt \
+            --write-out "%{http_code}" \
+            -X POST "${API_BASE_URL}/scans/gate-result" \
+            -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
+            -d @/tmp/image-gate-payload.json \
+            --connect-timeout 10 \
+            --max-time 120)
+          RC=$?
+          set -e
+
+          echo "Image gate upload -> HTTP ${HTTP_CODE:-000}"
+          if [ $RC -ne 0 ]; then
+            echo "Image gate upload -> curl exit ${RC}"
+          fi
+          if [ -s /tmp/image-gate-response.txt ]; then
+            echo "Image gate upload -> response:"
+            head -c 400 /tmp/image-gate-response.txt
+            echo
+          fi
 
       - name: Image 개별 취약점 LLM 판정
         if: always()
@@ -419,7 +506,7 @@ jobs:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           PYTHONPATH: ${{ github.workspace }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
         run: |
           mkdir -p scan-results/image-llm-gate
           cp artifacts/image/image-llm-gate.json scan-results/image-llm-gate/image-llm-gate.json 2>/dev/null || true
@@ -472,10 +559,19 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
-      - name: Resolve DAST target URL
+      - name: Resolve representative DAST target URL
         id: target
         run: |
-          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
           fi
@@ -484,15 +580,6 @@ jobs:
           fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
 
           if [ -n "$TARGET_URL" ]; then
@@ -557,10 +644,19 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
-      - name: Resolve DAST target URL
+      - name: Resolve representative DAST target URL
         id: target
         run: |
-          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
           fi
@@ -569,15 +665,6 @@ jobs:
           fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
 
           if [ -n "$TARGET_URL" ]; then
@@ -722,11 +809,18 @@ jobs:
       - name: Upload DAST gate result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
+          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -736,18 +830,43 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+          set +e
+          HTTP_CODE=$(curl --silent --show-error \
+            --output /tmp/dast-gate-response.txt \
+            --write-out "%{http_code}" \
+            -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d @/tmp/gate-payload.json \
-            --max-time 60 || true
+            --connect-timeout 10 \
+            --max-time 120)
+          RC=$?
+          set -e
+
+          echo "DAST gate upload -> HTTP ${HTTP_CODE:-000}"
+          if [ $RC -ne 0 ]; then
+            echo "DAST gate upload -> curl exit ${RC}"
+          fi
+          if [ -s /tmp/dast-gate-response.txt ]; then
+            echo "DAST gate upload -> response:"
+            head -c 400 /tmp/dast-gate-response.txt
+            echo
+          fi
 
       - name: Upload DAST results to SecureFlow
-        if: always() && env.BACKEND_URL != ''
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           # Upload raw DAST outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
           upload() {
             local tool=$1 file=$2
@@ -761,18 +880,37 @@ jobs:
                   --arg commit "$COMMIT_SHA" \
                   --arg project "secureflow" \
                   --arg branch "$BRANCH_NAME" \
+                  --argjson defer true \
                   --slurpfile raw "$file" \
-                  '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch}' \
+                  '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, defer_processing:$defer}' \
                   > /tmp/payload.json 2>/dev/null; then
-              curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
+              set +e
+              HTTP_CODE=$(curl --silent --show-error \
+                --output /tmp/dast-upload-response.txt \
+                --write-out "%{http_code}" \
+                -X POST "${API_BASE_URL}/scans" \
                 -H "Content-Type: application/json" \
+                "${HEADER_ARGS[@]}" \
                 -d @/tmp/payload.json \
-                --max-time 60 || true
+                --connect-timeout 10 \
+                --max-time 120)
+              RC=$?
+              set -e
+
+              echo "  -> HTTP ${HTTP_CODE:-000}"
+              if [ $RC -ne 0 ]; then
+                echo "  -> curl exit ${RC}"
+              fi
+              if [ -s /tmp/dast-upload-response.txt ]; then
+                echo "  -> response:"
+                head -c 400 /tmp/dast-upload-response.txt
+                echo
+              fi
             else
               echo "Skip upload: failed to build JSON payload for $tool"
             fi
 
-            rm -f /tmp/payload.json
+            rm -f /tmp/payload.json /tmp/dast-upload-response.txt
           }
 
           upload "zap" "artifacts/dast/zap-service-results/zap-results.json"
@@ -780,18 +918,25 @@ jobs:
         continue-on-error: true
 
       - name: Wait for SecureFlow DAST parsing
-        if: always() && env.BACKEND_URL != ''
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          # Refresh the existing backend dashboard report after DAST uploads complete.
-          for i in $(seq 1 24); do
-            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          for i in $(seq 1 12); do
+            WAIT=$(curl -s --connect-timeout 5 --max-time 20 "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
+            DONE=$(curl -s --connect-timeout 5 --max-time 20 "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
               | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
-            echo "done=${DONE}, waiting=${WAIT} (${i}/24)"
+            echo "done=${DONE}, waiting=${WAIT} (${i}/12)"
             if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
               echo "SecureFlow DAST parsing finished."
               break
@@ -800,23 +945,33 @@ jobs:
           done
         continue-on-error: true
 
-      - name: Refresh SecureFlow Phase 2 dashboard report
-        if: always() && env.BACKEND_URL != ''
+      - name: Refresh SecureFlow phase 2 dashboard report
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${API_BASE_URL}/scans/analyze" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
-            --max-time 120 || true
+            --max-time 60 || echo "000")
+          echo "Phase 2 analyze -> HTTP ${HTTP_CODE}"
         continue-on-error: true
 
       - name: DAST 개별 취약점 LLM 판정 (한국어)
-        if: always() && env.BACKEND_URL != ''
+        if: always() && env.API_SERVER_URL != ''
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -887,10 +1042,19 @@ jobs:
         with:
           path: artifacts/isms
 
-      - name: Resolve staging target URL
+      - name: Resolve representative staging target URL
         id: target
         run: |
-          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
           fi
@@ -899,15 +1063,6 @@ jobs:
           fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
           echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
 
@@ -932,13 +1087,20 @@ jobs:
       - name: Upload ISMS-P result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
           DEPLOY_ENV: ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
+          if [ -z "$API_SERVER_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -951,10 +1113,28 @@ jobs:
             '{name:$name,status:$status,environment:$environment,commit_hash:$commit,branch:$branch,data:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/isms-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/isms" \
+          set +e
+          HTTP_CODE=$(curl --silent --show-error \
+            --output /tmp/isms-response.txt \
+            --write-out "%{http_code}" \
+            -X POST "${API_BASE_URL}/isms" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d @/tmp/isms-payload.json \
-            --max-time 60 || true
+            --connect-timeout 10 \
+            --max-time 120)
+          RC=$?
+          set -e
+
+          echo "ISMS upload -> HTTP ${HTTP_CODE:-000}"
+          if [ $RC -ne 0 ]; then
+            echo "ISMS upload -> curl exit ${RC}"
+          fi
+          if [ -s /tmp/isms-response.txt ]; then
+            echo "ISMS upload -> response:"
+            head -c 400 /tmp/isms-response.txt
+            echo
+          fi
 
   deploy-production-fastapi:
     needs:
@@ -963,6 +1143,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
+      needs.resolve-context.outputs.run_production == 'true' &&
       (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'fastapi')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -986,6 +1167,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
+      needs.resolve-context.outputs.run_production == 'true' &&
       (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'node')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -1009,6 +1191,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
+      needs.resolve-context.outputs.run_production == 'true' &&
       (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'spring')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -1032,6 +1215,7 @@ jobs:
       - isms-preprod-gate
     if: |
       always() &&
+      needs.resolve-context.outputs.run_production == 'true' &&
       (needs.isms-preprod-gate.result != 'cancelled') &&
       (needs.resolve-context.outputs.service == 'all' || needs.resolve-context.outputs.service == 'frontend')
     uses: ./.github/workflows/reusable-ecs-deploy.yml
@@ -1057,7 +1241,7 @@ jobs:
     if: always() && needs.resolve-context.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
       PYTHONPATH: ${{ github.workspace }}

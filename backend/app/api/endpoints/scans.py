@@ -27,6 +27,7 @@ class ScanSubmitRequest(BaseModel):
     commit_hash: str    # 필수 — 동일 커밋의 스캔들을 Pipeline으로 묶는 키
     project_name: Optional[str] = "secureflow"
     branch: Optional[str] = "main"
+    defer_processing: bool = False
 
 
 class AnalyzeRequest(BaseModel):
@@ -104,13 +105,18 @@ def submit_scan(body: ScanSubmitRequest, db: Session = Depends(get_db)):
 
     # Celery 태스크 트리거 (Redis 없으면 동기 폴백)
     from backend.app.workers.scan_worker import process_scan, _process_scan_sync
+    processing_deferred = False
     try:
         process_scan.delay(scan.id)
         async_mode = True
     except Exception:
-        _process_scan_sync(scan.id)
-        db.refresh(scan)
-        async_mode = False
+        if body.defer_processing:
+            async_mode = False
+            processing_deferred = True
+        else:
+            _process_scan_sync(scan.id)
+            db.refresh(scan)
+            async_mode = False
 
     return {
         "scan_id": scan.id,
@@ -120,6 +126,8 @@ def submit_scan(body: ScanSubmitRequest, db: Session = Depends(get_db)):
         "commit_hash": scan.commit_hash,
         "status": scan.status,
         "async": async_mode,
+        "deferred": processing_deferred,
+        "message": "백그라운드 처리 중" if async_mode else ("저장 완료 (처리 보류)" if processing_deferred else "처리 완료"),
         "message": "백그라운드 처리 중" if async_mode else "처리 완료",
     }
 
@@ -370,6 +378,7 @@ class GateResultRequest(BaseModel):
 def receive_gate_result(body: GateResultRequest, db: Session = Depends(get_db)):
     """CI의 run_llm_gate.py 결과를 저장합니다."""
     from backend.app.models.tool_result import ToolResult
+    from backend.app.services import report_service
 
     record = ToolResult(
         name=f"llm-gate-{body.stage}",
@@ -382,5 +391,8 @@ def receive_gate_result(body: GateResultRequest, db: Session = Depends(get_db)):
     )
     db.add(record)
     db.commit()
+
+    if body.stage == "judgments":
+        report_service.refresh_report_from_llm(db, body.commit_hash)
 
     return {"status": "ok", "stage": body.stage, "id": record.id}
