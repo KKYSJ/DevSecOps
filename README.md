@@ -1,169 +1,169 @@
 # SecureFlow
 
-SecureFlow is a DevSecOps platform repository that combines:
+SecureFlow는 다음 요소를 한 저장소에서 함께 관리하는 DevSecOps 플랫폼입니다.
 
-- a security analysis platform (`backend`, `engine`, `frontend`, `ismsp`)
-- sample deploy targets (`app/*`)
-- GitHub Actions pipelines for CI/CD and security gating
-- AWS infrastructure code for the dashboard/runtime environment
+- 보안 분석 플랫폼 (`backend`, `engine`, `frontend`, `ismsp`)
+- 배포 대상 샘플 애플리케이션 (`app/*`)
+- CI/CD 및 보안 게이트를 수행하는 GitHub Actions 워크플로
+- 대시보드 및 런타임 환경을 위한 AWS 인프라 코드
 
-The current pipeline design runs paired security tools per domain, sends raw results and LLM gate results to the backend, and uses the dashboard as the reporting surface.
+현재 파이프라인은 보안 영역별로 2개 도구를 병행 실행하고, 그 결과를 LLM 게이트로 교차검증한 뒤, raw 결과와 gate 결과를 백엔드로 업로드해 대시보드와 리포트에 반영하는 구조를 사용합니다.
 
-## What Is In This Repository
+## 저장소 구성
 
-This repository is intentionally split into two layers.
+이 저장소는 크게 두 축으로 나뉩니다.
 
-### 1. SecureFlow platform
+### 1. SecureFlow 플랫폼
 
-- `backend/`: FastAPI API, database models, report endpoints, Celery integration
-- `engine/`: parsing, normalization, matching, scoring, and reporting utilities
-- `frontend/`: SecureFlow dashboard UI
-- `ismsp/`: ISMS-P gate/report helpers
-- `secureflow_dashboard_infra/`: Terraform for AWS infrastructure
+- `backend/`: FastAPI API, DB 모델, 리포트/조회 엔드포인트, Celery 연동
+- `engine/`: 파싱, 정규화, 매칭, 점수 계산, 리포트 유틸리티
+- `frontend/`: SecureFlow 대시보드 UI
+- `ismsp/`: ISMS-P 게이트 및 리포트 보조 로직
+- `secureflow_dashboard_infra/`: AWS 인프라용 Terraform 코드
 
-### 2. Deploy target applications
+### 2. 배포 대상 애플리케이션
 
-- `app/api-server-fastapi/`: FastAPI sample API
-- `app/api-server-node/`: Express sample API
-- `app/api-server-spring/`: Spring Boot sample API
-- `app/frontend/`: React sample frontend
+- `app/api-server-fastapi/`: FastAPI 샘플 API
+- `app/api-server-node/`: Express 샘플 API
+- `app/api-server-spring/`: Spring Boot 샘플 API
+- `app/frontend/`: React 샘플 프론트엔드
 
-These target apps are what the CI/CD pipeline scans, gates, and deploys.
+이 대상 애플리케이션들이 CI/CD에서 실제로 스캔, 게이트 판정, 배포 대상으로 사용됩니다.
 
-## Architecture
+## 아키텍처
 
-At a high level, the repository works like this:
+전체 흐름은 아래처럼 이해하면 됩니다.
 
-1. GitHub Actions runs CI security checks against the target apps and infrastructure.
-2. Each security domain uses two tools where applicable.
-3. LLM gate scripts generate cross-check decisions from those tool outputs.
-4. Raw scanner outputs and gate outputs are uploaded to the SecureFlow backend.
-5. The backend stores scan data and generates dashboard reports.
-6. CD deploys staging services first, runs image scan / DAST / ISMS-P checks, and only allows production ECS deployment from `main`.
+1. GitHub Actions가 대상 앱과 인프라 코드에 대해 CI 보안 검사를 수행합니다.
+2. 각 보안 영역은 가능한 경우 2개 도구를 함께 사용합니다.
+3. LLM gate 스크립트가 두 도구 결과를 바탕으로 교차검증 판정을 생성합니다.
+4. raw 스캔 결과와 gate 결과를 SecureFlow 백엔드로 업로드합니다.
+5. 백엔드는 결과를 저장하고 대시보드용 리포트를 생성합니다.
+6. CD는 먼저 staging에 배포한 뒤 image scan, DAST, ISMS-P 검사를 수행하고, production ECS 배포는 `main` 브랜치에서만 허용합니다.
 
 ![SecureFlow architecture](docs/assets/architecture/secureflow-architecture.png)
 
-## Tech Stack
+## 기술 스택
 
-### Platform
+### 플랫폼
 
-| Area | Stack |
+| 영역 | 스택 |
 | --- | --- |
 | Backend API | FastAPI, SQLAlchemy, Pydantic, Alembic |
-| Async / workers | Celery, Redis |
-| Database | PostgreSQL, SQLite (local/dev usage exists in repo) |
-| Dashboard frontend | React 19, TypeScript, Vite 7, Tailwind CSS 4, Radix UI, Recharts |
-| Analysis / reporting | Python, custom engine modules, ReportLab |
-| LLM integration | Google GenAI / Gemini-based scripts and gates |
-| Compliance | boto3-based ISMS-P checks |
+| 비동기/워커 | Celery, Redis |
+| 데이터베이스 | PostgreSQL, SQLite (로컬/개발용 흔적 포함) |
+| 대시보드 프론트엔드 | React 19, TypeScript, Vite 7, Tailwind CSS 4, Radix UI, Recharts |
+| 분석/리포팅 | Python, 커스텀 engine 모듈, ReportLab |
+| LLM 연동 | Google GenAI / Gemini 기반 스크립트와 게이트 |
+| 컴플라이언스 | boto3 기반 ISMS-P 점검 |
 
-### Security Tooling
+### 보안 도구
 
-| Domain | Tools |
+| 영역 | 도구 |
 | --- | --- |
 | SAST | Semgrep, SonarQube |
 | SCA | Trivy, OWASP Dependency-Check |
 | IaC | Checkov, tfsec |
 | Image | Trivy, Grype |
 | DAST | ZAP, Nuclei |
-| Gate layer | LLM gate scripts in `scripts/ci/` |
+| Gate 계층 | `scripts/ci/` 아래 LLM gate 스크립트 |
 
-### Target application stack
+### 배포 대상 앱 스택
 
-| App | Stack |
+| 앱 | 스택 |
 | --- | --- |
 | `app/api-server-fastapi` | FastAPI, Uvicorn |
-| `app/api-server-node` | Express, AWS SDK v3, MySQL / Redis-related packages |
+| `app/api-server-node` | Express, AWS SDK v3, MySQL / Redis 관련 패키지 |
 | `app/api-server-spring` | Spring Boot 3.2, Java 17, Redis, JDBC |
 | `app/frontend` | React, Vite |
 
-### Infrastructure and delivery
+### 인프라 및 배포
 
-| Area | Stack |
+| 영역 | 스택 |
 | --- | --- |
 | CI/CD | GitHub Actions |
-| Containers | Docker, Docker Compose |
-| AWS infra | Terraform |
-| Runtime services | ECS, ECR, ALB, CloudFront, WAF, RDS, Redis, S3, CloudWatch, Secrets Manager |
+| 컨테이너 | Docker, Docker Compose |
+| AWS 인프라 | Terraform |
+| 런타임 서비스 | ECS, ECR, ALB, CloudFront, WAF, RDS, Redis, S3, CloudWatch, Secrets Manager |
 
-## Repository Map
+## 저장소 맵
 
 ```text
 secureflow/
-+-- .github/workflows/           CI/CD and security workflows
-+-- app/                         Deploy target applications
++-- .github/workflows/           CI/CD 및 보안 워크플로
++-- app/                         배포 대상 애플리케이션
 |   +-- api-server-fastapi/
 |   +-- api-server-node/
 |   +-- api-server-spring/
 |   '-- frontend/
-+-- backend/                     FastAPI backend for SecureFlow
-+-- engine/                      Parsing, matching, scoring, reporting logic
-+-- frontend/                    SecureFlow dashboard frontend
-+-- ismsp/                       ISMS-P tooling
-+-- docs/                        Architecture and usage docs
-+-- infra/                       Docker / worker infra assets
-'-- secureflow_dashboard_infra/  Terraform for AWS deployment
++-- backend/                     SecureFlow FastAPI 백엔드
++-- engine/                      파싱, 매칭, 점수 계산, 리포팅 로직
++-- frontend/                    SecureFlow 대시보드 프론트엔드
++-- ismsp/                       ISMS-P 점검 로직
++-- docs/                        아키텍처 및 사용 가이드
++-- infra/                       Docker / worker 관련 인프라 파일
+'-- secureflow_dashboard_infra/  AWS 배포용 Terraform
 ```
 
-## Current CI/CD Flow
+## 현재 CI/CD 흐름
 
 ### CI
 
-- App validation runs for the sample FastAPI, Node, Spring, and frontend targets.
-- IaC, SAST, and SCA jobs run paired tools.
-- LLM gate results are generated and uploaded to the backend.
-- Raw scan results are uploaded to the backend.
-- Phase 1 dashboard analysis is triggered for current backend compatibility.
+- 샘플 FastAPI, Node, Spring, frontend 대상 앱에 대한 기본 검증을 수행합니다.
+- IaC, SAST, SCA 영역은 2개 도구씩 병행 실행합니다.
+- LLM gate 결과를 생성해 백엔드에 업로드합니다.
+- raw 스캔 결과를 백엔드에 업로드합니다.
+- 현재 백엔드 구조와 호환되도록 Phase 1 대시보드 분석을 호출합니다.
 
 ### CD
 
-- Staging ECS deployment runs through reusable ECS deploy workflow.
-- Image scans run on the built staging images.
-- DAST runs against a representative target URL.
-- ISMS-P pre-production gate runs after image and DAST gates.
-- Phase 2 dashboard analysis is triggered for current backend compatibility.
+- reusable ECS deploy 워크플로를 통해 staging ECS 배포를 수행합니다.
+- staging에 올라간 이미지 기준으로 image scan을 수행합니다.
+- 대표 URL을 대상으로 DAST를 수행합니다.
+- image / DAST 게이트 이후 ISMS-P pre-production gate를 수행합니다.
+- 현재 백엔드 구조와 호환되도록 Phase 2 대시보드 분석을 호출합니다.
 
-### Production deployment policy
+### Production 배포 정책
 
-- Branches such as `SEO`, `sun`, and other non-`main` branches can run CI, staging/security checks, uploads, and dashboard updates.
-- Only `main` is allowed to deploy the final production ECS services.
+- `SEO`, `sun` 같은 non-`main` 브랜치는 CI, staging 보안 검사, 업로드, 대시보드 반영까지만 수행합니다.
+- 실제 production ECS 배포는 `main` 브랜치에서만 허용됩니다.
 
-## Upload / API Notes
+## 업로드 / API 메모
 
-- Workflow uploads use `API_SERVER_URL`.
-- WAF bypass uploads use the `X-SecureFlow-Upload-Key` header.
-- `SECUREFLOW_UPLOAD_KEY` in GitHub Secrets must match the infrastructure-side bypass key.
-- For DAST, the preferred representative URL is a CloudFront or ALB URL, not a direct EC2 IP and not an internal container port like `:8000`.
+- 워크플로 업로드는 `API_SERVER_URL`을 사용합니다.
+- WAF 우회 업로드는 `X-SecureFlow-Upload-Key` 헤더를 사용합니다.
+- GitHub Secrets의 `SECUREFLOW_UPLOAD_KEY` 값은 인프라 쪽 bypass key와 동일해야 합니다.
+- DAST 대표 URL은 EC2 퍼블릭 IP나 내부 포트(`:8000`)가 아니라 CloudFront 또는 ALB URL을 쓰는 것을 권장합니다.
 
-## Local Development
+## 로컬 개발
 
-### Prerequisites
+### 사전 준비
 
 - Docker / Docker Compose
-- Python 3.11+ for local script execution
-- Node.js 20+ if you want to run frontend or target apps directly
-- A configured `.env` file for backend runtime settings
+- 로컬 스크립트 실행용 Python 3.11+
+- 프론트나 샘플 앱을 직접 실행하려면 Node.js 20+
+- 백엔드 런타임 설정이 들어 있는 `.env`
 
-### Start with Docker Compose
+### Docker Compose로 실행
 
 ```bash
 docker compose up --build -d
 ```
 
-Or use the Makefile:
+또는 Makefile 사용:
 
 ```bash
 make up
 ```
 
-### Local endpoints
+### 로컬 접근 주소
 
 - Dashboard frontend: `http://localhost:3000`
 - Backend API docs: `http://localhost:8000/docs`
 - Backend API base: `http://localhost:8000/api/v1`
 - SonarQube: `http://localhost:9000`
 
-### Common commands
+### 자주 쓰는 명령어
 
 ```bash
 make logs
@@ -173,7 +173,7 @@ make seed
 docker compose down
 ```
 
-## Useful Docs
+## 참고 문서
 
 - [Architecture index](docs/architecture/README.md)
 - [Local setup guide](docs/guides/local-setup.md)
@@ -181,9 +181,9 @@ docker compose down
 - [Tool setup guide](docs/guides/tool-setup.md)
 - [API docs index](docs/api/README.md)
 
-## Notes
+## 참고 메모
 
-- The root `frontend/` directory is the SecureFlow dashboard.
-- The `app/frontend/` directory is a separate sample frontend used as a deployment target.
-- The root `backend/` directory is the SecureFlow backend, not the sample FastAPI app.
-- The current workflows are tuned around backend uploads, dashboard visibility, and `main`-only production ECS deployment.
+- 루트 `frontend/`는 SecureFlow 대시보드입니다.
+- `app/frontend/`는 별도의 샘플 프론트엔드 배포 대상입니다.
+- 루트 `backend/`는 SecureFlow 백엔드이며, 샘플 FastAPI 앱과는 별개입니다.
+- 현재 워크플로는 백엔드 업로드, 대시보드 반영, `main` 전용 production ECS 배포 정책을 기준으로 정리되어 있습니다.
