@@ -60,14 +60,14 @@ else:
 
 import urllib.request
 
-backend = os.environ.get("BACKEND_URL", "") or os.environ.get("API_SERVER_URL", "")
+backend = os.environ.get("API_SERVER_URL", "")
 backend = backend.rstrip("/")
 if backend and not backend.endswith("/api/v1"):
     backend = f"{backend}/api/v1"
 upload_key = os.environ.get("SECUREFLOW_UPLOAD_KEY", "")
 commit = os.environ.get("COMMIT_SHA", "")
 if not backend:
-    print("BACKEND_URL/API_SERVER_URL 미설정, overall verdict 업로드 스킵")
+    print("API_SERVER_URL 미설정, overall verdict 업로드 스킵")
     sys.exit(0)
 payload = json.dumps({
     "stage": "overall-verdict",
