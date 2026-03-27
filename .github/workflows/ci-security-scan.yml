@@ -781,6 +781,57 @@ jobs:
           upload "checkov"  "scan-results/checkov-results/checkov-results.json"
         continue-on-error: true
 
+      - name: Wait for SecureFlow phase 1 parsing
+        if: env.API_SERVER_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          for i in $(seq 1 18); do
+            WAIT=$(curl -s --connect-timeout 5 --max-time 20 "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
+            DONE=$(curl -s --connect-timeout 5 --max-time 20 "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
+            echo "done=${DONE}, waiting=${WAIT} (${i}/18)"
+            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
+              echo "SecureFlow phase 1 parsing finished."
+              break
+            fi
+            sleep 5
+          done
+        continue-on-error: true
+
+      - name: Refresh SecureFlow phase 1 dashboard report
+        if: env.API_SERVER_URL != ''
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${API_BASE_URL}/scans/analyze" \
+            -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
+            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
+            --max-time 60 || echo "000")
+          echo "Phase 1 analyze -> HTTP ${HTTP_CODE}"
+        continue-on-error: true
+
       - name: 개별 취약점 LLM 판정 (한국어)
         if: env.API_SERVER_URL != ''
         env:

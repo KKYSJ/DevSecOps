@@ -917,6 +917,57 @@ jobs:
           upload "nuclei" "artifacts/dast/nuclei-service-results/nuclei-results.json"
         continue-on-error: true
 
+      - name: Wait for SecureFlow DAST parsing
+        if: always() && env.API_SERVER_URL != ''
+        env:
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          for i in $(seq 1 12); do
+            WAIT=$(curl -s --connect-timeout 5 --max-time 20 "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
+            DONE=$(curl -s --connect-timeout 5 --max-time 20 "${HEADER_ARGS[@]}" "${API_BASE_URL}/scans" \
+              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
+            echo "done=${DONE}, waiting=${WAIT} (${i}/12)"
+            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
+              echo "SecureFlow DAST parsing finished."
+              break
+            fi
+            sleep 5
+          done
+        continue-on-error: true
+
+      - name: Refresh SecureFlow phase 2 dashboard report
+        if: always() && env.API_SERVER_URL != ''
+        env:
+          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
+        run: |
+          API_BASE_URL="${API_SERVER_URL%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${API_BASE_URL}/scans/analyze" \
+            -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
+            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
+            --max-time 60 || echo "000")
+          echo "Phase 2 analyze -> HTTP ${HTTP_CODE}"
+        continue-on-error: true
+
       - name: DAST 개별 취약점 LLM 판정 (한국어)
         if: always() && env.API_SERVER_URL != ''
         env:
