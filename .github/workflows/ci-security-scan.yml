@@ -24,27 +24,16 @@ jobs:
           cache: "pip"
           cache-dependency-path: app/api-server-fastapi/requirements.txt
 
-      - name: Install app and security dependencies
+      - name: Install app test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r app/api-server-fastapi/requirements.txt
-          pip install pytest httpx bandit pip-audit
+          pip install pytest httpx
 
       - name: Run FastAPI smoke tests
         env:
           PYTHONPATH: app/api-server-fastapi
         run: pytest app/api-server-fastapi/tests -q
-
-      - name: Run Bandit SAST scan
-        run: bandit -q -r app/api-server-fastapi -x app/api-server-fastapi/data,app/api-server-fastapi/tests
-        continue-on-error: true
-
-      - name: Audit Python dependencies
-        run: pip-audit -r app/api-server-fastapi/requirements.txt
-        continue-on-error: true
-
-      - name: Build FastAPI container
-        run: docker build -t secureflow-fastapi-ci app/api-server-fastapi
 
   node-security-ci:
     runs-on: ubuntu-latest
@@ -67,14 +56,6 @@ jobs:
       - name: Check Node API syntax
         run: node --check app/api-server-node/src/app.js
 
-      - name: Audit Node API dependencies
-        working-directory: app/api-server-node
-        run: npm audit --omit=dev --audit-level=critical
-        continue-on-error: true
-
-      - name: Build Node API container
-        run: docker build -t secureflow-node-ci app/api-server-node
-
   spring-security-ci:
     runs-on: ubuntu-latest
 
@@ -95,9 +76,6 @@ jobs:
           chmod +x mvnw
           ./mvnw -q -DskipTests package
 
-      - name: Build Spring API container
-        run: docker build -t secureflow-spring-ci app/api-server-spring
-
   frontend-security-ci:
     runs-on: ubuntu-latest
 
@@ -116,17 +94,9 @@ jobs:
         working-directory: app/frontend
         run: npm ci
 
-      - name: Audit frontend dependencies
-        working-directory: app/frontend
-        run: npm audit --omit=dev --audit-level=critical
-        continue-on-error: true
-
       - name: Build frontend bundle
         working-directory: app/frontend
         run: npm run build
-
-      - name: Build frontend container
-        run: docker build -t secureflow-frontend-ci app/frontend
 
   iac-checkov:
     runs-on: ubuntu-latest
@@ -274,8 +244,42 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install semgrep
-          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --json --output semgrep-results.json app/api-server-fastapi/vulnerable_example.py app/api-server-node/vulnerable_example.js || true
-          semgrep --config p/default --config p/security-audit --config p/python --config p/javascript --sarif --output semgrep.sarif app/api-server-fastapi/vulnerable_example.py app/api-server-node/vulnerable_example.js || true
+          semgrep \
+            --config p/default \
+            --config p/security-audit \
+            --config p/python \
+            --config p/javascript \
+            --config p/java \
+            --exclude app/api-server-fastapi/tests \
+            --exclude app/api-server-fastapi/data \
+            --exclude app/api-server-node/data \
+            --exclude **/node_modules \
+            --exclude **/dist \
+            --exclude **/target \
+            --json \
+            --output semgrep-results.json \
+            app/api-server-fastapi \
+            app/api-server-node/src \
+            app/api-server-spring/src/main/java \
+            app/frontend/src || true
+          semgrep \
+            --config p/default \
+            --config p/security-audit \
+            --config p/python \
+            --config p/javascript \
+            --config p/java \
+            --exclude app/api-server-fastapi/tests \
+            --exclude app/api-server-fastapi/data \
+            --exclude app/api-server-node/data \
+            --exclude **/node_modules \
+            --exclude **/dist \
+            --exclude **/target \
+            --sarif \
+            --output semgrep.sarif \
+            app/api-server-fastapi \
+            app/api-server-node/src \
+            app/api-server-spring/src/main/java \
+            app/frontend/src || true
           if [ ! -f semgrep-results.json ]; then
             echo '{"results":[]}' > semgrep-results.json
           fi
@@ -350,8 +354,8 @@ jobs:
           args: >
             -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-            -Dsonar.sources=app/api-server-fastapi/vulnerable_example.py,app/api-server-node/vulnerable_example.js
-            -Dsonar.inclusions=**/vulnerable_example.*
+            -Dsonar.sources=app/api-server-fastapi,app/api-server-node/src,app/api-server-spring/src/main/java,app/frontend/src
+            -Dsonar.exclusions=**/tests/**,**/data/**,**/node_modules/**,**/dist/**,**/target/**,**/uploads/**
             -Dsonar.python.version=3.11
             -Dsonar.java.binaries=app/api-server-spring/target/classes
 
@@ -741,58 +745,6 @@ jobs:
           upload "checkov"  "scan-results/checkov-results/checkov-results.json"
         continue-on-error: true
 
-      - name: Wait for SecureFlow scan parsing
-        if: env.BACKEND_URL != ''
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          # Refresh the existing backend dashboard report after raw CI uploads complete.
-          for i in $(seq 1 30); do
-            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
-              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
-              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
-            echo "done=${DONE}, waiting=${WAIT} (${i}/30)"
-            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
-              echo "SecureFlow scan parsing finished."
-              break
-            fi
-            sleep 5
-          done
-        continue-on-error: true
-
-      - name: Refresh SecureFlow Phase 1 dashboard report
-        if: env.BACKEND_URL != ''
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
-            -H "Content-Type: application/json" \
-            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":1}" \
-            --max-time 120 || true
-        continue-on-error: true
-
-      - name: CI LLM Gate 결과를 백엔드에 전송
-        if: env.BACKEND_URL != ''
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          for stage in iac sast sca; do
-            FILE="scan-results/${stage}-llm-gate/${stage}-llm-gate.json"
-            if [ -f "$FILE" ]; then
-              echo "LLM gate 전송: $stage"
-              jq -n --arg stage "$stage" --arg commit "$COMMIT_SHA" --slurpfile gate "$FILE" \
-                '{stage: $stage, commit_hash: $commit, gate_result: $gate[0]}' \
-              | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
-                -H "Content-Type: application/json" \
-                -d @- || echo "  전송 실패 (무시)"
-            else
-              echo "  $FILE 없음 (스킵)"
-            fi
-          done
-        continue-on-error: true
-
       - name: 개별 취약점 LLM 판정 (한국어)
         if: env.BACKEND_URL != ''
         env:
@@ -810,10 +762,12 @@ jobs:
           echo "  SecureFlow 백엔드 배포 후 GitHub Secrets에 BACKEND_URL을 추가하면"
           echo "  스캔 결과가 대시보드에 자동 반영됩니다."
 
-  chain-cd-seo:
+  chain-cd:
     needs:
       - ci-release-gate
-    if: github.event_name == 'push' && github.ref_name == 'SEO'
+    if: |
+      github.event_name == 'push' &&
+      (github.ref_name == 'SEO' || github.ref_name == 'nayoung' || github.ref_name == 'sun' || github.ref_name == 'main')
     permissions:
       contents: read
       id-token: write
@@ -823,37 +777,5 @@ jobs:
       source_sha: ${{ github.sha }}
       service: all
       run_staging: true
-      run_production: false
-    secrets: inherit
-
-  chain-cd-nayoung:
-    needs:
-      - ci-release-gate
-    if: github.event_name == 'push' && github.ref_name == 'nayoung'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/cd-deploy.yml
-    with:
-      branch_name: ${{ github.ref_name }}
-      source_sha: ${{ github.sha }}
-      service: all
-      run_staging: true
-      run_production: false
-    secrets: inherit
-
-  chain-cd-main:
-    needs:
-      - ci-release-gate
-    if: github.event_name == 'push' && github.ref_name == 'main'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/cd-deploy.yml
-    with:
-      branch_name: main
-      source_sha: ${{ github.sha }}
-      service: all
-      run_staging: true
-      run_production: true
+      run_production: ${{ github.ref_name == 'main' }}
     secrets: inherit

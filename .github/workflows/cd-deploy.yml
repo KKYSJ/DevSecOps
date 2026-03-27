@@ -21,7 +21,7 @@ on:
         required: false
         default: false
         type: boolean
-  # workflow_run 제거 — chain-cd-main/nayoung/seo에서 직접 호출
+  # CI의 chain-cd job 또는 수동 실행에서 직접 호출
   workflow_dispatch:
     inputs:
       environment:
@@ -96,19 +96,6 @@ jobs:
 
             if [ "$requested_production" = "true" ] && [ "$branch_name" = "main" ]; then
               run_production="true"
-            fi
-          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
-            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
-              branch_name="${{ github.event.workflow_run.head_branch }}"
-              source_sha="${{ github.event.workflow_run.head_sha }}"
-              run_staging="true"
-
-              if [ "$branch_name" = "dev" ] || [ "$branch_name" = "SEO" ] || [ "$branch_name" = "nayoung" ]; then
-                proceed="true"
-              elif [ "$branch_name" = "main" ]; then
-                proceed="true"
-                run_production="true"
-              fi
             fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             proceed="true"
@@ -240,46 +227,67 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Scan FastAPI image with Trivy
+        if: needs.deploy-staging-fastapi.outputs.image_uri != ''
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest"
+          image-ref: ${{ needs.deploy-staging-fastapi.outputs.image_uri }}
           format: json
           output: trivy-image-fastapi.json
           severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Node image with Trivy
+        if: needs.deploy-staging-node.outputs.image_uri != ''
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest"
+          image-ref: ${{ needs.deploy-staging-node.outputs.image_uri }}
           format: json
           output: trivy-image-node.json
           severity: HIGH,MEDIUM
         continue-on-error: true
 
       - name: Scan Spring image with Trivy
+        if: needs.deploy-staging-spring.outputs.image_uri != ''
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest"
+          image-ref: ${{ needs.deploy-staging-spring.outputs.image_uri }}
           format: json
           output: trivy-image-spring.json
           severity: HIGH,MEDIUM
         continue-on-error: true
 
+      - name: Scan Frontend image with Trivy
+        if: needs.deploy-staging-frontend.outputs.image_uri != ''
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.deploy-staging-frontend.outputs.image_uri }}
+          format: json
+          output: trivy-image-frontend.json
+          severity: HIGH,MEDIUM
+        continue-on-error: true
+
+      - name: Install Grype
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        continue-on-error: true
+
       - name: Scan FastAPI image with Grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-fastapi:latest" -o json --only-fixed > grype-fastapi.json || true
+        if: needs.deploy-staging-fastapi.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-fastapi.outputs.image_uri }}" -o json --only-fixed > grype-fastapi.json || true
         continue-on-error: true
 
       - name: Scan Node image with Grype
-        run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-node:latest" -o json --only-fixed > grype-node.json || true
+        if: needs.deploy-staging-node.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-node.outputs.image_uri }}" -o json --only-fixed > grype-node.json || true
         continue-on-error: true
 
       - name: Scan Spring image with Grype
-        run: |
-          grype "${{ steps.ecr-login.outputs.registry }}/api-server-spring:latest" -o json --only-fixed > grype-spring.json || true
+        if: needs.deploy-staging-spring.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-spring.outputs.image_uri }}" -o json --only-fixed > grype-spring.json || true
+        continue-on-error: true
+
+      - name: Scan Frontend image with Grype
+        if: needs.deploy-staging-frontend.outputs.image_uri != ''
+        run: grype "${{ needs.deploy-staging-frontend.outputs.image_uri }}" -o json --only-fixed > grype-frontend.json || true
         continue-on-error: true
 
       - name: Upload image scan results to SecureFlow
@@ -287,7 +295,7 @@ jobs:
         run: |
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
           # Trivy 이미지 스캔 업로드
-          for service in fastapi node spring; do
+          for service in fastapi node spring frontend; do
             FILE="trivy-image-${service}.json"
             if [ -f "$FILE" ] && [ -s "$FILE" ]; then
               echo "이미지 스캔 업로드: trivy-image ${service}"
@@ -304,7 +312,7 @@ jobs:
             fi
           done
           # Grype 이미지 스캔 업로드
-          for service in fastapi node spring; do
+          for service in fastapi node spring frontend; do
             FILE="grype-${service}.json"
             if [ -f "$FILE" ] && [ -s "$FILE" ]; then
               echo "이미지 스캔 업로드: grype ${service}"
@@ -472,10 +480,19 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
-      - name: Resolve DAST target URL
+      - name: Resolve representative DAST target URL
         id: target
         run: |
-          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
           fi
@@ -484,15 +501,6 @@ jobs:
           fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
 
           if [ -n "$TARGET_URL" ]; then
@@ -557,10 +565,19 @@ jobs:
         with:
           ref: ${{ needs.resolve-context.outputs.source_sha }}
 
-      - name: Resolve DAST target URL
+      - name: Resolve representative DAST target URL
         id: target
         run: |
-          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
           fi
@@ -569,15 +586,6 @@ jobs:
           fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
 
           if [ -n "$TARGET_URL" ]; then
@@ -779,40 +787,6 @@ jobs:
           upload "nuclei" "artifacts/dast/nuclei-service-results/nuclei-results.json"
         continue-on-error: true
 
-      - name: Wait for SecureFlow DAST parsing
-        if: always() && env.BACKEND_URL != ''
-        env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
-          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
-        run: |
-          # Refresh the existing backend dashboard report after DAST uploads complete.
-          for i in $(seq 1 24); do
-            WAIT=$(curl -s "${BACKEND_URL}/api/v1/scans" \
-              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and (.status==\"received\" or .status==\"processing\"))] | length" 2>/dev/null || echo "0")
-            DONE=$(curl -s "${BACKEND_URL}/api/v1/scans" \
-              | jq "[.scans[] | select(.commit_hash==\"${COMMIT_SHA}\" and .category==\"DAST\" and .status==\"done\")] | length" 2>/dev/null || echo "0")
-            echo "done=${DONE}, waiting=${WAIT} (${i}/24)"
-            if [ "$WAIT" -eq 0 ] && [ "$DONE" -gt 0 ]; then
-              echo "SecureFlow DAST parsing finished."
-              break
-            fi
-            sleep 5
-          done
-        continue-on-error: true
-
-      - name: Refresh SecureFlow Phase 2 dashboard report
-        if: always() && env.BACKEND_URL != ''
-        env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
-          COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
-        run: |
-          # Keep dashboard generation in the existing backend flow without changing CI gate ownership.
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/analyze" \
-            -H "Content-Type: application/json" \
-            -d "{\"commit_hash\":\"${COMMIT_SHA}\",\"phase\":2}" \
-            --max-time 120 || true
-        continue-on-error: true
-
       - name: DAST 개별 취약점 LLM 판정 (한국어)
         if: always() && env.BACKEND_URL != ''
         env:
@@ -887,10 +861,19 @@ jobs:
         with:
           path: artifacts/isms
 
-      - name: Resolve staging target URL
+      - name: Resolve representative staging target URL
         id: target
         run: |
-          TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ needs.deploy-staging-frontend.outputs.service_url }}"
+          fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-fastapi.outputs.service_url }}"
           fi
@@ -899,15 +882,6 @@ jobs:
           fi
           if [ -z "$TARGET_URL" ]; then
             TARGET_URL="${{ needs.deploy-staging-spring.outputs.service_url }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_STAGING_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.DAST_TARGET_URL }}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ vars.ZAP_TARGET_URL }}"
           fi
           echo "target_url=$TARGET_URL" >> "$GITHUB_OUTPUT"
 

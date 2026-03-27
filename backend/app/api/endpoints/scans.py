@@ -370,6 +370,7 @@ class GateResultRequest(BaseModel):
 def receive_gate_result(body: GateResultRequest, db: Session = Depends(get_db)):
     """CI의 run_llm_gate.py 결과를 저장합니다."""
     from backend.app.models.tool_result import ToolResult
+    from backend.app.services import report_service
 
     record = ToolResult(
         name=f"llm-gate-{body.stage}",
@@ -382,5 +383,8 @@ def receive_gate_result(body: GateResultRequest, db: Session = Depends(get_db)):
     )
     db.add(record)
     db.commit()
+
+    if body.stage == "judgments":
+        report_service.refresh_report_from_llm(db, body.commit_hash)
 
     return {"status": "ok", "stage": body.stage, "id": record.id}
