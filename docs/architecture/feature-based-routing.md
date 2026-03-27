@@ -1,59 +1,75 @@
 # Feature Based Routing
 
-## Purpose
+이 문서는 대상 애플리케이션을 하나의 사용자 경험으로 제공하면서, 내부적으로는 여러 API 서비스를 기능별로 나누는 현재 권장 방식을 설명합니다.
 
-This document records the target-app routing model used for the AWS deployment.
+## 기본 방향
 
-The target app is no longer routed by backend implementation:
+현재 저장소는 아래 구조를 전제로 설명하는 것이 자연스럽습니다.
 
-- `/api/*` -> FastAPI
-- `/api-node/*` -> Node
-- `/api-spring/*` -> Spring
+- 대상 프론트엔드: `app/frontend`
+- 대상 API 3종:
+  - `app/api-server-fastapi`
+  - `app/api-server-node`
+  - `app/api-server-spring`
+- SecureFlow 플랫폼:
+  - `backend`
+  - `engine`
+  - `frontend`
 
-Instead, it is routed by feature area behind one shared `/api` surface.
+즉, 사용자 입장에서는 하나의 서비스처럼 보이지만 내부적으로는 기능별 API 소유권이 나뉘는 구조입니다.
 
-## Routing
+## 권장 라우팅 개념
+
+세 API를 구현체 기준으로 노출하기보다는 기능 기준으로 라우팅하는 편이 더 자연스럽습니다.
+
+예시:
 
 - Node
-  - `/api/auth/*`
-  - `/api/cart`
-  - `/api/cart/*`
-  - `/api/orders`
-  - `/api/orders/*`
+  - 인증
+  - 장바구니
+  - 주문 생성/수정과 가까운 세션성 기능
 - Spring
-  - `/api/products`
-  - `/api/products/*`
+  - 상품 목록 / 상품 상세
+  - 비교적 읽기 중심이거나 비즈니스 규칙이 많은 기능
 - FastAPI
-  - `/api/products/*/reviews`
-  - `/api/products/*/reviews/*`
-  - `/api/upload`
-  - `/api/upload/*`
-  - `/uploads`
-  - `/uploads/*`
-  - `/api/health`
-  - `/api/config`
-- Frontend
-  - `/`
-  - `/*`
+  - 리뷰
+  - 업로드
+  - 부가 기능성 API
 
-ALB listener priorities are set so that the more specific review and upload routes reach
-FastAPI before the broader product routes reach Spring.
+## 현재 코드와의 관계
 
-## Service Ownership
+현재 CD는 각 앱을 개별 ECS 서비스로 배포합니다.
+즉 서비스는 분리되어 있지만, 외부 공개 URL은 하나의 ingress에서 정리하는 것이 운영상 더 낫습니다.
 
-- Node owns auth, cart, and order flows.
-- Spring owns product list and product detail.
-- FastAPI owns reviews, upload, and the main public health/config endpoints.
+현재 DAST도 대표 URL 하나를 기준으로 동작하도록 정리되어 있으므로, 기능 라우팅을 사용하는 단일 ingress와 잘 맞습니다.
 
-This split was chosen because auth, cart, and orders share the same user and cart state,
-while products are public reads and reviews/uploads can be separated cleanly.
+## 권장 ingress
 
-## Auth Model
+외부에는 아래 중 하나를 대표 진입점으로 두는 것을 권장합니다.
 
-All API services share one JWT secret in Secrets Manager so that:
+- CloudFront
+- ALB
 
-- login can happen through Node
-- protected review/upload endpoints in FastAPI can trust the same token
-- protected endpoints in Spring can trust the same token if needed
+그리고 그 아래에서:
 
-The frontend now stores a single auth token again.
+- `/api/...` 기능 경로를 서비스별로 라우팅
+- 프론트엔드는 `/`
+- SecureFlow 대시보드와 API는 별도 경로 또는 별도 도메인으로 분리
+
+## DAST와의 연관성
+
+현재 워크플로는 대표 URL 1개를 대상으로 ZAP / Nuclei를 수행합니다.
+따라서 DAST가 제대로 동작하려면 대표 URL이 다음 조건을 만족해야 합니다.
+
+- 실제 외부 사용자 진입점과 동일함
+- CloudFront 또는 ALB URL임
+- 죽은 EC2 IP나 컨테이너 내부 포트가 아님
+
+## 정리
+
+현재 코드 기준으로 가장 자연스러운 설명은 이겁니다.
+
+- 사용자 경험은 하나의 서비스
+- 구현은 여러 API 서비스
+- 배포는 ECS 서비스별로 분리
+- 외부 공개는 기능 기준 단일 ingress

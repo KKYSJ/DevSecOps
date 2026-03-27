@@ -1,110 +1,120 @@
 # GitHub Actions ECS CD Setup
 
-This repository now includes:
+파일 이름은 `fastapi`라는 이름을 갖고 있지만, 현재 문서는 저장소 전체 GitHub Actions 흐름을 설명합니다.
+
+## 주요 워크플로
 
 - `.github/workflows/ci-security-scan.yml`
 - `.github/workflows/cd-deploy.yml`
 - `.github/workflows/reusable-ecs-deploy.yml`
+- `.github/workflows/tool-integrity-check.yml`
 
-## CI coverage
+## CI 흐름
 
-The CI workflow now runs path-aware jobs for FastAPI, Node, Spring, frontend, and Terraform.
+현재 CI는 다음 축으로 구성됩니다.
 
-Current checks:
+### 대상 앱 기본 검증
 
-- FastAPI smoke test against `/api/health`
-- Python SAST with `bandit`
-- Python dependency audit with `pip-audit`
-- Docker image build for the FastAPI service
-- Node API dependency install, syntax check, critical dependency audit, and Docker build
-- Spring API Maven package build and Docker build
-- Frontend dependency install, critical dependency audit, production build, and Docker build
-- Terraform formatting and validation
-- IaC scan with `checkov` in advisory mode
+- FastAPI smoke test
+- Node syntax check
+- Spring package build
+- frontend build
 
-## CD flow
+### 보안 스캔
 
-The CD workflow now deploys all four dev ECS services:
+- IaC
+  - Checkov
+  - tfsec
+- SAST
+  - Semgrep
+  - SonarQube
+- SCA
+  - Trivy
+  - OWASP Dependency-Check
 
-- `api-server-fastapi`
-- `api-server-node`
-- `api-server-spring`
-- `frontend`
+### LLM 게이트 및 업로드
 
-On push to the `SEO` branch, GitHub Actions checks which service directories changed and deploys only those services.
+- `run_llm_gate.py`
+- `run_llm_judgments.py`
 
-Each deploy job:
+CI는 raw 결과와 gate 결과를 백엔드로 업로드하고, 현재 백엔드와의 호환성을 위해 Phase 1 dashboard analyze도 호출합니다.
 
-1. assumes an AWS role through GitHub OIDC
-2. builds and pushes a Docker image to ECR
-3. tags that image with `short-sha + run-attempt`
-4. reads the current ECS task definition
-5. replaces the container image
-6. registers a new task definition revision
-7. updates the ECS service and waits for stability
+## CD 흐름
 
-The workflow intentionally uses a unique tag per run instead of `latest` because the ECR repositories are configured as immutable.
+### 1. context 결정
 
-Terraform still creates the initial ECS services. After that, GitHub Actions owns image rollouts. Terraform can still update ECS task definitions later if you change infrastructure-managed settings such as environment variables, secrets, CPU, memory, or listener rules.
+`cd-deploy.yml`은 다음 값을 기준으로 실행 흐름을 정합니다.
 
-## Required AWS Terraform settings
+- branch
+- source sha
+- target service
+- staging 여부
+- production 여부
 
-Before the GitHub CD workflow can deploy, create the GitHub Actions role in AWS.
+### 2. staging ECS 배포
 
-Recommended `infra/terraform/environments/dev/terraform.tfvars` values:
+`reusable-ecs-deploy.yml`을 사용해 각 서비스 이미지를 빌드/푸시하고 ECS에 반영합니다.
 
-```tfvars
-create_github_oidc_role = true
-github_org              = "KKYSJ"
-github_repo             = "DevSecOps"
-github_branch           = "SEO"
-```
-
-Then apply Terraform again from `infra/terraform`:
-
-```powershell
-terraform apply -var-file="environments/dev/terraform.tfvars"
-```
-
-After that, copy the `github_actions_role_arn` Terraform output.
-
-## Required GitHub repository variable
-
-Set this repository variable in GitHub:
-
-- `AWS_ROLE_TO_ASSUME`
-
-Value:
-
-- the ARN from `terraform output github_actions_role_arn`
-
-## Runtime defaults used by the deploy workflow
-
-The current CD workflow targets these dev resources in `ap-northeast-2`:
+대상 서비스:
 
 - FastAPI
-  - ECR: `api-server-fastapi`
-  - ECS service: `secureflow-dev-api-server-fastapi`
-  - task family: `secureflow-dev-api-server-fastapi`
 - Node
-  - ECR: `api-server-node`
-  - ECS service: `secureflow-dev-api-server-node`
-  - task family: `secureflow-dev-api-server-node`
 - Spring
-  - ECR: `api-server-spring`
-  - ECS service: `secureflow-dev-api-server-spring`
-  - task family: `secureflow-dev-api-server-spring`
-- Frontend
-  - ECR: `frontend`
-  - ECS service: `secureflow-dev-frontend`
-  - task family: `secureflow-dev-frontend`
+- frontend
 
-All services deploy into the ECS cluster `secureflow-dev-cluster`.
+### 3. staging 보안 단계
 
-## How to use it
+- Image scan
+  - Trivy
+  - Grype
+- DAST
+  - ZAP
+  - Nuclei
+- ISMS-P gate
 
-- Push FastAPI changes under `app/api-server-fastapi/**` to auto-deploy FastAPI
-- Push Node changes under `app/api-server-node/**` to auto-deploy Node
-- Push Spring changes under `app/api-server-spring/**` to auto-deploy Spring
-- Push frontend changes under `app/frontend/**` to auto-deploy the frontend
-- Run `CD Deploy` manually in GitHub Actions and choose `all`, `fastapi`, `node`, `spring`, or `frontend`
+### 4. 대시보드 반영
+
+CD도 raw 결과와 gate 결과를 업로드하고, 현재 백엔드와의 호환성을 위해 Phase 2 dashboard analyze를 호출합니다.
+
+## production 배포 정책
+
+현재 코드 기준으로 final production ECS 배포는 `main` 브랜치에서만 가능합니다.
+
+즉:
+
+- `SEO`, `nayoung`, `sun`
+  - staging / 보안 검사 / 대시보드 반영까지만
+- `main`
+  - production ECS deploy 가능
+
+## 필수 GitHub Secrets
+
+- `API_SERVER_URL`
+- `SECUREFLOW_UPLOAD_KEY`
+- `GEMINI_API_KEY`
+- `SONAR_TOKEN`
+- 필요 시 `OPENAI_API_KEY`
+
+## 필수 GitHub Variables
+
+- `AWS_ACCOUNT_ID`
+- `AWS_REGION`
+- `AWS_ROLE_TO_ASSUME`
+
+선택적으로:
+
+- `AWS_ROLE_TO_ASSUME_PROD`
+- `DAST_STAGING_TARGET_URL`
+- `DAST_TARGET_URL`
+- `ZAP_TARGET_URL`
+- `GEMINI_MODEL`
+- `SONAR_HOST_URL`
+- `SONAR_ORGANIZATION`
+- `SONAR_PROJECT_KEY`
+
+## 중요 운영 메모
+
+- 업로드는 `API_SERVER_URL` 기준으로 수행합니다.
+- WAF가 있으면 `X-SecureFlow-Upload-Key` 헤더가 필요합니다.
+- `SECUREFLOW_UPLOAD_KEY`는 Terraform의 bypass key와 동일해야 합니다.
+- DAST 대표 URL은 CloudFront 또는 ALB 주소를 권장합니다.
