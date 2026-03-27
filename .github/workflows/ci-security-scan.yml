@@ -9,6 +9,11 @@ permissions:
   contents: read
   pull-requests: read
 
+env:
+  BACKEND_URL: ${{ secrets.BACKEND_URL }}
+  API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+  SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
+
 jobs:
   fastapi-security-ci:
     runs-on: ubuntu-latest
@@ -198,13 +203,21 @@ jobs:
       - name: Upload IaC gate result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ github.sha }}
           BRANCH_NAME: ${{ github.ref_name }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/iac/iac-llm-gate.json ]; then
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          if [ -z "$API_ENDPOINT" ] || [ ! -f artifacts/iac/iac-llm-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -214,8 +227,9 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
 
@@ -486,13 +500,21 @@ jobs:
       - name: Upload SAST gate result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ github.sha }}
           BRANCH_NAME: ${{ github.ref_name }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/sast/sast-llm-gate.json ]; then
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          if [ -z "$API_ENDPOINT" ] || [ ! -f artifacts/sast/sast-llm-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -502,8 +524,9 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
 
@@ -636,13 +659,21 @@ jobs:
       - name: Upload SCA gate result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ github.sha }}
           BRANCH_NAME: ${{ github.ref_name }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/sca/sca-llm-gate.json ]; then
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          if [ -z "$API_ENDPOINT" ] || [ ! -f artifacts/sca/sca-llm-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -652,8 +683,9 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
 
@@ -682,9 +714,6 @@ jobs:
       - llm-sca-gate
     if: always()
     runs-on: ubuntu-latest
-    env:
-      BACKEND_URL: ${{ secrets.BACKEND_URL }}
-
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -699,10 +728,19 @@ jobs:
         run: find scan-results/ -name "*.json" | sort || echo "결과 없음"
 
       - name: SecureFlow 백엔드에 결과 업로드
-        if: env.BACKEND_URL != ''
+        if: env.BACKEND_URL != '' || env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           # Upload raw scanner outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
           upload() {
             local tool=$1 file=$2
@@ -719,15 +757,17 @@ jobs:
                     > /tmp/payload.json 2>/dev/null
               if [ $? -eq 0 ]; then
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${BACKEND_URL}/api/v1/scans" \
+                  -X POST "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
+                  "${HEADER_ARGS[@]}" \
                   -d @/tmp/payload.json \
                   --max-time 60 || echo "000")
               else
                 echo "  ⚠ jq 실패, 직접 전송 시도"
                 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -X POST "${BACKEND_URL}/api/v1/scans" \
+                  -X POST "${API_BASE_URL}/scans" \
                   -H "Content-Type: application/json" \
+                  "${HEADER_ARGS[@]}" \
                   -d "{\"tool\":\"${tool}\",\"raw_result\":$(cat "$file"),\"commit_hash\":\"${COMMIT_SHA}\",\"project_name\":\"secureflow\",\"branch\":\"${GITHUB_REF_NAME}\",\"defer_processing\":true}" \
                   --max-time 30 || echo "000")
               fi
@@ -747,7 +787,7 @@ jobs:
         continue-on-error: true
 
       - name: 개별 취약점 LLM 판정 (한국어)
-        if: env.BACKEND_URL != ''
+        if: env.BACKEND_URL != '' || env.API_SERVER_URL != ''
         env:
           COMMIT_SHA: ${{ github.sha }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -757,10 +797,10 @@ jobs:
         continue-on-error: true
 
       - name: BACKEND_URL 미설정 안내
-        if: env.BACKEND_URL == ''
+        if: env.BACKEND_URL == '' && env.API_SERVER_URL == ''
         run: |
-          echo "⚠️ BACKEND_URL secret이 설정되지 않았습니다."
-          echo "  SecureFlow 백엔드 배포 후 GitHub Secrets에 BACKEND_URL을 추가하면"
+          echo "⚠️ BACKEND_URL 또는 API_SERVER_URL secret이 설정되지 않았습니다."
+          echo "  SecureFlow 백엔드 배포 후 GitHub Secrets에 BACKEND_URL 또는 API_SERVER_URL을 추가하면"
           echo "  스캔 결과가 대시보드에 자동 반영됩니다."
 
   chain-cd:

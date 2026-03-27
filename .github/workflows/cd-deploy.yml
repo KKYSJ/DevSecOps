@@ -48,6 +48,11 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  BACKEND_URL: ${{ secrets.BACKEND_URL }}
+  API_SERVER_URL: ${{ secrets.API_SERVER_URL }}
+  SECUREFLOW_UPLOAD_KEY: ${{ secrets.SECUREFLOW_UPLOAD_KEY }}
+
 jobs:
   resolve-context:
     runs-on: ubuntu-latest
@@ -291,8 +296,17 @@ jobs:
         continue-on-error: true
 
       - name: Upload image scan results to SecureFlow
-        if: env.BACKEND_URL != ''
+        if: env.BACKEND_URL != '' || env.API_SERVER_URL != ''
         run: |
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           COMMIT_SHA="${{ needs.resolve-context.outputs.source_sha }}"
           # Trivy 이미지 스캔 업로드
           for service in fastapi node spring frontend; do
@@ -307,8 +321,9 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch, defer_processing: $defer}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -X POST "${API_BASE_URL}/scans" \
                 -H "Content-Type: application/json" \
+                "${HEADER_ARGS[@]}" \
                 -d @- \
                 --max-time 60 || echo "  전송 실패"
             fi
@@ -326,8 +341,9 @@ jobs:
                     --slurpfile raw "$FILE" \
                     '{tool: $tool, raw_result: $raw[0], commit_hash: $commit, project_name: $project, branch: $branch, defer_processing: $defer}' \
               | curl -s -o /dev/null -w "  → HTTP %{http_code}\n" \
-                -X POST "${BACKEND_URL}/api/v1/scans" \
+                -X POST "${API_BASE_URL}/scans" \
                 -H "Content-Type: application/json" \
+                "${HEADER_ARGS[@]}" \
                 -d @- \
                 --max-time 60 || echo "  전송 실패"
             fi
@@ -416,14 +432,25 @@ jobs:
         env:
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          if [ -z "$API_ENDPOINT" ] || [ ! -f artifacts/image/image-llm-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
           jq -n --arg stage "image" --arg commit "$COMMIT_SHA" \
             --slurpfile raw artifacts/image/image-llm-gate.json \
             '{stage:$stage, commit_hash:$commit, gate_result:$raw[0]}' \
-          | curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
-            -H "Content-Type: application/json" -d @- || true
+          | curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
+            -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
+            -d @- || true
 
       - name: Image 개별 취약점 LLM 판정
         if: always()
@@ -734,11 +761,19 @@ jobs:
       - name: Upload DAST gate result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          if [ -z "$API_ENDPOINT" ] || [ ! -f artifacts/dast/dast-llm-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -748,18 +783,27 @@ jobs:
             '{stage:$stage, commit_hash:$commit, gate_result:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/gate-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/scans/gate-result" \
+          curl -s -X POST "${API_BASE_URL}/scans/gate-result" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d @/tmp/gate-payload.json \
             --max-time 60 || true
 
       - name: Upload DAST results to SecureFlow
-        if: always() && env.BACKEND_URL != ''
+        if: always() && (env.BACKEND_URL != '' || env.API_SERVER_URL != '')
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
         run: |
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
+          fi
           # Upload raw DAST outputs only. LLM gate JSON is uploaded separately to /api/v1/scans/gate-result.
           upload() {
             local tool=$1 file=$2
@@ -777,8 +821,9 @@ jobs:
                   --slurpfile raw "$file" \
                   '{tool:$tool, raw_result:(if ($raw | length) == 1 then $raw[0] else $raw end), commit_hash:$commit, project_name:$project, branch:$branch, defer_processing:$defer}' \
                   > /tmp/payload.json 2>/dev/null; then
-              curl -s -X POST "${BACKEND_URL}/api/v1/scans" \
+              curl -s -X POST "${API_BASE_URL}/scans" \
                 -H "Content-Type: application/json" \
+                "${HEADER_ARGS[@]}" \
                 -d @/tmp/payload.json \
                 --max-time 60 || true
             else
@@ -793,7 +838,7 @@ jobs:
         continue-on-error: true
 
       - name: DAST 개별 취약점 LLM 판정 (한국어)
-        if: always() && env.BACKEND_URL != ''
+        if: always() && (env.BACKEND_URL != '' || env.API_SERVER_URL != '')
         env:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
@@ -911,13 +956,21 @@ jobs:
       - name: Upload ISMS-P result to SecureFlow
         if: always()
         env:
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
           COMMIT_SHA: ${{ needs.resolve-context.outputs.source_sha }}
           BRANCH_NAME: ${{ needs.resolve-context.outputs.branch_name }}
           DEPLOY_ENV: ${{ needs.resolve-context.outputs.run_production == 'true' && 'production' || 'staging' }}
         run: |
-          if [ -z "$BACKEND_URL" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
+          API_ENDPOINT="${BACKEND_URL:-$API_SERVER_URL}"
+          if [ -z "$API_ENDPOINT" ] || [ ! -f artifacts/isms/ismsp-gate.json ]; then
             exit 0
+          fi
+          API_BASE_URL="${API_ENDPOINT%/}"
+          if [[ "$API_BASE_URL" != */api/v1 ]]; then
+            API_BASE_URL="${API_BASE_URL}/api/v1"
+          fi
+          HEADER_ARGS=()
+          if [ -n "$SECUREFLOW_UPLOAD_KEY" ]; then
+            HEADER_ARGS+=(-H "X-SecureFlow-Upload-Key: $SECUREFLOW_UPLOAD_KEY")
           fi
 
           jq -n \
@@ -930,8 +983,9 @@ jobs:
             '{name:$name,status:$status,environment:$environment,commit_hash:$commit,branch:$branch,data:(if ($raw | length) == 1 then $raw[0] else $raw end)}' \
             > /tmp/isms-payload.json
 
-          curl -s -X POST "${BACKEND_URL}/api/v1/isms" \
+          curl -s -X POST "${API_BASE_URL}/isms" \
             -H "Content-Type: application/json" \
+            "${HEADER_ARGS[@]}" \
             -d @/tmp/isms-payload.json \
             --max-time 60 || true
 
