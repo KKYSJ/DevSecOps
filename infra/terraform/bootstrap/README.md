@@ -1,26 +1,26 @@
 # Bootstrap Stack
 
-이 스택은 Terraform remote state용 리소스만 만듭니다.
+이 스택은 `infra/terraform` 본 스택에서 사용할 Terraform remote state 리소스만 먼저 생성합니다.
 
-## 만드는 것
+## 생성 리소스
 
-- S3 bucket for Terraform state
-- DynamoDB table for Terraform state locking
-- KMS key for Terraform state encryption
+- Terraform state 저장용 S3 bucket
+- Terraform state lock용 DynamoDB table
+- Terraform state 암호화용 KMS key
 
 ## 사전 준비
 
-- `Terraform` 또는 `OpenTofu`
-- `AWS CLI`
-- AWS 자격증명 설정 완료
+- Terraform 또는 OpenTofu
+- AWS CLI
+- AWS 인증 완료
 
-연동 확인:
+확인:
 
 ```powershell
 aws sts get-caller-identity
 ```
 
-## 사용 순서
+## 실행 방법
 
 ```powershell
 cd infra/terraform/bootstrap
@@ -29,4 +29,4 @@ terraform init
 terraform apply -var-file="terraform.tfvars"
 ```
 
-이 스택의 출력값은 이후 `infra/terraform`에서 `terraform init -backend-config=...` 할 때 사용합니다.
+적용 후 출력값은 상위 `infra/terraform` 스택의 backend 설정에 사용합니다.

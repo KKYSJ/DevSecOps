@@ -1,70 +1,54 @@
 # Terraform Security Baseline
 
-This folder manages account and region level security controls that support
-ISMS-P checks without overlapping ownership with the existing application stack.
+이 디렉터리는 계정/리전 단위 보안 베이스라인 리소스를 관리하는 Terraform 스택입니다.
+애플리케이션 스택과 리소스 소유권이 겹치지 않도록, 공통 보안 서비스만 별도 상태로 관리하는 용도입니다.
 
-## Scope
+## 범위
 
 - CloudTrail
-- AWS Config recorder and selected managed rules
-- Security Hub and FSBP
+- AWS Config recorder 및 일부 managed rule
+- Security Hub
 - GuardDuty
-- Account-level ECR registry scanning
+- 계정 단위 ECR registry scanning
 - VPC Flow Logs
-- Optional incident response baseline
+- 선택적 incident response baseline
 
-## Out of Scope
+## 범위 밖
 
-These resources are already owned by the main Terraform stack and should stay
-there:
+아래 리소스는 각 애플리케이션 또는 플랫폼 스택 소유로 남겨두는 편이 맞습니다.
 
-- VPC, ALB, ECS, ECR repositories, S3 application buckets
-- RDS instances and subnet groups
-- DynamoDB, SQS, SNS, Secrets
+- VPC
+- ALB
+- ECS
+- 개별 ECR repository
+- S3 애플리케이션 bucket
+- RDS
+- DynamoDB
+- SQS / SNS
+- Secrets Manager
 
-## Ownership Rule
+## 운영 원칙
 
-One AWS resource must belong to exactly one Terraform state.
+하나의 AWS 리소스는 하나의 Terraform state만 소유해야 합니다.
 
-Use this stack for shared security controls. Keep application resource
-hardening in the owner stack for that resource.
+예시:
 
-Examples:
+- ECR repository별 설정: 리포지토리 owner stack
+- ECR registry 수준 스캔: 이 security stack
+- RDS hardening: RDS를 생성하는 owner stack
 
-- RDS `copy_tags_to_snapshot`: existing RDS module
-- ECR repository settings: existing ECR module
-- ECR registry scanning: this security stack
+## 권장 적용 순서
 
-## Suggested Rollout Order
+1. backend 설정 준비
+2. shared 환경 state 초기화
+3. 기존 singleton 리소스 존재 여부 확인
+4. 필요한 리소스 import 또는 정렬
+5. plan / apply
+6. 이후 ISMS-P 결과 비교
 
-1. Initialize this stack with backend settings.
-2. Use the `shared` backend/tfvars for singleton regional services:
-   Security Hub, Config, GuardDuty, ECR registry scanning, and CloudTrail.
-3. Import or align existing singleton services before enabling ownership:
-   Security Hub, Config, GuardDuty, and any existing VPC Flow Logs.
-4. Create CloudTrail only after confirming there is no live trail to preserve.
-5. Re-run the ISMS-P report and compare reduced `INSUFFICIENT_DATA`.
-6. Import existing Flow Logs and WAF only after confirming exact live config.
-7. Update the application stack for RDS and repository-level ECR hardening.
+## backend 예시
 
-## Notes
-
-- `waf.tf` is intentionally a stub because importing an existing Web ACL safely
-  requires preserving the current full rule set first.
-- `enable_incident_response` should remain false unless the account is allowed
-  to use Incident Manager.
-- `config.tf` and `flowlogs.tf` are written to support existing live resources,
-  but you should still import before turning the flags on.
-- `backend.shared.hcl` plus `environments/shared/terraform.tfvars` should be
-  the only state used for account/region singleton services in this account.
-- `backend.dev.hcl` and `backend.prod.hcl` are for environment-scoped follow-up
-  work such as per-VPC flow logs or per-environment WAF ownership.
-- Keep real backend and tfvars values local.
-- This repository should only contain sanitized example files for backend/tfvars.
-
-## Backend Init
-
-Example init commands:
+### shared
 
 ```powershell
 cd infra/terraform-security
@@ -74,6 +58,8 @@ terraform init -backend-config="backend.shared.hcl"
 terraform plan -var-file="environments/shared/terraform.tfvars"
 ```
 
+### dev
+
 ```powershell
 cd infra/terraform-security
 Copy-Item backend.dev.hcl.example backend.dev.hcl
@@ -82,6 +68,8 @@ terraform init -backend-config="backend.dev.hcl"
 terraform plan -var-file="environments/dev/terraform.tfvars"
 ```
 
+### prod
+
 ```powershell
 cd infra/terraform-security
 Copy-Item backend.prod.hcl.example backend.prod.hcl
@@ -89,3 +77,9 @@ Copy-Item environments/prod/terraform.tfvars.example environments/prod/terraform
 terraform init -backend-config="backend.prod.hcl"
 terraform plan -var-file="environments/prod/terraform.tfvars"
 ```
+
+## 메모
+
+- `waf.tf`는 기존 live WAF를 안전하게 맞추기 전까지 stub 성격일 수 있습니다.
+- 실제 계정의 singleton 서비스는 import 없이 바로 생성하지 않는 편이 안전합니다.
+- 실사용 backend/tfvars 값은 로컬에서만 관리하고 저장소에는 예시 파일만 두는 것을 권장합니다.

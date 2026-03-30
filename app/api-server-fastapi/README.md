@@ -1,140 +1,144 @@
 # ShopEasy API Server (FastAPI)
 
-## 설치 및 실행
+이 디렉터리는 SecureFlow 파이프라인에서 사용하는 FastAPI 기반 대상 애플리케이션입니다.
+인증, 상품, 리뷰, 장바구니, 주문, 업로드 API를 제공하며, DAST/SAST 실험용 취약 예제 파일도 함께 포함합니다.
+
+## 역할
+
+- Python/FastAPI 대상 서비스 예제
+- CI에서 FastAPI 보안 검사 대상
+- staging / production ECS 배포 대상
+- 프론트엔드와 연동되는 실제 샘플 API
+
+## 기술 스택
+
+- FastAPI
+- Uvicorn
+- SQLite 또는 MySQL
+- 로컬 파일 업로드 또는 S3
+- DynamoDB 기반 리뷰 저장소 옵션
+- Redis / SQS / SNS 연동 옵션
+
+## 디렉터리 구조
+
+```text
+app/api-server-fastapi/
+|-- app/
+|   |-- config/
+|   |-- middleware/
+|   |-- models/
+|   |-- routes/
+|   `-- services/
+|-- tests/
+|-- uploads/
+|-- main.py
+|-- seed.py
+|-- vulnerable_example.py
+`-- vulnerable_endpoints.py
+```
+
+## 로컬 실행
+
+### 1. 의존성 설치
 
 ```bash
-# 패키지 설치
 pip install -r requirements.txt
+```
 
-# 환경변수 파일 생성
+### 2. 환경 변수 파일 준비
+
+```bash
 cp .env.example .env
+```
 
-# 시드 데이터 삽입
+### 3. 시드 데이터 생성
+
+```bash
 python seed.py
+```
 
-# 서버 실행 (http://localhost:8000)
+### 4. 서버 실행
+
+```bash
 python main.py
 ```
 
-## 테스트 계정
+기본 주소:
 
-| 항목 | 값 |
-|------|-----|
-| 이메일 | test@test.com |
-| 비밀번호 | password123 |
+- API: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/docs`
+- 업로드 파일: `http://localhost:8000/uploads/...`
 
-## 환경변수 설명
+## 주요 환경 변수
 
-`.env.example`을 복사하여 `.env` 파일을 생성합니다.
+`app/config/settings.py` 기준으로 아래 값을 사용합니다.
 
-### 서버
+- `PORT`
+- `DB_TYPE`
+- `DB_HOST`
+- `DB_PORT`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
+- `STORAGE_TYPE`
+- `S3_BUCKET`
+- `S3_REGION`
+- `REVIEW_STORE`
+- `DYNAMODB_TABLE`
+- `DYNAMODB_REGION`
+- `CACHE_TYPE`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `QUEUE_TYPE`
+- `SQS_QUEUE_URL`
+- `SNS_TOPIC_ARN`
+- `JWT_SECRET`
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `PORT` | `8000` | 서버 포트 번호 |
+기본 개발 모드는 다음 조합입니다.
 
-### 데이터베이스
+- DB: SQLite
+- 스토리지: local
+- 리뷰 저장소: local
+- 캐시: memory
+- 큐: sync
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `DB_TYPE` | `sqlite` | `sqlite` 또는 `mysql` |
-| `DB_HOST` | `localhost` | MySQL 호스트 |
-| `DB_PORT` | `3306` | MySQL 포트 |
-| `DB_USER` | `root` | MySQL 사용자 |
-| `DB_PASSWORD` | (빈 값) | MySQL 비밀번호 |
-| `DB_NAME` | `ecommerce` | 데이터베이스 이름 |
+## 주요 API
 
-### 스토리지
+실제 라우트는 `app/routes/` 아래에 있습니다.
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `STORAGE_TYPE` | `local` | `local` 또는 `s3` |
-| `S3_BUCKET` | (빈 값) | S3 버킷 이름 |
-| `S3_REGION` | `ap-northeast-2` | S3 리전 |
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/products`
+- `GET /api/products/{id}`
+- `GET /api/products/{id}/reviews`
+- `POST /api/products/{id}/reviews`
+- `GET /api/cart`
+- `POST /api/cart`
+- `PUT /api/cart/{itemId}`
+- `DELETE /api/cart/{itemId}`
+- `DELETE /api/cart`
+- `POST /api/orders`
+- `GET /api/orders`
+- `POST /api/upload`
+- `POST /api/upload/presigned`
+- `GET /api/health`
+- `GET /api/config`
 
-### 리뷰 저장소
+## 테스트
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `REVIEW_STORE` | `local` | `local` 또는 `dynamodb` |
-| `DYNAMODB_TABLE` | `Reviews` | DynamoDB 테이블 이름 |
-| `DYNAMODB_REGION` | `ap-northeast-2` | DynamoDB 리전 |
+```bash
+pytest
+```
 
-### 캐시
+현재 저장소에는 기본 헬스체크 테스트가 포함되어 있습니다.
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `CACHE_TYPE` | `memory` | `memory` 또는 `redis` |
-| `REDIS_HOST` | `localhost` | Redis 호스트 |
-| `REDIS_PORT` | `6379` | Redis 포트 |
+## SecureFlow와의 관계
 
-### 메시지 큐
+이 서비스는 `app/*` 아래 대상 애플리케이션 중 하나입니다.
+SecureFlow 플랫폼 자체는 루트 `backend`, `frontend`, `engine` 디렉터리에 있으며, 이 FastAPI 서비스와는 별도입니다.
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `QUEUE_TYPE` | `sync` | `sync` 또는 `sqs` |
-| `SQS_QUEUE_URL` | (빈 값) | SQS 큐 URL |
-| `SNS_TOPIC_ARN` | (빈 값) | SNS 토픽 ARN |
+참고:
 
-### 인증
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `JWT_SECRET` | `ecommerce-jwt-secret-key-2024` | JWT 서명 비밀키 |
-
-## API 엔드포인트
-
-인증이 필요한 API는 `Authorization: Bearer <JWT토큰>` 헤더를 포함해야 합니다.
-
-### 인증 (Auth)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| POST | `/api/auth/signup` | - | 회원가입 |
-| POST | `/api/auth/login` | - | 로그인 |
-| GET | `/api/auth/me` | O | 현재 사용자 정보 조회 |
-
-### 상품 (Products)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/products` | - | 상품 목록 조회 |
-| GET | `/api/products/:id` | - | 상품 상세 조회 |
-
-### 리뷰 (Reviews)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/products/:id/reviews` | - | 상품 리뷰 목록 조회 |
-| POST | `/api/products/:id/reviews` | O | 리뷰 작성 |
-
-### 장바구니 (Cart)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/cart` | O | 장바구니 조회 |
-| POST | `/api/cart` | O | 장바구니에 상품 추가 |
-| PUT | `/api/cart/:itemId` | O | 장바구니 수량 변경 |
-| DELETE | `/api/cart/:itemId` | O | 장바구니 항목 삭제 |
-| DELETE | `/api/cart` | O | 장바구니 전체 삭제 |
-
-### 주문 (Orders)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| POST | `/api/orders` | O | 주문 생성 |
-| GET | `/api/orders` | O | 주문 내역 조회 |
-
-### 파일 업로드 (Upload)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| POST | `/api/upload` | O | 이미지 파일 업로드 (최대 5MB) |
-| POST | `/api/upload/presigned` | O | S3 Pre-signed URL 생성 |
-
-### 시스템 (Health)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/health` | - | 서버 상태 확인 |
-| GET | `/api/config` | - | 현재 서비스 설정 조회 |
+- 플랫폼 API 문서: `docs/api/README.md`
+- 전체 구조: `README.md`

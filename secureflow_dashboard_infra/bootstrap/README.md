@@ -1,14 +1,14 @@
 # SecureFlow Dashboard Bootstrap
 
-This stack creates Terraform backend resources for the separate `secureflow_dashboard_infra` deployment.
+이 스택은 `secureflow_dashboard_infra` 본 스택이 사용할 Terraform remote state 리소스를 먼저 생성합니다.
 
-It creates:
+## 생성 리소스
 
-- S3 bucket for Terraform state
-- DynamoDB table for Terraform locking
-- KMS key for Terraform state encryption
+- Terraform state 저장용 S3 bucket
+- Terraform lock용 DynamoDB table
+- Terraform state 암호화용 KMS key
 
-## Usage
+## 사용 순서
 
 ```powershell
 cd secureflow_dashboard_infra/bootstrap
@@ -17,9 +17,9 @@ terraform init
 terraform apply -var-file="terraform.tfvars"
 ```
 
-After apply, copy the outputs into `../backend.hcl` or pass them directly to `terraform init` in the main stack.
+적용 후 출력값을 본 스택 `backend.hcl`에 반영하거나, `terraform init`에 직접 넘겨서 사용합니다.
 
-Example:
+예시:
 
 ```powershell
 cd ..
@@ -30,3 +30,8 @@ terraform init `
   -backend-config="dynamodb_table=<bootstrap-lock-table>" `
   -backend-config="encrypt=true"
 ```
+
+## 참고
+
+본 bootstrap은 SecureFlow 플랫폼용 인프라에만 해당합니다.
+대상 앱 인프라와는 별도로 관리합니다.

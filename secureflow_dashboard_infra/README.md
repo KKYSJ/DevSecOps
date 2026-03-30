@@ -1,130 +1,114 @@
 # SecureFlow Dashboard AWS Terraform
 
-This stack is a separate copy of `dashboard_infra` so the existing deployed environment can remain untouched.
+이 디렉터리는 SecureFlow 플랫폼 자체를 AWS에 배포하기 위한 Terraform 스택입니다.
+루트 `app/*` 대상 애플리케이션용 인프라와는 별도로, SecureFlow 대시보드와 API 서버, worker, 데이터 계층을 올리는 용도로 사용합니다.
 
-What is separated here:
+## 포함 범위
 
-- Resource names start with `secureflow-dashboard`
-- The VPC defaults to `10.50.0.0/16`
-- The Terraform backend state key is `secureflow_dashboard_infra/terraform.tfstate`
-- The Terraform backend bucket and lock table are created by `secureflow_dashboard_infra/bootstrap`
-- `dashboard_infra` is left unchanged
+현재 코드 기준으로 이 스택은 아래 리소스를 다룹니다.
 
-Security controls included:
+- VPC / subnet / NAT gateway
+- ALB
+- CloudFront
+- WAF
+- ECS cluster / service
+- ECR repositories
+- RDS PostgreSQL
+- Redis
+- S3
+- Secrets Manager
+- IAM / KMS
+- CloudWatch / SNS 알림
 
-- Public ALB with WAF and access logging
-- CloudFront HTTPS entrypoint without a custom domain
-- VPC Flow Logs to encrypted CloudWatch Logs
-- KMS for app data and CloudWatch Logs
-- Encrypted S3 buckets with TLS-only bucket policies
-- RDS PostgreSQL with SSL forced, log exports, Performance Insights, and Enhanced Monitoring
-- Redis with encryption at rest, TLS in transit, and auth token
-- ECS task roles scoped for reports bucket access and read-only security checks
-- CloudWatch alarms for ALB, ECS, and RDS health
+## 배포 대상 서비스
 
-## GitHub variable and secret mapping
+이 스택으로 배포되는 SecureFlow 구성요소는 보통 아래 3개입니다.
 
-Terraform still cannot read GitHub repository variables and secrets automatically from a local shell.
-For the current GitHub Actions deployment flow, only the AWS deployment variables are required because the workflow is infrastructure-only.
+- frontend ECS service
+- backend ECS service
+- worker ECS service
 
-Required for GitHub Actions deployment:
+대상 앱인 `app/api-server-*`, `app/frontend`와는 별개입니다.
 
-- GitHub variable `AWS_ACCOUNT_ID`
-- GitHub variable `AWS_REGION`
-- GitHub variable `AWS_ROLE_TO_ASSUME`
+## 주요 입력값
 
-Notes:
+예시 파일:
 
-- `AWS_ACCOUNT_ID` is detected automatically with STS.
-- `AWS_ROLE_TO_ASSUME` stays in GitHub Actions and is not consumed by Terraform itself.
-- App-related secrets and variables such as `GEMINI_API_KEY`, `SONAR_TOKEN`, `GEMINI_MODEL`, and `SONAR_*` are not used by the infrastructure-only GitHub Actions deployment.
-- The repository now includes `.github/workflows/secureflow-dashboard-deploy.yml` for the dashboard stack.
+- `terraform.tfvars.example`
+- `backend.hcl.example`
 
-## GitHub Actions deployment
+실행 전 주로 맞추는 값:
 
-`.github/workflows/secureflow-dashboard-deploy.yml` is now the service deployment entrypoint for GitHub Actions.
+- AWS region
+- ALB / CloudFront / WAF 사용 여부
+- ECS desired count
+- DB / Redis 관련 설정
+- `actions_upload_bypass_key`
 
-The previous DevSecOps scan and sample-service deployment workflows are preserved under `.github/workflow-backups/`.
+## GitHub Actions와 연결되는 값
 
-This deployment flow is infrastructure-only:
+현재 저장소의 CI/CD 기준으로 중요한 값은 아래입니다.
 
-- It creates or updates the AWS infrastructure defined in `secureflow_dashboard_infra`
-- It creates or reuses the dedicated Terraform state bucket and lock table
-- It migrates the bootstrap Terraform state into S3 so later runs stay consistent
-- It forces ECS desired counts to `0`
-- It does not build or push application images
-- It does not populate LLM or scanner secrets
-- It does not run IaC, SAST, SCA, or DAST jobs
+### GitHub Secrets
 
-There is also a service deployment mode:
+- `API_SERVER_URL`
+- `SECUREFLOW_UPLOAD_KEY`
+- `GEMINI_API_KEY`
+- `OPENAI_API_KEY`
+- `SONAR_TOKEN`
 
-- It builds the current `backend`, `frontend`, and `secureflow_dashboard_infra/docker/Dockerfile.worker` images
-- It pushes those images to the ECR repositories created by Terraform
-- It stores `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `SONAR_TOKEN` in the runtime Secrets Manager secret
-- It reapplies Terraform with ECS desired counts set to `1`
-- It uploads Docker build logs, Terraform logs, ECS service status, and smoke-check logs as GitHub Actions artifacts
-
-Required repository variables:
+### GitHub Variables
 
 - `AWS_ACCOUNT_ID`
 - `AWS_REGION`
 - `AWS_ROLE_TO_ASSUME`
+- `AWS_ROLE_TO_ASSUME_PROD`
 - `GEMINI_MODEL`
 - `SONAR_HOST_URL`
 - `SONAR_ORGANIZATION`
 - `SONAR_PROJECT_KEY`
+- `DAST_STAGING_TARGET_URL`
 
-Optional repository variables:
+## WAF 우회 업로드
 
-- `ALARM_EMAIL`
-- `ACM_CERTIFICATE_ARN`
+CloudFront와 WAF가 활성화된 경우 GitHub Actions의 raw scan 업로드와 gate 업로드가 차단될 수 있습니다.
+현재 워크플로는 아래 헤더를 사용해 업로드를 보냅니다.
 
-Recommended repository secrets for service deployment:
+- 헤더: `X-SecureFlow-Upload-Key`
+- GitHub Secret: `SECUREFLOW_UPLOAD_KEY`
+- Terraform 변수: `actions_upload_bypass_key`
 
-- `GEMINI_API_KEY`
-- `SONAR_TOKEN`
-- `OPENAI_API_KEY`
-- `API_SERVER_URL`
-- `SECUREFLOW_UPLOAD_KEY`
+즉 `SECUREFLOW_UPLOAD_KEY` 값과 `actions_upload_bypass_key` 값은 같아야 합니다.
 
-Notes:
+## DAST 대표 URL
 
-- `API_SERVER_URL` is passed into the frontend image as `REACT_APP_API_BASE_URL` during the GitHub Actions build.
-- If `API_SERVER_URL` is not set, the frontend falls back to `/api/v1`.
-- When CloudFront and WAF are enabled, set Terraform variable `actions_upload_bypass_key` and GitHub secret `SECUREFLOW_UPLOAD_KEY` to the same long random value so GitHub Actions scan uploads can pass WAF safely.
-- Because `actions_upload_bypass_key` is a Terraform variable, protect your remote state and do not commit real values into the repository.
+현재 CD는 대표 URL 1개를 대상으로 DAST를 수행합니다.
+권장값은 아래와 같습니다.
 
-The service deployment workflow runs automatically on pushes to the `SUN` branch when `backend/**`, `frontend/**`, `secureflow_dashboard_infra/**`, or the workflow file itself changes.
+- dev/staging CloudFront URL
+- 또는 dev/staging ALB URL
 
-You can also run it manually with `workflow_dispatch` and choose the `dev` or `prod` environment.
+권장하지 않는 값:
 
-Important behavior:
+- EC2 퍼블릭 IP
+- 컨테이너 내부 포트 주소 (`:8000`)
 
-- In `infra_only` mode, `frontend`, `backend`, and `worker` ECS services are created with desired count `0`
-- In `service` mode, the workflow deploys one frontend task, one backend task, and one worker task by default
-- `frontend_url` is the user-facing address and `backend_api_url` is the API base URL after service deployment
-- If bootstrap resources already exist but the bootstrap state file is missing, the workflow attempts an automatic bootstrap state recovery and uploads detailed recovery logs as artifacts
+보통 `DAST_STAGING_TARGET_URL`에는 dev용 ALB 또는 CloudFront 주소를 넣습니다.
 
-## HTTPS without a domain
+## 기본 사용 순서
 
-This stack enables CloudFront by default when `enable_cloudfront_https = true`.
-That gives you a public URL such as `https://d123example.cloudfront.net` without buying a domain or issuing your own certificate.
-
-Important limitation:
-
-- Client to CloudFront is HTTPS.
-- CloudFront to the ALB is HTTPS only if you later attach an ACM certificate to the ALB.
-- Without an ACM certificate, the CloudFront origin connection uses HTTP inside AWS.
-- WAF rules can block security scan payloads sent through CloudFront unless you configure the upload bypass key described above.
-
-## Usage
+### 1. bootstrap 적용
 
 ```powershell
 cd secureflow_dashboard_infra/bootstrap
 Copy-Item terraform.tfvars.example terraform.tfvars
 terraform init
 terraform apply -var-file="terraform.tfvars"
+```
 
+### 2. 본 스택 초기화
+
+```powershell
 cd ..
 Copy-Item backend.hcl.example backend.hcl
 Copy-Item terraform.tfvars.example terraform.tfvars
@@ -133,10 +117,16 @@ terraform plan
 terraform apply
 ```
 
-After apply, use the outputs:
+## 주요 출력값
 
-- `frontend_url` for the user-facing URL
-- `backend_api_url` for the API base URL
-- `github_repository_variables` for values such as `DAST_STAGING_TARGET_URL`
-- `db_secret_arn`, `redis_secret_arn`, and `external_api_secret_arn` for the split runtime secrets
-- `external_api_secret_template` as the JSON skeleton to store in the external API secret
+적용 후 아래 출력값을 주로 사용합니다.
+
+- `frontend_url`
+- `backend_api_url`
+- `github_secret_backend_url`
+- `github_repository_variables`
+- `db_secret_arn`
+- `redis_secret_arn`
+- `external_api_secret_arn`
+
+이 값들은 GitHub Actions와 런타임 설정 연결에 사용됩니다.

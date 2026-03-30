@@ -1,129 +1,122 @@
 # ShopEasy API Server (Spring Boot)
 
-## 설치 및 실행
+이 디렉터리는 SecureFlow 파이프라인에서 사용하는 Spring Boot 기반 대상 애플리케이션입니다.
+전자상거래 API를 Java 17 / Spring Boot 3 환경으로 구현했으며, 대상 앱 3종 중 Java 계열 예제로 사용됩니다.
+
+## 역할
+
+- Java / Spring 대상 서비스 예제
+- CI에서 Spring 빌드 및 보안 검사 대상
+- staging / production ECS 배포 대상
+- 프론트엔드 라우팅 분산 구조의 일부
+
+## 기술 스택
+
+- Spring Boot 3.2
+- Java 17
+- JDBC
+- H2 또는 MySQL
+- Redis
+- AWS SDK v2
+- JWT
+
+## 디렉터리 구조
+
+```text
+app/api-server-spring/
+|-- src/main/java/com/shopeasy/api/
+|   |-- config/
+|   |-- controller/
+|   |-- dto/
+|   |-- security/
+|   `-- service/
+|-- src/main/resources/
+|   |-- application.yml
+|   |-- application-local.yml
+|   `-- application-prod.yml.example
+|-- data/
+|-- uploads/
+|-- pom.xml
+`-- Dockerfile
+```
+
+## 로컬 실행
+
+### 기본 실행
 
 ```bash
-# Maven Wrapper로 빌드 및 실행 (별도 설치 불필요)
 ./mvnw spring-boot:run
+```
 
-# 또는 JAR 빌드 후 실행
+### 패키징 후 실행
+
+```bash
 ./mvnw clean package -DskipTests
 java -jar target/api-server-spring-1.0.0.jar
 ```
 
-서버 시작 시 데이터가 없으면 테스트 사용자 1명과 상품 20개가 자동으로 삽입됩니다.
+기본 주소:
 
-AWS 모드로 실행하려면:
+- API: `http://localhost:8080`
+
+## 설정 파일
+
+### 공통
+
+- `src/main/resources/application.yml`
+  - 기본 포트
+  - 공통 API base path
+  - 업로드 기본 경로
+
+### 로컬 개발
+
+- `src/main/resources/application-local.yml`
+  - H2 파일 DB
+  - local 스토리지
+  - memory 캐시
+  - sync 큐
+
+### 운영 예시
+
+- `src/main/resources/application-prod.yml.example`
+  - MySQL / S3 / DynamoDB / Redis / SQS / SNS 예시
+
+운영 프로필을 직접 테스트하려면 예시 파일을 복사해 별도 구성한 뒤 실행하면 됩니다.
 
 ```bash
-# 운영 설정 파일 생성
 cp src/main/resources/application-prod.yml.example src/main/resources/application-prod.yml
-# application-prod.yml에 AWS 정보 입력 후 실행
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
-## 테스트 계정
+## 주요 API
 
-| 항목 | 값 |
-|------|-----|
-| 이메일 | test@test.com |
-| 비밀번호 | password123 |
+컨트롤러 구현은 `src/main/java/com/shopeasy/api/controller/` 아래에 있습니다.
 
-## 환경변수 설명
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/products`
+- `GET /api/products/{id}`
+- `GET /api/products/{productId}/reviews`
+- `POST /api/products/{productId}/reviews`
+- `GET /api/cart`
+- `POST /api/cart`
+- `PUT /api/cart/{itemId}`
+- `DELETE /api/cart/{itemId}`
+- `DELETE /api/cart`
+- `POST /api/orders`
+- `GET /api/orders`
+- `POST /api/upload`
+- `POST /api/upload/presigned`
+- `GET /api/health`
+- `GET /api/config`
 
-Spring Boot는 `application.yml` + 프로파일 기반 설정 파일을 사용합니다.
+## SecureFlow와의 관계
 
-### application.yml (공통)
+이 서비스는 `app/*` 아래 대상 애플리케이션 중 하나이며, 루트 `backend`의 SecureFlow 플랫폼 API와는 별개입니다.
 
-| 속성 | 기본값 | 설명 |
-|------|--------|------|
-| `server.port` | `8080` | 서버 포트 번호 |
-| `app.jwt.secret` | `ecommerce-jwt-secret-key-2024` | JWT 서명 비밀키 |
+프론트엔드 개발 프록시 기준으로는 주로 아래 요청을 담당합니다.
 
-### application-local.yml (로컬 프로파일, 기본)
+- 상품 목록 / 상품 상세
 
-| 속성 | 값 | 설명 |
-|------|------|------|
-| `spring.datasource.url` | `jdbc:h2:file:./data/ecommerce;MODE=MySQL` | H2 파일 DB |
-| `app.db.type` | `h2` | DB 종류 |
-| `app.storage.type` | `local` | 로컬 파일 저장소 |
-| `app.review.store` | `local` | DB 기반 리뷰 저장 |
-| `app.cache.type` | `memory` | 인메모리 캐시 |
-| `app.queue.type` | `sync` | 동기 큐 |
-
-### application-prod.yml (운영 프로파일)
-
-| 속성 | 예시 | 설명 |
-|------|------|------|
-| `spring.datasource.url` | `jdbc:mysql://rds-endpoint:3306/ecommerce` | MySQL RDS |
-| `spring.datasource.username` | `admin` | DB 사용자 |
-| `spring.datasource.password` | `your-password` | DB 비밀번호 |
-| `app.storage.type` | `s3` | S3 파일 저장소 |
-| `app.storage.s3.bucket` | `my-bucket` | S3 버킷 이름 |
-| `app.storage.s3.region` | `ap-northeast-2` | S3 리전 |
-| `app.review.store` | `dynamodb` | DynamoDB 리뷰 저장 |
-| `app.review.dynamodb.table` | `Reviews` | DynamoDB 테이블 이름 |
-| `app.review.dynamodb.region` | `ap-northeast-2` | DynamoDB 리전 |
-| `app.cache.type` | `redis` | ElastiCache Redis |
-| `spring.data.redis.host` | `redis-endpoint` | Redis 호스트 |
-| `spring.data.redis.port` | `6379` | Redis 포트 |
-| `app.queue.type` | `sqs` | SQS 메시지 큐 |
-| `app.queue.sqs.queue-url` | `https://sqs...` | SQS 큐 URL |
-| `app.queue.sns.topic-arn` | `arn:aws:sns:...` | SNS 토픽 ARN |
-
-## API 엔드포인트
-
-인증이 필요한 API는 `Authorization: Bearer <JWT토큰>` 헤더를 포함해야 합니다.
-
-### 인증 (Auth)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| POST | `/api/auth/signup` | - | 회원가입 |
-| POST | `/api/auth/login` | - | 로그인 |
-| GET | `/api/auth/me` | O | 현재 사용자 정보 조회 |
-
-### 상품 (Products)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/products` | - | 상품 목록 조회 |
-| GET | `/api/products/{id}` | - | 상품 상세 조회 |
-
-### 리뷰 (Reviews)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/products/{productId}/reviews` | - | 상품 리뷰 목록 조회 |
-| POST | `/api/products/{productId}/reviews` | O | 리뷰 작성 |
-
-### 장바구니 (Cart)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/cart` | O | 장바구니 조회 |
-| POST | `/api/cart` | O | 장바구니에 상품 추가 |
-| PUT | `/api/cart/{itemId}` | O | 장바구니 수량 변경 |
-| DELETE | `/api/cart/{itemId}` | O | 장바구니 항목 삭제 |
-| DELETE | `/api/cart` | O | 장바구니 전체 삭제 |
-
-### 주문 (Orders)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| POST | `/api/orders` | O | 주문 생성 |
-| GET | `/api/orders` | O | 주문 내역 조회 |
-
-### 파일 업로드 (Upload)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| POST | `/api/upload` | O | 이미지 파일 업로드 (최대 5MB) |
-| POST | `/api/upload/presigned` | O | S3 Presigned URL 생성 |
-
-### 시스템 (Health)
-
-| Method | Path | Auth | 설명 |
-|--------|------|:----:|------|
-| GET | `/api/health` | - | 서버 상태 확인 |
-| GET | `/api/config` | - | 현재 서비스 설정 조회 |
+실제 프록시 분산 규칙은 [app/frontend/vite.config.js](c:/Users/User/Desktop/secureflow/secureflow/app/frontend/vite.config.js) 에 있습니다.

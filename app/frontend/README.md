@@ -1,149 +1,85 @@
-# ShopEasy Frontend (React)
+# ShopEasy Frontend
 
-## 설치 및 실행
+이 디렉터리는 대상 애플리케이션용 React 프론트엔드입니다.
+루트 `frontend/`의 SecureFlow 대시보드와는 다른 앱이며, `app/api-server-fastapi`, `app/api-server-node`, `app/api-server-spring` 세 API를 프록시로 분산해 사용하는 구조입니다.
+
+## 역할
+
+- 대상 서비스용 사용자 프론트엔드
+- CI 빌드 및 배포 대상
+- dev/staging/prod ECS frontend 컨테이너
+
+## 기술 스택
+
+- React 18
+- Vite 5
+- React Router 6
+- Axios
+
+## 로컬 실행
+
+### 1. 패키지 설치
 
 ```bash
-# 의존성 설치
 npm install
+```
 
-# 개발 서버 실행 (http://localhost:3000)
+### 2. 개발 서버 실행
+
+```bash
 npm run dev
+```
 
-# 프로덕션 빌드
+기본 주소:
+
+- 프론트엔드: `http://localhost:3000`
+
+### 3. 프로덕션 빌드
+
+```bash
 npm run build
 ```
 
-## API 서버 변경
+## API 연결 방식
 
-`vite.config.js`의 proxy target 포트를 API 서버에 맞게 변경합니다.
+이 앱은 `VITE_API_URL`이 비어 있으면 Vite 개발 프록시를 사용합니다.
+프록시 규칙은 [app/frontend/vite.config.js](c:/Users/User/Desktop/secureflow/secureflow/app/frontend/vite.config.js) 에 정의되어 있습니다.
 
-### Node.js (Express) - 포트 5000
+현재 기준 분산 규칙:
 
-```js
-proxy: {
-  '/api': {
-    target: 'http://localhost:5000',
-    changeOrigin: true,
-  },
-  '/uploads': {
-    target: 'http://localhost:5000',
-    changeOrigin: true,
-  },
-},
-```
+- 인증 / 장바구니 / 주문: Node (`http://localhost:5000`)
+- 리뷰 / 업로드 / `/uploads`: FastAPI (`http://localhost:8000`)
+- 상품 관련: Spring (`http://localhost:8080`)
 
-### FastAPI - 포트 8000
+즉 프론트엔드 1개가 API 3개를 기능별로 나눠 호출하는 구조입니다.
 
-```js
-proxy: {
-  '/api': {
-    target: 'http://localhost:8000',
-    changeOrigin: true,
-  },
-  '/uploads': {
-    target: 'http://localhost:8000',
-    changeOrigin: true,
-  },
-},
-```
+## 환경 변수
 
-### Spring Boot - 포트 8080
+- `VITE_API_URL`
 
-```js
-proxy: {
-  '/api': {
-    target: 'http://localhost:8080',
-    changeOrigin: true,
-  },
-  '/uploads': {
-    target: 'http://localhost:8080',
-    changeOrigin: true,
-  },
-},
-```
+권장 사용 방식:
 
-## S3 정적 호스팅 배포
-
-S3에 배포할 때는 Vite의 proxy가 동작하지 않으므로, API 서버의 실제 주소를 환경변수로 지정한 뒤 빌드해야 합니다.
-
-### 1. 환경변수 설정
-
-API 서버는 ECS/EKS에 배포되며 앞단에 로드밸런서(ALB)가 위치합니다. 프로젝트 루트에 `.env.production` 파일을 생성하고 로드밸런서 DNS를 설정합니다.
-
-```env
-VITE_API_URL=http://<ALB-DNS-이름>
-```
+- 로컬 개발: 비워 두고 프록시 사용
+- 정적 배포 또는 별도 ingress 환경: 실제 외부 API base URL 지정
 
 예시:
 
 ```env
-VITE_API_URL=http://my-alb-123456789.ap-northeast-2.elb.amazonaws.com
+VITE_API_URL=https://example-alb-or-cloudfront-domain
 ```
 
-### 2. 빌드 및 업로드
+## 주요 화면
 
-```bash
-# 빌드 (dist/ 폴더 생성)
-npm run build
+`src/pages/` 아래에 주요 화면이 있습니다.
 
-# S3에 업로드
-aws s3 sync dist/ s3://<버킷이름> --delete
-```
+- 홈
+- 로그인
+- 회원가입
+- 상품 목록 / 상세
+- 장바구니
+- 주문 내역
 
-### 3. S3 버킷 설정
+## SecureFlow와의 관계
 
-- 정적 웹 사이트 호스팅 활성화
-- 인덱스 문서: `index.html`
-- 오류 문서: `index.html` (SPA 라우팅을 위해 동일하게 설정)
-
-## CloudFront 배포
-
-HTTPS가 적용되므로, API 서버도 HTTPS로 동작하게 해야합니다. (무료 도메인 + 무료 인증서 적용하면 가능함.)
-
-CloudFront를 사용하면 HTTPS 적용과 API 프록시 설정이 가능합니다.
-
-### 1. 환경변수 설정
-
-CloudFront에서 API 요청을 프록시하는 경우, 별도의 `VITE_API_URL` 설정이 필요 없습니다.
-
-```env
-# CloudFront가 API를 프록시하는 경우 (비워두거나 파일 생성하지 않음)
-VITE_API_URL=
-```
-
-CloudFront 프록시를 사용하지 않는 경우, S3 배포와 동일하게 ALB DNS를 설정합니다.
-
-```env
-VITE_API_URL=http://<ALB-DNS-이름>
-```
-
-### 2. 빌드 및 업로드
-
-```bash
-npm run build
-aws s3 sync dist/ s3://<버킷이름> --delete
-```
-
-### 3. CloudFront 오리진 설정
-
-| 오리진 | 도메인 | 용도 |
-|--------|--------|------|
-| S3 오리진 | `<버킷이름>.s3.amazonaws.com` | 프론트엔드 정적 파일 |
-| API 오리진 (선택) | `<ALB-DNS-이름>` | API 프록시 (ECS/EKS 앞단의 ALB) |
-
-### 4. CloudFront 동작(Behavior) 설정
-
-| 경로 패턴 | 오리진 | 설명 |
-|-----------|--------|------|
-| `/api/*` | API 오리진 | API 요청을 백엔드로 전달 |
-| `/uploads/*` | API 오리진 | 업로드 파일 요청을 백엔드로 전달 |
-| `*` (기본) | S3 오리진 | 프론트엔드 정적 파일 |
-
-### 5. CloudFront 오류 페이지 설정
-
-SPA 라우팅을 위해 오류 페이지를 설정합니다.
-
-| HTTP 오류 코드 | 응답 페이지 경로 | HTTP 응답 코드 |
-|---------------|-----------------|---------------|
-| 403 | `/index.html` | 200 |
-| 404 | `/index.html` | 200 |
+이 앱은 SecureFlow가 스캔하고 배포하는 대상 앱입니다.
+SecureFlow 자체 대시보드는 루트 [frontend](c:/Users/User/Desktop/secureflow/secureflow/frontend) 에 있습니다.
